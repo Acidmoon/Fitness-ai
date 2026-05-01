@@ -3,6 +3,11 @@ from typing import Iterable, Optional
 
 VIDEO_URL_PREFIX = "/videos/"
 UPLOAD_DIR = "uploads/videos"
+UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+
+class VideoUploadTooLargeError(Exception):
+    pass
 
 
 def ensure_upload_dir() -> None:
@@ -68,3 +73,28 @@ def delete_video_file(video_url: Optional[str]) -> bool:
 def delete_record_videos(records: Iterable) -> None:
     for record in records:
         delete_video_file(getattr(record, "video_url", None))
+
+
+def stream_upload_to_path(upload_file, file_path: str, max_file_size: int) -> int:
+    total_size = 0
+
+    try:
+        with open(file_path, "wb") as buffer:
+            while True:
+                chunk = upload_file.file.read(UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+
+                total_size += len(chunk)
+                if total_size > max_file_size:
+                    raise VideoUploadTooLargeError
+
+                buffer.write(chunk)
+    except Exception:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise
+    finally:
+        upload_file.file.seek(0)
+
+    return total_size

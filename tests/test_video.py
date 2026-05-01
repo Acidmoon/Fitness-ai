@@ -1,5 +1,6 @@
 from fastapi import status
 from io import BytesIO
+from unittest.mock import patch
 
 
 class TestVideoUpload:
@@ -67,7 +68,6 @@ class TestVideoUpload:
     def test_upload_video_invalid_format(self, client, db_session, test_user, tmp_path):
         """测试上传不支持的视频格式"""
         from app.models.exercise import Exercise, ExerciseRecord
-        from unittest.mock import patch
 
         exercise = Exercise(name="测试动作", category="上肢")
         db_session.add(exercise)
@@ -106,7 +106,6 @@ class TestVideoUpload:
         self, client, db_session, test_user, tmp_path
     ):
         """测试运动记录不存在"""
-        from unittest.mock import patch
 
         upload_dir = tmp_path / "videos"
         upload_dir.mkdir()
@@ -130,7 +129,6 @@ class TestVideoUpload:
         self, client, db_session, inactive_test_user, tmp_path
     ):
         """测试已注销账户无法上传视频"""
-        from unittest.mock import patch
 
         upload_dir = tmp_path / "videos"
         upload_dir.mkdir()
@@ -150,7 +148,6 @@ class TestVideoUpload:
     def test_upload_video_keep_false(self, client, db_session, test_user, tmp_path):
         """测试临时上传模式（不保留视频）"""
         from app.models.exercise import Exercise, ExerciseRecord
-        from unittest.mock import patch
 
         exercise = Exercise(name="测试动作", category="上肢")
         db_session.add(exercise)
@@ -192,7 +189,6 @@ class TestVideoUpload:
     ):
         """测试 keep_video=False 时真正删除临时文件"""
         from app.models.exercise import Exercise, ExerciseRecord
-        from unittest.mock import patch
 
         exercise = Exercise(name="测试动作", category="上肢")
         db_session.add(exercise)
@@ -237,7 +233,6 @@ class TestVideoUpload:
     ):
         """测试 keep_video=True 时保留文件"""
         from app.models.exercise import Exercise, ExerciseRecord
-        from unittest.mock import patch
         import os
 
         exercise = Exercise(name="测试动作", category="上肢")
@@ -284,7 +279,6 @@ class TestVideoUpload:
     ):
         """测试重新上传会删除旧文件"""
         from app.models.exercise import Exercise, ExerciseRecord
-        from unittest.mock import patch
         import os
 
         exercise = Exercise(name="测试动作", category="上肢")
@@ -326,6 +320,109 @@ class TestVideoUpload:
         new_filename = data["video_url"].split("/")[-1]
         assert os.path.exists(upload_dir / new_filename)
 
+    def test_upload_video_rejects_oversize_during_stream(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试流式写入中超限会报错并清理部分文件"""
+        from app.models.exercise import Exercise, ExerciseRecord
+        from app.utils import video_files
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+
+        original_chunk_size = video_files.UPLOAD_CHUNK_SIZE
+        oversized_content = BytesIO(b"a" * 5)
+        oversized_content.name = "oversized.mp4"
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
+            "app.utils.video_files.UPLOAD_CHUNK_SIZE", 2
+        ), patch("app.api.video.MAX_FILE_SIZE", 4):
+            response = client.post(
+                f"/api/video/records/{record.id}/video",
+                headers=headers,
+                files={"video": ("oversized.mp4", oversized_content, "video/mp4")},
+            )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "文件大小超过 50MB 限制" in response.json()["detail"]
+        assert list(upload_dir.iterdir()) == []
+        assert video_files.UPLOAD_CHUNK_SIZE == original_chunk_size
+
+    def test_upload_video_cleans_partial_file_on_write_failure(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试写入中途失败时清理部分文件"""
+        from app.models.exercise import Exercise, ExerciseRecord
+        from app.api import video as video_api
+        from app.utils.video_files import UPLOAD_CHUNK_SIZE
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+
+        class FailingFile:
+            def __init__(self):
+                self._reads = 0
+
+            def read(self, _size):
+                self._reads += 1
+                if self._reads == 1:
+                    return b"a" * min(UPLOAD_CHUNK_SIZE, 8)
+                raise OSError("disk write interrupted")
+
+            def seek(self, *_args):
+                return 0
+
+        failing_upload = type(
+            "FailingUpload", (), {"filename": "broken.mp4", "file": FailingFile()}
+        )()
+
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            try:
+                video_api.upload_video(
+                    record_id=record.id,
+                    video=failing_upload,
+                    keep_video=True,
+                    db=db_session,
+                    current_user=test_user["user"],
+                )
+            except OSError:
+                pass
+            else:
+                raise AssertionError("Expected OSError during upload write")
+
+        assert list(upload_dir.iterdir()) == []
+        db_session.refresh(record)
+        assert record.video_url is None
+
 
 class TestVideoDelete:
     """视频删除接口测试"""
@@ -355,7 +452,6 @@ class TestVideoDelete:
     def test_delete_video_success(self, client, db_session, test_user, tmp_path):
         """测试删除视频成功"""
         from app.models.exercise import Exercise, ExerciseRecord
-        from unittest.mock import patch
         import os
 
         # 创建测试记录并关联视频
@@ -450,7 +546,6 @@ class TestVideoAccess:
 
     def test_get_video_not_found(self, client, db_session, test_user, tmp_path):
         """测试访问不存在的视频"""
-        from unittest.mock import patch
 
         upload_dir = tmp_path / "videos"
         upload_dir.mkdir()
@@ -470,7 +565,6 @@ class TestVideoAccess:
         from app.models.exercise import Exercise, ExerciseRecord
         from app.models.user import User
         from app.utils.security import hash_password
-        from unittest.mock import patch
 
         other_user = User(
             username="video_owner",

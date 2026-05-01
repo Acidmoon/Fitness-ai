@@ -8,11 +8,13 @@ from app.models.exercise import ExerciseRecord
 from app.models.user import User
 from app.utils.security import get_current_user
 from app.utils.video_files import (
+    VideoUploadTooLargeError,
     build_video_url,
     delete_video_file,
     ensure_upload_dir,
     get_filename_from_video_url,
     resolve_upload_path,
+    stream_upload_to_path,
 )
 
 router = APIRouter()
@@ -36,15 +38,6 @@ def upload_video(  # 定义上传视频函数
     if file_ext not in ALLOWED_EXTENSIONS:  # 检查扩展名是否在允许列表中
         raise HTTPException(status_code=400, detail="不支持的视频格式")  # 抛出 400 错误
 
-    # 验证文件大小（读取部分内容估算）
-    video.file.seek(0, 2)  # 移动文件指针到末尾，2 表示从文件末尾开始
-    file_size = video.file.tell()  # 获取文件大小
-    video.file.seek(0)
-    if file_size > MAX_FILE_SIZE:  # 检查文件大小是否超限
-        raise HTTPException(
-            status_code=400, detail="文件大小超过 50MB 限制"
-        )  # 抛出 400 错误
-
     # 检查运动记录是否存在且属于当前用户
     record = (
         db.query(ExerciseRecord)
@@ -66,11 +59,11 @@ def upload_video(  # 定义上传视频函数
 
     previous_video_url = record.video_url
     video_deleted = False
+    file_size = 0
 
     try:
         # 保存文件到服务器
-        with open(file_path, "wb") as buffer:  # 以二进制写入模式打开文件
-            buffer.write(video.file.read())  # 读取上传文件内容并写入
+        file_size = stream_upload_to_path(video, file_path, MAX_FILE_SIZE)
 
         # 根据 keep_video 参数决定是否保留文件
         if keep_video:
@@ -82,6 +75,9 @@ def upload_video(  # 定义上传视频函数
 
         db.commit()  # 提交数据库事务，保存更改
         db.refresh(record)  # 刷新记录对象，获取最新数据
+    except VideoUploadTooLargeError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="文件大小超过 50MB 限制")
     except Exception:
         db.rollback()
         delete_video_file(build_video_url(unique_filename))
