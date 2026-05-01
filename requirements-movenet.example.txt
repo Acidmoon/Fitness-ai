@@ -1,0 +1,10 @@
+# Optional dependencies for MoveNet pose analysis.
+# Keep the core backend usable without these packages while MOVENET_ENABLED=false.
+#
+# Python compatibility matters for TensorFlow Lite runtimes. The local demo wheel
+# in movenet/ targets cp310 and is not suitable for the current Python 3.13 venv.
+numpy
+opencv-python-headless
+# Install one compatible TensorFlow Lite interpreter option for your runtime:
+# tflite-runtime
+# tensorflow

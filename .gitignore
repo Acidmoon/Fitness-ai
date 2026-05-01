@@ -33,6 +33,7 @@ DEV/
 .coverage
 nul
 Fitness-ai-frontend/
+movenet/
 .cowork-temp/
 AGENTS.md
 .codex/

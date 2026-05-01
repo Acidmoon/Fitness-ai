@@ -260,6 +260,30 @@ pip install -r requirements.txt
 
 ---
 
+## MoveNet 姿态分析运行时
+
+MoveNet 姿态分析默认关闭，不影响普通后端启动。启用前需要额外安装 OpenCV、NumPy，以及与当前 Python 版本兼容的 TensorFlow Lite 解释器。当前仓库根目录的 `movenet/` 仅作为本地实验素材目录，默认不跟踪、不上传。
+
+可选依赖参考：
+
+```bash
+pip install -r requirements-movenet.example.txt
+```
+
+环境变量：
+
+```bash
+MOVENET_ENABLED=false
+MOVENET_MODEL_PATH=
+MOVENET_MODEL_VARIANT=thunder
+MOVENET_MIN_CONFIDENCE=0.3
+MOVENET_SAMPLE_FPS=5
+```
+
+注意：本地 `movenet/` 目录内的 `tflite_runtime-2.18.0-cp310-cp310-win_amd64.whl` 只适配 Python 3.10；当前后端虚拟环境是 Python 3.13 时不能直接安装该 wheel。生产环境应通过 `MOVENET_MODEL_PATH` 指向外部提供的 `.tflite` 模型文件。
+
+---
+
 ## 🛠 代码质量工具
 
 ### 格式化代码

@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_MAX_FAILURES: int = 5
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
 
+    # MoveNet 姿态分析配置（默认关闭，避免缺少 native 推理依赖时影响启动）
+    MOVENET_ENABLED: bool = False
+    MOVENET_MODEL_PATH: str = ""
+    MOVENET_MODEL_VARIANT: str = "thunder"
+    MOVENET_MIN_CONFIDENCE: float = 0.3
+    MOVENET_SAMPLE_FPS: int = 5
+
     # CORS 配置
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
 
@@ -56,6 +63,30 @@ class Settings(BaseSettings):
     def validate_positive_int(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("登录限流配置必须为正整数")
+        return value
+
+    @field_validator("MOVENET_MODEL_VARIANT")
+    @classmethod
+    def validate_movenet_model_variant(cls, value: str) -> str:
+        model_variant = value.strip().lower()
+        if model_variant not in {"lightning", "thunder", "custom"}:
+            raise ValueError(
+                "MOVENET_MODEL_VARIANT 必须是 lightning、thunder 或 custom"
+            )
+        return model_variant
+
+    @field_validator("MOVENET_MIN_CONFIDENCE")
+    @classmethod
+    def validate_movenet_min_confidence(cls, value: float) -> float:
+        if value < 0 or value > 1:
+            raise ValueError("MOVENET_MIN_CONFIDENCE 必须在 0 到 1 之间")
+        return value
+
+    @field_validator("MOVENET_SAMPLE_FPS")
+    @classmethod
+    def validate_movenet_sample_fps(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("MOVENET_SAMPLE_FPS 必须为正整数")
         return value
 
     @property
