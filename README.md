@@ -1,6 +1,6 @@
 # Fitness-ai Backend
 
-校园健康体适能检测与管理系统的后端服务，基于 FastAPI 构建，提供用户认证、运动记录管理、数据统计和视频上传等功能。
+校园健康体适能检测与管理系统，当前包含 FastAPI 后端与 Vite + React 前端，提供用户认证、运动记录管理、数据统计、视频上传，以及基于 MoveNet 的姿态分析与动作评分能力。
 
 ---
 
@@ -42,6 +42,7 @@ Fitness-ai-backend/
 │   ├── exceptions.py           # 异常处理
 │   ├── api/
 │   │   ├── auth.py             # 认证接口 (注册/登录)
+│   │   ├── ai.py               # AI 接口 (姿态分析/动作评分)
 │   │   ├── exercise.py         # 运动接口 (动作库/记录)
 │   │   ├── stats.py            # 数据统计接口
 │   │   ├── user.py             # 用户资料管理 (新增)
@@ -57,14 +58,27 @@ Fitness-ai-backend/
 │   │   ├── __init__.py         # Schema 导出
 │   │   ├── user.py             # 用户数据验证
 │   │   ├── exercise.py         # 运动数据验证
+│   │   ├── pose_analysis.py    # 姿态分析模型
+│   │   ├── pose_scoring.py     # 动作评分模型
 │   │   └── stats.py            # 数据统计模型
+│   ├── services/
+│   │   ├── pose_analysis_runtime.py   # MoveNet 运行时
+│   │   ├── video_pose_analysis.py     # 视频姿态分析
+│   │   └── exercise_pose_scoring.py   # 规则评分逻辑
 │   └── utils/
 │       ├── sanitizer.py        # 敏感信息脱敏
 │       └── security.py         # 密码加密/JWT/认证
+├── Fitness-ai-frontend/
+│   ├── src/                    # React 前端源码
+│   ├── package.json            # 前端依赖与脚本
+│   └── vite.config.ts          # Vite 构建配置
 ├── tests/
 │   ├── conftest.py             # 测试配置
 │   ├── test_auth.py            # 认证模块测试
+│   ├── test_ai_pose_analysis.py # AI 姿态分析接口测试
 │   ├── test_exercise.py        # 运动记录测试
+│   ├── test_exercise_pose_scoring.py # AI 动作评分测试
+│   ├── test_pose_analysis_runtime.py # MoveNet 运行时测试
 │   ├── test_stats.py           # 统计功能测试
 │   ├── test_user.py            # 用户模块测试
 │   └── test_video.py           # 视频模块测试
@@ -116,6 +130,13 @@ Fitness-ai-backend/
 | POST | `/records/{record_id}/video` | 上传视频（支持 `keep_video` 参数） | ✅ |
 | DELETE | `/records/{record_id}/video` | 删除视频 | ✅ |
 | GET | `/videos/{filename}` | 访问视频（路径穿越防护） | ✅ |
+
+### AI 模块 `/api/ai`
+| 方法 | 路由 | 说明 | 认证 |
+|------|------|------|------|
+| POST | `/records/{record_id}/pose-analysis` | 触发记录视频姿态分析 | ✅ |
+| GET | `/records/{record_id}/pose-analysis` | 获取已保存姿态分析结果 | ✅ |
+| POST | `/records/{record_id}/pose-scoring` | 预览或显式应用 AI 动作评分 | ✅ |
 
 ### 用户模块 `/api/user`
 | 方法 | 路由 | 说明 | 认证 |
@@ -196,6 +217,15 @@ uvicorn app.main:app --reload
 - **ReDoc**: http://127.0.0.1:8000/redoc
 - **OpenAPI JSON**: http://127.0.0.1:8000/openapi.json
 
+### 8. 启动前端
+```bash
+cd Fitness-ai-frontend
+npm install
+npm run dev
+```
+
+前端默认使用 Vite，本地可通过 `npm run build` 验证生产构建，通过 `npm run test` 运行 Vitest。
+
 ---
 
 ## 🧪 运行测试
@@ -255,8 +285,10 @@ pip install -r requirements.txt
 | `-k` | 按关键字过滤测试 | `pytest -k "login"` |
 | `-m` | 按 marker 标记过滤（需先定义） | `pytest -m slow` |
 
-当前测试状态：**仓库含 65 个测试用例（建议以本机 pytest 实测结果为准）**
-测试覆盖率：**90%（2026-03-09 本地实测）**
+当前测试状态：
+
+- **后端**：`venv\Scripts\python -m pytest` 当前为 159 个测试用例（建议以本机 pytest 实测结果为准）
+- **前端**：`cd Fitness-ai-frontend && npm run test` 当前为 23 个测试用例
 
 ---
 
@@ -344,9 +376,14 @@ LOG_FORMAT=text  # 或 json（生产环境）
 - [x] 标准动作库
 - [x] 数据统计接口
 - [x] 视频上传功能
+- [x] MoveNet 运行时配置与可用性保护
+- [x] 记录视频姿态分析接口
+- [x] 基于规则的动作评分接口（深蹲 / 俯卧撑）
+- [x] React 前端基础工程与主流程页面
+- [x] 记录详情页姿态分析与动作评分交互
 - [x] 日期范围过滤
 - [x] 动作 ID 过滤
-- [x] 测试体系建设（64 个测试用例）
+- [x] 后端与前端测试体系建设
 - [x] 代码质量工具集成（black, flake8）
 - [x] 日志系统（敏感信息脱敏、请求日志、异常处理）
 - [x] 安全修复（配置集中管理、路径穿越防护、CORS 环境配置）
