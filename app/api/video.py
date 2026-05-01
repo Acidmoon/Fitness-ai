@@ -58,6 +58,7 @@ def upload_video(  # 定义上传视频函数
         raise HTTPException(status_code=500, detail="视频文件路径生成失败")
 
     previous_video_url = record.video_url
+    should_replace_previous_video = keep_video
     video_deleted = False
     file_size = 0
 
@@ -71,7 +72,8 @@ def upload_video(  # 定义上传视频函数
         else:  # 不保留视频（临时处理）
             video_deleted = True  # 标记视频已删除
             delete_video_file(build_video_url(unique_filename))
-            record.video_url = None  # 不存储视频路径
+            # 临时上传不应影响记录原本已保存的视频引用
+            record.video_url = previous_video_url
 
         db.commit()  # 提交数据库事务，保存更改
         db.refresh(record)  # 刷新记录对象，获取最新数据
@@ -83,7 +85,7 @@ def upload_video(  # 定义上传视频函数
         delete_video_file(build_video_url(unique_filename))
         raise
 
-    if previous_video_url and previous_video_url != record.video_url:
+    if should_replace_previous_video and previous_video_url != record.video_url:
         delete_video_file(previous_video_url)
 
     return {  # 返回成功响应

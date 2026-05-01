@@ -22,6 +22,12 @@ The system SHALL allow an authenticated active user to upload a video for an exe
 - **THEN** the system does not persist a `video_url`
 - **THEN** the system returns `video_deleted` as `true`
 
+#### Scenario: Temporary upload preserves existing stored video
+- **WHEN** an authenticated active user uploads a supported video file with `keep_video=false` for a record that already references a stored owned video
+- **THEN** the system deletes only the newly uploaded temporary file
+- **THEN** the system keeps the existing stored `video_url` on the record
+- **THEN** the system keeps the previously stored owned file on disk
+
 #### Scenario: Unsupported video format
 - **WHEN** an authenticated active user uploads a file whose extension is not one of `.mp4`, `.avi`, `.mov`, or `.mkv`
 - **THEN** the system returns `400 Bad Request`

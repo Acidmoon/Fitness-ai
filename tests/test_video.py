@@ -228,6 +228,54 @@ class TestVideoUpload:
         # 目录应为空，说明临时文件已删除
         assert len(list(upload_dir.iterdir())) == 0
 
+    def test_temporary_upload_preserves_existing_stored_video(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试临时上传不会删除记录原有的永久视频"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+        old_filename = "existing-video.mp4"
+        old_file = upload_dir / old_filename
+        old_file.write_bytes(b"stored video content")
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+            video_url=f"/videos/{old_filename}",
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        video_content = BytesIO(b"temporary upload content")
+        video_content.name = "temp.mp4"
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            response = client.post(
+                f"/api/video/records/{record.id}/video?keep_video=false",
+                headers=headers,
+                files={"video": ("temp.mp4", video_content, "video/mp4")},
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["video_deleted"] is True
+        assert data["video_url"] is None
+        assert old_file.exists()
+
+        db_session.refresh(record)
+        assert record.video_url == f"/videos/{old_filename}"
+        assert [path.name for path in upload_dir.iterdir()] == [old_filename]
+
     def test_upload_video_keep_video_true_explicit(
         self, client, db_session, test_user, tmp_path
     ):
