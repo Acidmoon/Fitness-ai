@@ -12,6 +12,8 @@ def _validate_username(v: str) -> str:
         raise ValueError("用户名长度 3-50 个字符")
     if not re.match(r"^[a-zA-Z0-9_]+$", v):
         raise ValueError("用户名只能包含字母、数字和下划线")
+    if v.isdigit():
+        raise ValueError("用户名不能为纯数字")
     return v
 
 

@@ -65,9 +65,11 @@ def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    # 平滑迁移：判断 sub 是数字(id) 还是字符串(username)
+    # 平滑迁移：优先按 id 解析，若不存在则兼容旧版纯数字用户名 token
     if sub.isdigit():
         user = db.query(User).filter(User.id == int(sub)).first()
+        if user is None:
+            user = db.query(User).filter(User.username == sub).first()
     else:
         user = db.query(User).filter(User.username == sub).first()
 

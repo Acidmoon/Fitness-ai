@@ -117,6 +117,18 @@ class TestRegister:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
+    def test_register_username_numeric_only(self, client, db_session):
+        """测试用户名不能为纯数字"""
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "username": "123456",
+                "email": "new@example.com",
+                "password": "password123",
+            },
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
     def test_register_invalid_email(self, client, db_session):
         """测试邮箱格式无效"""
         response = client.post(
@@ -187,3 +199,28 @@ class TestLogin:
         headers_username = {"Authorization": f"Bearer {token_with_username}"}
         response_username = client.get("/api/user/profile", headers=headers_username)
         assert response_username.status_code == status.HTTP_200_OK
+
+    def test_token_migration_supports_numeric_legacy_username_without_id_collision(
+        self, client, db_session
+    ):
+        """测试纯数字旧用户名 token 在无同 id 用户时仍可解析"""
+        from app.models.user import User
+        from app.utils.security import hash_password
+
+        legacy_numeric_user = User(
+            username="123456",
+            email="numeric@example.com",
+            password_hash=hash_password("password123"),
+            is_active=True,
+        )
+        db_session.add(legacy_numeric_user)
+        db_session.commit()
+
+        token_with_numeric_username = create_access_token(
+            {"sub": legacy_numeric_user.username}
+        )
+        headers = {"Authorization": f"Bearer {token_with_numeric_username}"}
+        response = client.get("/api/user/profile", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["username"] == legacy_numeric_user.username

@@ -1,10 +1,4 @@
-# Authentication Specification
-
-## Purpose
-
-Define the current authentication behavior for user registration, login, and JWT-based identity resolution.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: User registration
 The system SHALL allow a new user to register with a username, email, and password that pass schema validation, and the username SHALL not be only digits.
@@ -28,18 +22,6 @@ The system SHALL allow a new user to register with a username, email, and passwo
 #### Scenario: Numeric-only username registration
 - **WHEN** a client submits a username containing only digits
 - **THEN** the system returns `422 Unprocessable Content`
-
-### Requirement: User login
-The system SHALL authenticate users with username and password and issue a bearer token on success.
-
-#### Scenario: Successful login
-- **WHEN** a client submits valid credentials to `POST /api/auth/login`
-- **THEN** the system returns an `access_token`
-- **THEN** the system returns `token_type` as `bearer`
-
-#### Scenario: Invalid credentials
-- **WHEN** a client submits an unknown username or incorrect password
-- **THEN** the system returns `401 Unauthorized`
 
 ### Requirement: JWT subject handling
 The system SHALL issue login tokens with `user.id` as the JWT `sub` claim and SHALL continue accepting legacy username-based `sub` values when resolving the current user, including numeric legacy usernames when no matching id exists.

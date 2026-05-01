@@ -100,6 +100,15 @@ class TestUpdateProfile:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
+    def test_update_profile_numeric_only_username(self, client, db_session, test_user):
+        """测试资料更新时用户名不能为纯数字"""
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.put(
+            "/api/user/profile", headers=headers, json={"username": "123456"}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
     def test_update_profile_inactive_user_forbidden(
         self, client, db_session, inactive_test_user
     ):
