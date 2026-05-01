@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    LOGIN_RATE_LIMIT_MAX_FAILURES: int = 5
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
 
     # CORS 配置
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
@@ -48,6 +50,13 @@ class Settings(BaseSettings):
         if not secret_key or secret_key in PLACEHOLDER_SECRET_KEYS:
             raise ValueError("SECRET_KEY 必须设置为安全的非默认值")
         return secret_key
+
+    @field_validator("LOGIN_RATE_LIMIT_MAX_FAILURES", "LOGIN_RATE_LIMIT_WINDOW_SECONDS")
+    @classmethod
+    def validate_positive_int(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("登录限流配置必须为正整数")
+        return value
 
     @property
     def allowed_origins_list(self) -> List[str]:

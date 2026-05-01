@@ -2,6 +2,19 @@ from fastapi import status
 from io import BytesIO
 from unittest.mock import patch
 
+VALID_MP4_BYTES = (
+    b"\x00\x00\x00\x20ftypmp42"
+    b"\x00\x00\x00\x00"
+    b"mp42isom"
+    b"\x00\x00\x00\x08mdat"
+)
+
+
+def make_mp4_file(name: str = "test.mp4", content: bytes = VALID_MP4_BYTES) -> BytesIO:
+    video_content = BytesIO(content)
+    video_content.name = name
+    return video_content
+
 
 class TestVideoUpload:
     """视频上传接口测试"""
@@ -48,8 +61,7 @@ class TestVideoUpload:
         upload_dir.mkdir()
 
         # 模拟视频文件
-        video_content = BytesIO(b"fake video content")
-        video_content.name = "test.mp4"
+        video_content = make_mp4_file()
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
@@ -110,8 +122,7 @@ class TestVideoUpload:
         upload_dir = tmp_path / "videos"
         upload_dir.mkdir()
 
-        video_content = BytesIO(b"fake video content")
-        video_content.name = "test.mp4"
+        video_content = make_mp4_file()
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
@@ -132,8 +143,7 @@ class TestVideoUpload:
 
         upload_dir = tmp_path / "videos"
         upload_dir.mkdir()
-        video_content = BytesIO(b"fake video content")
-        video_content.name = "test.mp4"
+        video_content = make_mp4_file()
 
         headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
@@ -166,8 +176,7 @@ class TestVideoUpload:
         upload_dir = tmp_path / "videos"
         upload_dir.mkdir()
 
-        video_content = BytesIO(b"fake video content")
-        video_content.name = "test.mp4"
+        video_content = make_mp4_file()
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
@@ -207,8 +216,7 @@ class TestVideoUpload:
         upload_dir = tmp_path / "videos"
         upload_dir.mkdir()
 
-        video_content = BytesIO(b"fake video content")
-        video_content.name = "test.mp4"
+        video_content = make_mp4_file()
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
@@ -255,8 +263,7 @@ class TestVideoUpload:
         db_session.add(record)
         db_session.commit()
 
-        video_content = BytesIO(b"temporary upload content")
-        video_content.name = "temp.mp4"
+        video_content = make_mp4_file("temp.mp4")
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
@@ -300,8 +307,7 @@ class TestVideoUpload:
         upload_dir = tmp_path / "videos"
         upload_dir.mkdir()
 
-        video_content = BytesIO(b"fake video content")
-        video_content.name = "test.mp4"
+        video_content = make_mp4_file()
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
@@ -350,8 +356,7 @@ class TestVideoUpload:
         db_session.add(record)
         db_session.commit()
 
-        video_content = BytesIO(b"new fake video content")
-        video_content.name = "test.mp4"
+        video_content = make_mp4_file()
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
@@ -395,8 +400,7 @@ class TestVideoUpload:
         db_session.add(record)
         db_session.commit()
 
-        video_content = BytesIO(b"new fake video content")
-        video_content.name = "test.mp4"
+        video_content = make_mp4_file()
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
         def failing_cleanup(video_url):
@@ -445,8 +449,9 @@ class TestVideoUpload:
         upload_dir.mkdir()
 
         original_chunk_size = video_files.UPLOAD_CHUNK_SIZE
-        oversized_content = BytesIO(b"a" * 5)
-        oversized_content.name = "oversized.mp4"
+        oversized_content = make_mp4_file(
+            "oversized.mp4", VALID_MP4_BYTES + b"a" * 32
+        )
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
@@ -463,13 +468,125 @@ class TestVideoUpload:
         assert list(upload_dir.iterdir()) == []
         assert video_files.UPLOAD_CHUNK_SIZE == original_chunk_size
 
+    def test_upload_video_rejects_mismatched_mime_type(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试扩展名与 MIME 类型不匹配时拒绝上传"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        video_content = make_mp4_file()
+
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            response = client.post(
+                f"/api/video/records/{record.id}/video",
+                headers=headers,
+                files={"video": ("test.mp4", video_content, "text/plain")},
+            )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "MIME" in response.json()["detail"]
+        assert list(upload_dir.iterdir()) == []
+
+    def test_upload_video_rejects_disguised_non_video_content(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试伪装成视频扩展名的非视频内容会被拒绝"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+
+        video_content = BytesIO(b"plain text payload")
+        video_content.name = "test.mp4"
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            response = client.post(
+                f"/api/video/records/{record.id}/video",
+                headers=headers,
+                files={"video": ("test.mp4", video_content, "video/mp4")},
+            )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "内容与扩展名不匹配" in response.json()["detail"]
+        assert list(upload_dir.iterdir()) == []
+
+    def test_upload_video_accepts_supported_signature(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试受支持的视频签名可以通过校验"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+
+        video_content = make_mp4_file()
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            response = client.post(
+                f"/api/video/records/{record.id}/video",
+                headers=headers,
+                files={
+                    "video": ("test.mp4", video_content, "application/octet-stream")
+                },
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["video_deleted"] is False
+
     def test_upload_video_cleans_partial_file_on_write_failure(
         self, client, db_session, test_user, tmp_path
     ):
         """测试写入中途失败时清理部分文件"""
         from app.models.exercise import Exercise, ExerciseRecord
         from app.api import video as video_api
-        from app.utils.video_files import UPLOAD_CHUNK_SIZE
 
         exercise = Exercise(name="测试动作", category="上肢")
         db_session.add(exercise)
@@ -489,23 +606,40 @@ class TestVideoUpload:
         upload_dir.mkdir()
 
         class FailingFile:
-            def __init__(self):
-                self._reads = 0
+            def __init__(self, content: bytes):
+                self._buffer = BytesIO(content)
+                self._stream_reads = 0
+                self._streaming_started = False
 
-            def read(self, _size):
-                self._reads += 1
-                if self._reads == 1:
-                    return b"a" * min(UPLOAD_CHUNK_SIZE, 8)
-                raise OSError("disk write interrupted")
+            def read(self, size=-1):
+                if self._streaming_started:
+                    self._stream_reads += 1
+                    if self._stream_reads == 2:
+                        raise OSError("disk write interrupted")
+                return self._buffer.read(size)
 
-            def seek(self, *_args):
-                return 0
+            def seek(self, offset, whence=0):
+                result = self._buffer.seek(offset, whence)
+                if offset == 0 and whence == 0:
+                    self._streaming_started = True
+                return result
+
+            def tell(self):
+                return self._buffer.tell()
 
         failing_upload = type(
-            "FailingUpload", (), {"filename": "broken.mp4", "file": FailingFile()}
+            "FailingUpload",
+            (),
+            {
+                "filename": "broken.mp4",
+                "content_type": "video/mp4",
+                "file": FailingFile(VALID_MP4_BYTES + b"abcdefghijk"),
+            },
         )()
 
-        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
+            "app.utils.video_files.UPLOAD_CHUNK_SIZE", 8
+        ):
             try:
                 video_api.upload_video(
                     record_id=record.id,

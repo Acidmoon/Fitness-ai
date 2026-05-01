@@ -1,12 +1,16 @@
 # E:\Fitness-ai-backend\app\api\auth.py
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, Token
+from app.utils.login_rate_limit import (
+    build_login_rate_limit_scope,
+    login_failure_limiter,
+)
 from app.utils.security import (
     JWT_SUB_TYPE_USER_ID,
     create_access_token,
@@ -49,11 +53,21 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
 ):
     """用户登录"""
+    rate_limit_scope = build_login_rate_limit_scope(request, form_data.username)
+    if login_failure_limiter.is_limited(rate_limit_scope):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="登录尝试过于频繁，请稍后再试",
+        )
+
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.password_hash):
+        login_failure_limiter.register_failure(rate_limit_scope)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
@@ -65,6 +79,7 @@ def login(
             status_code=status.HTTP_403_FORBIDDEN, detail="账户已被注销"
         )
 
+    login_failure_limiter.clear_scope(rate_limit_scope)
     access_token = create_access_token(
         data={"sub": str(user.id), "sub_type": JWT_SUB_TYPE_USER_ID}
     )

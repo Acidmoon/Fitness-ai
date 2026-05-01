@@ -1,5 +1,6 @@
 from fastapi import status
 from jose import jwt
+from unittest.mock import patch
 from app.config import settings
 from app.utils.security import JWT_SUB_TYPE_USER_ID, create_access_token
 
@@ -278,3 +279,84 @@ class TestLogin:
         response = client.get("/api/user/profile", headers=headers)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_login_rate_limit_throttles_repeated_failures(
+        self, client, db_session, test_user, monkeypatch
+    ):
+        """测试重复失败登录会触发限流"""
+        monkeypatch.setattr(settings, "LOGIN_RATE_LIMIT_MAX_FAILURES", 2)
+        monkeypatch.setattr(settings, "LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300)
+
+        first_response = client.post(
+            "/api/auth/login",
+            data={"username": "testuser", "password": "wrongpassword"},
+        )
+        second_response = client.post(
+            "/api/auth/login",
+            data={"username": "testuser", "password": "wrongpassword"},
+        )
+        third_response = client.post(
+            "/api/auth/login",
+            data={"username": "testuser", "password": "wrongpassword"},
+        )
+
+        assert first_response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert second_response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert third_response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+
+    def test_login_rate_limit_success_resets_failure_pressure(
+        self, client, db_session, test_user, monkeypatch
+    ):
+        """测试成功登录会清空失败计数"""
+        monkeypatch.setattr(settings, "LOGIN_RATE_LIMIT_MAX_FAILURES", 2)
+        monkeypatch.setattr(settings, "LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300)
+
+        failed_response = client.post(
+            "/api/auth/login",
+            data={"username": "testuser", "password": "wrongpassword"},
+        )
+        success_response = client.post(
+            "/api/auth/login",
+            data={"username": "testuser", "password": "password123"},
+        )
+        failed_after_reset_one = client.post(
+            "/api/auth/login",
+            data={"username": "testuser", "password": "wrongpassword"},
+        )
+        failed_after_reset_two = client.post(
+            "/api/auth/login",
+            data={"username": "testuser", "password": "wrongpassword"},
+        )
+
+        assert failed_response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert success_response.status_code == status.HTTP_200_OK
+        assert failed_after_reset_one.status_code == status.HTTP_401_UNAUTHORIZED
+        assert failed_after_reset_two.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_login_rate_limit_scope_isolation(
+        self, client, db_session, test_user, monkeypatch
+    ):
+        """测试不同 scope 不互相影响"""
+        monkeypatch.setattr(settings, "LOGIN_RATE_LIMIT_MAX_FAILURES", 2)
+        monkeypatch.setattr(settings, "LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300)
+
+        with patch(
+            "app.api.auth.build_login_rate_limit_scope",
+            side_effect=["scope-a", "scope-a", "scope-b"],
+        ):
+            first_response = client.post(
+                "/api/auth/login",
+                data={"username": "testuser", "password": "wrongpassword"},
+            )
+            second_response = client.post(
+                "/api/auth/login",
+                data={"username": "testuser", "password": "wrongpassword"},
+            )
+            third_response = client.post(
+                "/api/auth/login",
+                data={"username": "testuser", "password": "password123"},
+            )
+
+        assert first_response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert second_response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert third_response.status_code == status.HTTP_200_OK

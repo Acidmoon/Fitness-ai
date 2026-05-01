@@ -13,6 +13,7 @@ os.environ.setdefault(
 
 from app.database import Base, get_db
 from app.main import app
+from app.utils.login_rate_limit import clear_all_login_rate_limits
 from app.utils.security import hash_password
 
 # 使用 SQLite 内存数据库进行测试（无需 PostgreSQL）
@@ -30,6 +31,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 @pytest.fixture(scope="function")
 def db_session():
     """创建数据库表并返回会话"""
+    clear_all_login_rate_limits()
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
@@ -37,6 +39,7 @@ def db_session():
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
+        clear_all_login_rate_limits()
 
 
 @pytest.fixture(scope="function")

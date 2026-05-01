@@ -5,16 +5,18 @@
 Define the current behavior for uploading, deleting, and accessing exercise record videos.
 ## Requirements
 ### Requirement: Authenticated users can upload videos for owned records
-The system SHALL allow an authenticated active user to upload a video for an exercise record they own through `POST /api/video/records/{record_id}/video` using streamed writes to disk, and replacement cleanup SHALL be observable when an old stored file cannot be removed after the new reference is persisted.
+The system SHALL allow an authenticated active user to upload a video for an exercise record they own through `POST /api/video/records/{record_id}/video` using streamed writes to disk, and the system SHALL accept an upload only when its extension, declared media type, and detected file signature all satisfy the supported video policy.
 
 #### Scenario: Successful permanent video upload
 - **WHEN** an authenticated active user uploads a supported video file within the size limit for a record they own
+- **THEN** the system validates the file before persistence
 - **THEN** the system streams the upload to disk
 - **THEN** the system persists `video_url` for the record
 - **THEN** the system returns `video_deleted` as `false`
 
 #### Scenario: Temporary upload mode
 - **WHEN** an authenticated active user uploads a supported video file with `keep_video=false`
+- **THEN** the system validates the file before persistence
 - **THEN** the system streams the upload to disk
 - **THEN** the system deletes the uploaded file immediately
 - **THEN** the system does not persist a `video_url`
@@ -29,6 +31,19 @@ The system SHALL allow an authenticated active user to upload a video for an exe
 #### Scenario: Unsupported video format
 - **WHEN** an authenticated active user uploads a file whose extension is not one of `.mp4`, `.avi`, `.mov`, or `.mkv`
 - **THEN** the system returns `400 Bad Request`
+
+#### Scenario: MIME type does not match allowed video policy
+- **WHEN** an authenticated active user uploads a file whose declared media type is incompatible with the provided supported extension
+- **THEN** the system returns `400 Bad Request`
+
+#### Scenario: File signature does not match declared video type
+- **WHEN** an authenticated active user uploads a file whose detected header signature does not match any accepted supported video container
+- **THEN** the system returns `400 Bad Request`
+
+#### Scenario: Disguised non-video file is rejected
+- **WHEN** an authenticated active user uploads non-video content renamed to use a supported video extension
+- **THEN** the system returns `400 Bad Request`
+- **THEN** the system does not persist the file to disk
 
 #### Scenario: Record not found for upload
 - **WHEN** an authenticated active user uploads a video for a record they do not own or that does not exist
@@ -154,4 +169,3 @@ The system SHALL reject invalid filenames and prevent path traversal during vide
 - **WHEN** cleanup is triggered for a record whose stored `video_url` does not resolve to an owned file inside the upload directory
 - **THEN** the system skips file deletion for that path
 - **THEN** the system continues the database operation without deleting files outside the upload directory
-

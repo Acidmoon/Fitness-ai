@@ -10,12 +10,14 @@ from app.models.user import User
 from app.utils.security import get_current_user
 from app.utils.video_files import (
     VideoUploadTooLargeError,
+    UnsupportedVideoContentError,
     build_video_url,
     delete_video_file,
     ensure_upload_dir,
     get_filename_from_video_url,
     resolve_upload_path,
     stream_upload_to_path,
+    validate_video_upload_content,
 )
 
 router = APIRouter()
@@ -38,6 +40,10 @@ def upload_video(  # 定义上传视频函数
     file_ext = os.path.splitext(video.filename)[1].lower()  # 获取文件扩展名并转小写
     if file_ext not in ALLOWED_EXTENSIONS:  # 检查扩展名是否在允许列表中
         raise HTTPException(status_code=400, detail="不支持的视频格式")  # 抛出 400 错误
+    try:
+        validate_video_upload_content(video, file_ext)
+    except UnsupportedVideoContentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     # 检查运动记录是否存在且属于当前用户
     record = (
