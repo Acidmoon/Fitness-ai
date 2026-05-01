@@ -368,6 +368,58 @@ class TestVideoUpload:
         new_filename = data["video_url"].split("/")[-1]
         assert os.path.exists(upload_dir / new_filename)
 
+    def test_upload_video_replacement_cleanup_failure_keeps_new_reference(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试替换旧视频后清理失败不会回滚新引用"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+        old_filename = "old-video.mp4"
+        old_file = upload_dir / old_filename
+        old_file.write_bytes(b"old video content")
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+            video_url=f"/videos/{old_filename}",
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        video_content = BytesIO(b"new fake video content")
+        video_content.name = "test.mp4"
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+        def failing_cleanup(video_url):
+            if video_url == f"/videos/{old_filename}":
+                raise OSError("cleanup failed")
+            return "deleted"
+
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
+            "app.api.video.delete_video_file", side_effect=failing_cleanup
+        ):
+            response = client.post(
+                f"/api/video/records/{record.id}/video?keep_video=true",
+                headers=headers,
+                files={"video": ("test.mp4", video_content, "video/mp4")},
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["video_url"] != f"/videos/{old_filename}"
+        assert old_file.exists()
+        db_session.refresh(record)
+        assert record.video_url == data["video_url"]
+
     def test_upload_video_rejects_oversize_during_stream(
         self, client, db_session, test_user, tmp_path
     ):
@@ -582,6 +634,76 @@ class TestVideoDelete:
         response = client.delete("/api/video/records/1/video", headers=headers)
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_delete_video_missing_file_still_clears_reference(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试磁盘文件缺失时仍可清理数据库引用"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+            video_url="/videos/missing.mp4",
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            response = client.delete(
+                f"/api/video/records/{record.id}/video", headers=headers
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        db_session.refresh(record)
+        assert record.video_url is None
+
+    def test_delete_video_failure_keeps_reference(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试删除失败时返回 500 且保留数据库引用"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+            video_url="/videos/test.mp4",
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
+            "app.api.video.delete_video_file", side_effect=OSError("disk busy")
+        ):
+            response = client.delete(
+                f"/api/video/records/{record.id}/video", headers=headers
+            )
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        db_session.refresh(record)
+        assert record.video_url == "/videos/test.mp4"
 
 
 class TestVideoAccess:

@@ -1,7 +1,7 @@
 from fastapi import status
 from jose import jwt
 from app.config import settings
-from app.utils.security import create_access_token
+from app.utils.security import JWT_SUB_TYPE_USER_ID, create_access_token
 
 
 class TestRegister:
@@ -183,13 +183,25 @@ class TestLogin:
         )
         assert payload["sub"] == str(test_user["user"].id)
         assert payload["sub"].isdigit()
+        assert payload["sub_type"] == JWT_SUB_TYPE_USER_ID
+
+    def test_login_inactive_user_forbidden(self, client, db_session, inactive_test_user):
+        """测试已注销账户不能登录拿到新 token"""
+        response = client.post(
+            "/api/auth/login",
+            data={"username": "inactiveuser", "password": "password123"},
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "账户已被注销" in response.json()["detail"]
 
     def test_token_migration_supports_both_id_and_username(
         self, client, db_session, test_user
     ):
         """测试平滑迁移：同时支持 id 和 username 的 token"""
-        # 使用 id 创建 token（新格式）
-        token_with_id = create_access_token({"sub": str(test_user["user"].id)})
+        # 使用带显式类型的 id token（新格式）
+        token_with_id = create_access_token(
+            {"sub": str(test_user["user"].id), "sub_type": JWT_SUB_TYPE_USER_ID}
+        )
         headers_id = {"Authorization": f"Bearer {token_with_id}"}
         response_id = client.get("/api/user/profile", headers=headers_id)
         assert response_id.status_code == status.HTTP_200_OK
@@ -224,3 +236,45 @@ class TestLogin:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["username"] == legacy_numeric_user.username
+
+    def test_token_migration_supports_untyped_legacy_id_without_collision(
+        self, client, db_session, test_user
+    ):
+        """测试早期无类型 id token 在无碰撞时仍可解析"""
+        token_with_untyped_id = create_access_token({"sub": str(test_user["user"].id)})
+        headers = {"Authorization": f"Bearer {token_with_untyped_id}"}
+        response = client.get("/api/user/profile", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["username"] == test_user["user"].username
+
+    def test_token_migration_rejects_ambiguous_numeric_subject_collision(
+        self, client, db_session
+    ):
+        """测试无类型数字 sub 同时命中 id 和 username 且非同一用户时拒绝认证"""
+        from app.models.user import User
+        from app.utils.security import hash_password
+
+        legacy_numeric_user = User(
+            username="2",
+            email="legacy2@example.com",
+            password_hash=hash_password("password123"),
+            is_active=True,
+        )
+        id_owner = User(
+            username="id_owner",
+            email="id-owner@example.com",
+            password_hash=hash_password("password123"),
+            is_active=True,
+        )
+        db_session.add_all([legacy_numeric_user, id_owner])
+        db_session.commit()
+
+        assert legacy_numeric_user.id == 1
+        assert id_owner.id == 2
+
+        ambiguous_token = create_access_token({"sub": "2"})
+        headers = {"Authorization": f"Bearer {ambiguous_token}"}
+        response = client.get("/api/user/profile", headers=headers)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED

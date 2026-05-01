@@ -2,8 +2,8 @@
 
 from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
-from datetime import datetime, timezone
 from app.database import Base
+from app.utils.datetime import utc_now
 
 
 class Exercise(Base):
@@ -16,7 +16,7 @@ class Exercise(Base):
     category = Column(String(50))  # 上肢/下肢/核心
     description = Column(Text, nullable=True)  # 动作描述
     standard = Column(JSON, nullable=True)  # 动作标准{关节角度，次数要求等}
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # 修改
+    created_at = Column(DateTime, default=utc_now)  # 统一使用 UTC 语义
 
     # 关系
     records = relationship("ExerciseRecord", back_populates="exercise")
@@ -38,9 +38,7 @@ class ExerciseRecord(Base):
     video_url = Column(String(255), nullable=True)  # 视频存储路径
     keypoints_data = Column(JSON, nullable=True)  # 关键点数据
     feedback = Column(Text, nullable=True)  # AI 纠错建议
-    created_at = Column(
-        DateTime, default=lambda: datetime.now(timezone.utc), index=True
-    )  # 修改
+    created_at = Column(DateTime, default=utc_now, index=True)  # 统一使用 UTC 语义
 
     # 关系
     user = relationship("User", back_populates="records")

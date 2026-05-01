@@ -291,3 +291,25 @@ class TestDeleteAccount:
 
         assert response.status_code == status.HTTP_200_OK
         assert not video_path.exists()
+
+    def test_delete_account_failure_keeps_user(
+        self, client, db_session, test_user
+    ):
+        """测试删除账户时视频清理失败不会提交账户删除"""
+        from app.models.user import User
+        from unittest.mock import patch
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        with patch("app.api.user.delete_record_videos", side_effect=OSError("disk busy")):
+            response = client.request(
+                "DELETE",
+                "/api/user/account",
+                headers=headers,
+                json={"password": "password123"},
+            )
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        remaining_user = (
+            db_session.query(User).filter(User.id == test_user["user"].id).first()
+        )
+        assert remaining_user is not None

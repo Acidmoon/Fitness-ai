@@ -4,6 +4,9 @@ from typing import Iterable, Optional
 VIDEO_URL_PREFIX = "/videos/"
 UPLOAD_DIR = "uploads/videos"
 UPLOAD_CHUNK_SIZE = 1024 * 1024
+VIDEO_DELETE_STATUS_DELETED = "deleted"
+VIDEO_DELETE_STATUS_MISSING = "missing"
+VIDEO_DELETE_STATUS_SKIPPED = "skipped"
 
 
 class VideoUploadTooLargeError(Exception):
@@ -58,16 +61,17 @@ def resolve_video_path_from_url(video_url: Optional[str]) -> Optional[str]:
     return resolve_upload_path(filename)
 
 
-def delete_video_file(video_url: Optional[str]) -> bool:
+def delete_video_file(video_url: Optional[str]) -> str:
     file_path = resolve_video_path_from_url(video_url)
     if not file_path:
-        return False
+        return VIDEO_DELETE_STATUS_SKIPPED
 
-    if os.path.exists(file_path):
+    try:
         os.remove(file_path)
-        return True
+        return VIDEO_DELETE_STATUS_DELETED
+    except FileNotFoundError:
+        return VIDEO_DELETE_STATUS_MISSING
 
-    return False
 
 
 def delete_record_videos(records: Iterable) -> None:

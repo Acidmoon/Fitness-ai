@@ -1,4 +1,6 @@
 from fastapi import status
+from datetime import datetime
+from unittest.mock import patch
 
 
 class TestStats:
@@ -48,6 +50,45 @@ class TestStats:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert isinstance(data, list)
+
+    def test_get_weekly_stats_uses_utc_day_boundaries(
+        self, client, db_session, test_user
+    ):
+        """测试周统计按 UTC 日期边界分组"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        records = [
+            ExerciseRecord(
+                user_id=test_user["user"].id,
+                exercise_id=exercise.id,
+                score=80,
+                count=10,
+                duration=60,
+                created_at=datetime(2026, 1, 2, 23, 59, 59),
+            ),
+            ExerciseRecord(
+                user_id=test_user["user"].id,
+                exercise_id=exercise.id,
+                score=85,
+                count=12,
+                duration=65,
+                created_at=datetime(2026, 1, 3, 0, 0, 0),
+            ),
+        ]
+        db_session.add_all(records)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        with patch("app.api.stats.utc_now", return_value=datetime(2026, 1, 5, 12, 0, 0)):
+            response = client.get("/api/stats/weekly", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert [entry["date"] for entry in data] == ["2026-01-02", "2026-01-03"]
 
     def test_get_personal_best_requires_auth(self, client, db_session):
         """测试获取个人最佳需要认证"""

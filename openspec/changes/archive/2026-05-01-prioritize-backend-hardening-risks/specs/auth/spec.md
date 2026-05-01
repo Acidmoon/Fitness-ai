@@ -1,31 +1,4 @@
-# Authentication Specification
-
-## Purpose
-
-Define the current authentication behavior for user registration, login, and JWT-based identity resolution.
-## Requirements
-### Requirement: User registration
-The system SHALL allow a new user to register with a username, email, and password that pass schema validation, and the username SHALL not be only digits.
-
-#### Scenario: Successful registration
-- **WHEN** a client submits a unique username, a unique email, and a valid password to `POST /api/auth/register`
-- **THEN** the system returns the created user profile without a password hash
-
-#### Scenario: Duplicate username
-- **WHEN** a client submits a username that already exists
-- **THEN** the system returns `400 Bad Request`
-
-#### Scenario: Duplicate email
-- **WHEN** a client submits an email that already exists
-- **THEN** the system returns `400 Bad Request`
-
-#### Scenario: Invalid registration data
-- **WHEN** a client submits a username, email, or password that fails schema validation
-- **THEN** the system returns `422 Unprocessable Content`
-
-#### Scenario: Numeric-only username registration
-- **WHEN** a client submits a username containing only digits
-- **THEN** the system returns `422 Unprocessable Content`
+## MODIFIED Requirements
 
 ### Requirement: User login
 The system SHALL authenticate only active users with username and password and SHALL issue a bearer token on success.
@@ -63,4 +36,3 @@ The system SHALL issue login tokens with unambiguous current-user subject semant
 #### Scenario: Unsafe ambiguous numeric subject is rejected
 - **WHEN** an authenticated request presents a numeric-subject token that cannot be interpreted safely as either the current id-based format or the legacy username-based format
 - **THEN** the system returns `401 Unauthorized`
-

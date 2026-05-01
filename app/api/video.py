@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
+from loguru import logger
 from sqlalchemy.orm import Session
 import os
 import uuid
@@ -86,7 +87,14 @@ def upload_video(  # 定义上传视频函数
         raise
 
     if should_replace_previous_video and previous_video_url != record.video_url:
-        delete_video_file(previous_video_url)
+        try:
+            delete_video_file(previous_video_url)
+        except OSError as exc:
+            logger.warning(
+                "Failed to delete replaced video file for record {}: {}",
+                record.id,
+                str(exc),
+            )
 
     return {  # 返回成功响应
         "message": "视频上传成功",  # 成功消息
@@ -122,7 +130,10 @@ def delete_video(
     if not record.video_url:
         raise HTTPException(status_code=404, detail="该记录没有关联视频")
 
-    delete_video_file(record.video_url)
+    try:
+        delete_video_file(record.video_url)
+    except OSError:
+        raise HTTPException(status_code=500, detail="视频文件删除失败")
 
     # 更新数据库
     record.video_url = None  # 清空视频路径

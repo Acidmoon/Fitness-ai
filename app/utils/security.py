@@ -14,6 +14,7 @@ from app.models.user import User
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+JWT_SUB_TYPE_USER_ID = "user_id"
 
 
 def hash_password(password: str) -> str:
@@ -60,18 +61,28 @@ def get_current_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         sub: str = payload.get("sub")
+        sub_type: str | None = payload.get("sub_type")
         if sub is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
-    # 平滑迁移：优先按 id 解析，若不存在则兼容旧版纯数字用户名 token
-    if sub.isdigit():
+    if sub_type == JWT_SUB_TYPE_USER_ID:
+        if not sub.isdigit():
+            raise credentials_exception
         user = db.query(User).filter(User.id == int(sub)).first()
-        if user is None:
-            user = db.query(User).filter(User.username == sub).first()
-    else:
+    elif sub_type is None and sub.isdigit():
+        # 兼容历史 token：允许旧版纯数字用户名和早期无类型 id token，
+        # 但当两者指向不同用户时直接拒绝，避免身份串号。
+        id_user = db.query(User).filter(User.id == int(sub)).first()
+        username_user = db.query(User).filter(User.username == sub).first()
+        if id_user and username_user and id_user.id != username_user.id:
+            raise credentials_exception
+        user = username_user or id_user
+    elif sub_type is None:
         user = db.query(User).filter(User.username == sub).first()
+    else:
+        raise credentials_exception
 
     if user is None:
         raise credentials_exception

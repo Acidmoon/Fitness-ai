@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import List, Dict
 from app.database import get_db
 from app.models.exercise import ExerciseRecord, Exercise
 from app.models.user import User
 from app.schemas.stats import ExerciseStats, CategoryStats, RecentRecord, StatsSummary
+from app.utils.datetime import utc_now
 from app.utils.security import get_current_user
 
 router = APIRouter()
@@ -100,7 +101,7 @@ def get_weekly_stats(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """获取最近 7 天每日运动统计"""
-    today = datetime.now()
+    today = utc_now()
     seven_days_ago = today - timedelta(days=7)
 
     daily_stats = (

@@ -1,8 +1,8 @@
 # E:\Fitness-ai-backend\app\models\user.py
 from sqlalchemy.orm import relationship
 from sqlalchemy import Column, Integer, String, DateTime, Boolean
-from datetime import datetime, timezone
 from app.database import Base
+from app.utils.datetime import utc_now
 
 
 class User(Base):
@@ -18,11 +18,11 @@ class User(Base):
     email = Column(String(100), unique=True, index=True, nullable=False)  # 邮箱
     password_hash = Column(String(255), nullable=False)  # 加密后的密码
     is_active = Column(Boolean, default=True)  # 账户是否激活
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # 修改
+    created_at = Column(DateTime, default=utc_now)  # 统一使用 UTC 语义
     updated_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=utc_now,
+        onupdate=utc_now,
     )  # 修改
 
     def __repr__(self):

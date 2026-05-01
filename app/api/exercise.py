@@ -1,6 +1,6 @@
 # E:\Fitness-ai-backend\app\api\exercise.py
 
-from datetime import date, datetime
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -13,6 +13,7 @@ from app.schemas.exercise import (
     ExerciseRecordUpdate,
 )
 from app.utils.security import get_current_user
+from app.utils.datetime import utc_day_bounds
 from app.utils.video_files import delete_record_videos
 from app.models.user import User
 
@@ -63,14 +64,11 @@ def get_user_records(
     query = db.query(ExerciseRecord).filter(ExerciseRecord.user_id == current_user.id)
 
     if start_date:
-        query = query.filter(
-            ExerciseRecord.created_at
-            >= datetime.combine(start_date, datetime.min.time())
-        )
+        start_datetime, _ = utc_day_bounds(start_date)
+        query = query.filter(ExerciseRecord.created_at >= start_datetime)
     if end_date:
-        query = query.filter(
-            ExerciseRecord.created_at <= datetime.combine(end_date, datetime.max.time())
-        )
+        _, end_datetime = utc_day_bounds(end_date)
+        query = query.filter(ExerciseRecord.created_at <= end_datetime)
     if exercise_id:
         query = query.filter(ExerciseRecord.exercise_id == exercise_id)
 
@@ -153,7 +151,10 @@ def delete_record(
     if not db_record:
         raise HTTPException(status_code=404, detail="记录不存在")
 
-    delete_record_videos([db_record])
+    try:
+        delete_record_videos([db_record])
+    except OSError:
+        raise HTTPException(status_code=500, detail="记录关联视频清理失败")
     db.delete(db_record)
     db.commit()
     return {"message": "删除成功"}
@@ -176,7 +177,10 @@ def batch_delete_records(
         .all()
     )
     user_record_ids = {record.id for record in user_records}
-    delete_record_videos(user_records)
+    try:
+        delete_record_videos(user_records)
+    except OSError:
+        raise HTTPException(status_code=500, detail="记录关联视频清理失败")
 
     # 只删除属于当前用户的记录
     deleted_count = (

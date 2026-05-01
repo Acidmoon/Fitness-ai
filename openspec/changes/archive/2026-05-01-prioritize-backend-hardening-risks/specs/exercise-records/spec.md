@@ -1,15 +1,4 @@
-# Exercise Records Specification
-
-## Purpose
-
-Define the current behavior for exercise catalog access and authenticated exercise record management.
-## Requirements
-### Requirement: Exercise catalog is publicly readable
-The system SHALL return the standard exercise list from `GET /api/exercise/exercises` without requiring authentication.
-
-#### Scenario: Fetch exercise list
-- **WHEN** a client requests `GET /api/exercise/exercises`
-- **THEN** the system returns a list of available exercises
+## MODIFIED Requirements
 
 ### Requirement: Authenticated users can create exercise records
 The system SHALL allow an authenticated active user to create an exercise record for an existing exercise, and submitted metric and payload fields SHALL satisfy explicit validation bounds before persistence.
@@ -66,21 +55,6 @@ The system SHALL return only the authenticated active user's exercise records fr
 - **WHEN** an authenticated inactive user requests `GET /api/exercise/records`
 - **THEN** the system returns `403 Forbidden`
 
-### Requirement: Users can view record details they own
-The system SHALL return a record's details only when the authenticated active user owns that record.
-
-#### Scenario: Successful detail fetch
-- **WHEN** an authenticated active user requests `GET /api/exercise/records/{record_id}` for a record they own
-- **THEN** the system returns the record details
-
-#### Scenario: Record not found for detail fetch
-- **WHEN** an authenticated active user requests a record identifier they do not own or that does not exist
-- **THEN** the system returns `404 Not Found`
-
-#### Scenario: Inactive account fetches detail
-- **WHEN** an authenticated inactive user requests `GET /api/exercise/records/{record_id}`
-- **THEN** the system returns `403 Forbidden`
-
 ### Requirement: Users can update records they own
 The system SHALL allow an authenticated active user to update only the fields they provide for a record they own, and updated metric and payload fields SHALL satisfy the same validation bounds required at creation time.
 
@@ -104,29 +78,3 @@ The system SHALL allow an authenticated active user to update only the fields th
 #### Scenario: Inactive account updates record
 - **WHEN** an authenticated inactive user submits `PUT /api/exercise/records/{record_id}`
 - **THEN** the system returns `403 Forbidden`
-
-### Requirement: Users can delete records they own
-The system SHALL allow an authenticated active user to delete a single owned record or batch-delete multiple owned records.
-
-#### Scenario: Successful single delete
-- **WHEN** an authenticated active user sends `DELETE /api/exercise/records/{record_id}` for a record they own
-- **THEN** the system deletes the record
-- **THEN** the system returns a success message
-
-#### Scenario: Single delete record not found
-- **WHEN** an authenticated active user sends `DELETE /api/exercise/records/{record_id}` for a record they do not own or that does not exist
-- **THEN** the system returns `404 Not Found`
-
-#### Scenario: Successful batch delete
-- **WHEN** an authenticated active user sends `DELETE /api/exercise/records` with `record_ids` that belong to them
-- **THEN** the system deletes the owned matching records
-- **THEN** the system returns the number of deleted records
-
-#### Scenario: Batch delete ignores records owned by others
-- **WHEN** an authenticated active user includes record identifiers they do not own in a batch delete request
-- **THEN** the system deletes only the records they own
-
-#### Scenario: Inactive account deletes records
-- **WHEN** an authenticated inactive user submits single-delete or batch-delete requests for exercise records
-- **THEN** the system returns `403 Forbidden`
-

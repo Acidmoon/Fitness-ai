@@ -1,4 +1,5 @@
 from fastapi import status
+from app.schemas.exercise import MAX_FEEDBACK_LENGTH, MAX_KEYPOINTS_DATA_BYTES
 
 
 class TestExerciseRecords:
@@ -59,6 +60,79 @@ class TestExerciseRecords:
             headers=headers,
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_create_record_rejects_invalid_heart_rate(
+        self, client, db_session, test_user
+    ):
+        """测试创建记录时拒绝异常心率"""
+        from app.models.exercise import Exercise
+
+        exercise = Exercise(name="标准俯卧撑", category="上肢", description="测试动作")
+        db_session.add(exercise)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.post(
+            "/api/exercise/records",
+            json={
+                "exercise_id": exercise.id,
+                "score": 85.5,
+                "count": 20,
+                "duration": 120,
+                "heart_rate_avg": 10,
+            },
+            headers=headers,
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_create_record_rejects_oversized_feedback(
+        self, client, db_session, test_user
+    ):
+        """测试创建记录时拒绝超长反馈文本"""
+        from app.models.exercise import Exercise
+
+        exercise = Exercise(name="标准俯卧撑", category="上肢", description="测试动作")
+        db_session.add(exercise)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.post(
+            "/api/exercise/records",
+            json={
+                "exercise_id": exercise.id,
+                "score": 85.5,
+                "count": 20,
+                "duration": 120,
+                "feedback": "a" * (MAX_FEEDBACK_LENGTH + 1),
+            },
+            headers=headers,
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_create_record_rejects_oversized_keypoints_data(
+        self, client, db_session, test_user
+    ):
+        """测试创建记录时拒绝超大关键点数据"""
+        from app.models.exercise import Exercise
+
+        exercise = Exercise(name="标准俯卧撑", category="上肢", description="测试动作")
+        db_session.add(exercise)
+        db_session.commit()
+
+        oversized_payload = {"points": "a" * MAX_KEYPOINTS_DATA_BYTES}
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.post(
+            "/api/exercise/records",
+            json={
+                "exercise_id": exercise.id,
+                "score": 85.5,
+                "count": 20,
+                "duration": 120,
+                "keypoints_data": oversized_payload,
+            },
+            headers=headers,
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_get_user_records_requires_auth(self, client, db_session):
         """测试获取记录需要认证"""
@@ -163,6 +237,47 @@ class TestExerciseRecords:
         )
         assert response.status_code == status.HTTP_200_OK
         assert len(response.json()) == 2
+
+    def test_get_user_records_with_utc_date_boundaries(
+        self, client, db_session, test_user
+    ):
+        """测试记录列表按 UTC 日期边界过滤"""
+        from datetime import date, datetime
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        before_boundary = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+            created_at=datetime(2025, 12, 31, 23, 59, 59),
+        )
+        at_boundary = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=85,
+            count=15,
+            duration=90,
+            created_at=datetime(2026, 1, 1, 0, 0, 0),
+        )
+        db_session.add_all([before_boundary, at_boundary])
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.get(
+            f"/api/exercise/records?start_date={date(2026, 1, 1)}",
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        returned_ids = {record["id"] for record in response.json()}
+        assert at_boundary.id in returned_ids
+        assert before_boundary.id not in returned_ids
 
     def test_get_user_records_with_exercise_id_filter(
         self, client, db_session, test_user
@@ -324,6 +439,63 @@ class TestExerciseRecords:
             headers=headers,
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_update_record_rejects_invalid_heart_rate(
+        self, client, db_session, test_user
+    ):
+        """测试更新记录时拒绝异常心率"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.put(
+            f"/api/exercise/records/{record.id}",
+            json={"heart_rate_max": 500},
+            headers=headers,
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_update_record_rejects_oversized_keypoints_data(
+        self, client, db_session, test_user
+    ):
+        """测试更新记录时拒绝超大关键点数据"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        oversized_payload = {"points": "a" * MAX_KEYPOINTS_DATA_BYTES}
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.put(
+            f"/api/exercise/records/{record.id}",
+            json={"keypoints_data": oversized_payload},
+            headers=headers,
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_update_record_forbidden(self, client, db_session, test_user):
         """测试不能修改其他用户的记录"""
@@ -585,3 +757,75 @@ class TestExerciseRecords:
         assert response.status_code == status.HTTP_200_OK
         assert not video_one.exists()
         assert not video_two.exists()
+
+    def test_delete_record_failure_keeps_record(
+        self, client, db_session, test_user
+    ):
+        """测试记录清理视频失败时不提交删除"""
+        from app.models.exercise import Exercise, ExerciseRecord
+        from unittest.mock import patch
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+            video_url="/videos/record-delete.mp4",
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        with patch("app.api.exercise.delete_record_videos", side_effect=OSError("disk busy")):
+            response = client.delete(
+                f"/api/exercise/records/{record.id}",
+                headers=headers,
+            )
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert db_session.query(ExerciseRecord).filter_by(id=record.id).first() is not None
+
+    def test_batch_delete_records_failure_keeps_records(
+        self, client, db_session, test_user
+    ):
+        """测试批量清理视频失败时不提交删除"""
+        from app.models.exercise import Exercise, ExerciseRecord
+        from unittest.mock import patch
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        records = [
+            ExerciseRecord(
+                user_id=test_user["user"].id,
+                exercise_id=exercise.id,
+                score=80 + i,
+                count=10 + i,
+                duration=60 + i,
+                video_url=f"/videos/batch-{i}.mp4",
+            )
+            for i in range(2)
+        ]
+        db_session.add_all(records)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        with patch("app.api.exercise.delete_record_videos", side_effect=OSError("disk busy")):
+            response = client.delete(
+                f"/api/exercise/records?record_ids={records[0].id}&record_ids={records[1].id}",
+                headers=headers,
+            )
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        remaining = (
+            db_session.query(ExerciseRecord)
+            .filter(ExerciseRecord.id.in_([record.id for record in records]))
+            .all()
+        )
+        assert len(remaining) == 2

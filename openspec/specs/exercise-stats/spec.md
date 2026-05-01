@@ -3,9 +3,7 @@
 ## Purpose
 
 Define the current authenticated statistics endpoints for exercise summaries, recent trends, and personal bests.
-
 ## Requirements
-
 ### Requirement: Authenticated users can fetch summary statistics
 The system SHALL return aggregate exercise statistics for the authenticated active user from `GET /api/stats/summary`.
 
@@ -22,11 +20,15 @@ The system SHALL return aggregate exercise statistics for the authenticated acti
 - **THEN** the system returns `403 Forbidden`
 
 ### Requirement: Authenticated users can fetch weekly statistics
-The system SHALL return daily aggregated statistics for the authenticated active user for the recent seven-day window from `GET /api/stats/weekly`.
+The system SHALL return daily aggregated statistics for the authenticated active user for the recent seven-day window from `GET /api/stats/weekly`, and day-bucket calculation SHALL be stable across supported database backends through normalized timestamp semantics.
 
 #### Scenario: Successful weekly stats fetch
 - **WHEN** an authenticated active user requests `GET /api/stats/weekly`
 - **THEN** the system returns a list of daily statistics entries
+
+#### Scenario: Weekly stats use normalized day boundaries
+- **WHEN** the same stored exercise records are aggregated through supported database backends
+- **THEN** the system groups them into the same calendar-day buckets for the recent seven-day window
 
 #### Scenario: Authentication is required for weekly stats
 - **WHEN** a request to `GET /api/stats/weekly` does not include valid authentication
@@ -50,3 +52,4 @@ The system SHALL return per-exercise personal best values for the authenticated 
 #### Scenario: Inactive account requests personal best
 - **WHEN** an authenticated inactive user requests `GET /api/stats/personal-best`
 - **THEN** the system returns `403 Forbidden`
+

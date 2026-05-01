@@ -1,9 +1,5 @@
-# Video Management Specification
+## MODIFIED Requirements
 
-## Purpose
-
-Define the current behavior for uploading, deleting, and accessing exercise record videos.
-## Requirements
 ### Requirement: Authenticated users can upload videos for owned records
 The system SHALL allow an authenticated active user to upload a video for an exercise record they own through `POST /api/video/records/{record_id}/video` using streamed writes to disk, and replacement cleanup SHALL be observable when an old stored file cannot be removed after the new reference is persisted.
 
@@ -57,13 +53,6 @@ The system SHALL allow an authenticated active user to upload a video for an exe
 - **WHEN** an upload write fails after writing part of the file to disk
 - **THEN** the system removes any partial uploaded file
 - **THEN** the system does not persist a new `video_url`
-
-### Requirement: Uploaded video size is limited
-The system SHALL reject uploaded videos larger than 50 MB.
-
-#### Scenario: File exceeds maximum size
-- **WHEN** an authenticated user uploads a video larger than 50 MB
-- **THEN** the system returns `400 Bad Request`
 
 ### Requirement: Users can delete videos from owned records
 The system SHALL allow an authenticated active user to delete the video associated with a record they own through `DELETE /api/video/records/{record_id}/video`, and the database reference SHALL only be cleared when file cleanup is either complete, safely skipped, or already unnecessary.
@@ -123,35 +112,3 @@ The system SHALL remove owned stored video files when deleting exercise records 
 - **WHEN** cleanup is triggered for a record whose stored `video_url` does not resolve to an owned file inside the upload directory
 - **THEN** the system skips file deletion for that path
 - **THEN** the system continues the database operation without deleting files outside the upload directory
-
-### Requirement: Video access is authenticated and ownership-scoped
-The system SHALL require authentication and SHALL only serve video files associated with the authenticated active user's records from `GET /api/video/videos/{filename}`.
-
-#### Scenario: Authentication is required for video access
-- **WHEN** a request to `GET /api/video/videos/{filename}` does not include valid authentication
-- **THEN** the system returns `401 Unauthorized`
-
-#### Scenario: Accessing another user's video
-- **WHEN** an authenticated active user requests a filename that is not associated with one of their records
-- **THEN** the system returns `404 Not Found`
-
-#### Scenario: Accessing a missing file
-- **WHEN** an authenticated active user requests a filename associated with their record but the file does not exist on disk
-- **THEN** the system returns `404 Not Found`
-
-#### Scenario: Inactive account accesses video
-- **WHEN** an authenticated inactive user requests `GET /api/video/videos/{filename}`
-- **THEN** the system returns `403 Forbidden`
-
-### Requirement: Video filename input is path-safe
-The system SHALL reject invalid filenames and prevent path traversal during video access.
-
-#### Scenario: Illegal filename
-- **WHEN** a client requests a filename containing path separators or parent directory traversal markers
-- **THEN** the system returns `400 Bad Request`
-
-#### Scenario: Stored path is invalid or escapes upload directory
-- **WHEN** cleanup is triggered for a record whose stored `video_url` does not resolve to an owned file inside the upload directory
-- **THEN** the system skips file deletion for that path
-- **THEN** the system continues the database operation without deleting files outside the upload directory
-

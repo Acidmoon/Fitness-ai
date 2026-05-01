@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, Token
-from app.utils.security import hash_password, verify_password, create_access_token
+from app.utils.security import (
+    JWT_SUB_TYPE_USER_ID,
+    create_access_token,
+    hash_password,
+    verify_password,
+)
 
 router = APIRouter()
 
@@ -55,6 +60,13 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(data={"sub": str(user.id)})
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="账户已被注销"
+        )
+
+    access_token = create_access_token(
+        data={"sub": str(user.id), "sub_type": JWT_SUB_TYPE_USER_ID}
+    )
 
     return {"access_token": access_token, "token_type": "bearer"}

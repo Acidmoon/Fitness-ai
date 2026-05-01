@@ -109,7 +109,10 @@ def delete_account(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="密码错误"
             )
 
-    delete_record_videos(current_user.records)
+    try:
+        delete_record_videos(current_user.records)
+    except OSError:
+        raise HTTPException(status_code=500, detail="账户关联视频清理失败")
     db.delete(current_user)
     db.commit()
 
