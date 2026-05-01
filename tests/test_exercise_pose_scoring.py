@@ -1,0 +1,325 @@
+import math
+
+import pytest
+from fastapi import status
+
+from app.models.exercise import Exercise, ExerciseRecord
+from app.services.exercise_pose_scoring import (
+    AngleSample,
+    PoseScoringUnavailableError,
+    calculate_joint_angle,
+    extract_movement_phases,
+    keypoints_have_confidence,
+    score_record_pose,
+)
+
+
+def make_pose_analysis(angles, exercise_type="squat", confidence=0.9):
+    return {
+        "schema_version": 1,
+        "status": "done",
+        "model": {"name": "thunder", "input_size": 256},
+        "summary": {
+            "total_frames": len(angles),
+            "processed_frames": len(angles),
+            "sampled_frames": len(angles),
+            "valid_frame_count": len(angles),
+            "average_confidence": confidence,
+            "source_fps": 30.0,
+            "sample_fps": 5,
+        },
+        "frames": [
+            make_frame(index, angle, exercise_type, confidence)
+            for index, angle in enumerate(angles)
+        ],
+    }
+
+
+def make_frame(index, angle, exercise_type="squat", confidence=0.9):
+    if exercise_type == "squat":
+        left = make_triplet(
+            "left_hip",
+            "left_knee",
+            "left_ankle",
+            angle,
+            origin_x=100,
+            confidence=confidence,
+        )
+        right = make_triplet(
+            "right_hip",
+            "right_knee",
+            "right_ankle",
+            angle,
+            origin_x=180,
+            confidence=confidence,
+        )
+    else:
+        left = make_triplet(
+            "left_shoulder",
+            "left_elbow",
+            "left_wrist",
+            angle,
+            origin_x=100,
+            confidence=confidence,
+        )
+        right = make_triplet(
+            "right_shoulder",
+            "right_elbow",
+            "right_wrist",
+            angle,
+            origin_x=180,
+            confidence=confidence,
+        )
+
+    return {
+        "frame_index": index,
+        "timestamp_ms": index * 200,
+        "keypoints": left + right,
+    }
+
+
+def make_triplet(start, middle, end, angle, origin_x=100, confidence=0.9):
+    length = 80
+    radians = math.radians(angle)
+    middle_x = origin_x
+    middle_y = 100
+    return [
+        {
+            "name": start,
+            "x": middle_x,
+            "y": middle_y - length,
+            "score": confidence,
+        },
+        {"name": middle, "x": middle_x, "y": middle_y, "score": confidence},
+        {
+            "name": end,
+            "x": middle_x + math.sin(radians) * length,
+            "y": middle_y - math.cos(radians) * length,
+            "score": confidence,
+        },
+    ]
+
+
+def create_record(
+    db_session,
+    user_id,
+    exercise_name="标准深蹲",
+    keypoints_data=None,
+    score=40,
+    count=3,
+    feedback="用户原始反馈",
+):
+    exercise = Exercise(name=exercise_name, category="测试")
+    db_session.add(exercise)
+    db_session.commit()
+
+    record = ExerciseRecord(
+        user_id=user_id,
+        exercise_id=exercise.id,
+        score=score,
+        count=count,
+        duration=60,
+        keypoints_data=keypoints_data,
+        feedback=feedback,
+    )
+    db_session.add(record)
+    db_session.commit()
+    return record
+
+
+def auth_headers(test_user):
+    return {"Authorization": f"Bearer {test_user['token']}"}
+
+
+class TestPoseMetricHelpers:
+    def test_calculate_joint_angle_from_named_keypoints(self):
+        keypoints = {
+            "hip": {"x": 0, "y": -1, "score": 0.9},
+            "knee": {"x": 0, "y": 0, "score": 0.9},
+            "ankle": {"x": 1, "y": 0, "score": 0.9},
+        }
+
+        angle = calculate_joint_angle(keypoints, "hip", "knee", "ankle")
+
+        assert round(angle, 2) == 90
+
+    def test_keypoints_have_confidence_requires_all_points(self):
+        keypoints = {
+            "hip": {"score": 0.9},
+            "knee": {"score": 0.7},
+            "ankle": {"score": 0.2},
+        }
+
+        assert not keypoints_have_confidence(keypoints, ("hip", "knee", "ankle"), 0.35)
+        assert keypoints_have_confidence(keypoints, ("hip", "knee"), 0.35)
+
+    def test_extract_movement_phases_counts_complete_cycles(self):
+        samples = [
+            AngleSample(0, 0, 165, 0.9),
+            AngleSample(1, 200, 100, 0.9),
+            AngleSample(2, 400, 166, 0.9),
+            AngleSample(3, 600, 102, 0.9),
+            AngleSample(4, 800, 168, 0.9),
+        ]
+
+        summary = extract_movement_phases(samples, down_angle=115, up_angle=155)
+
+        assert summary.repetitions == 2
+        assert summary.min_angle == 100
+        assert summary.max_angle == 168
+
+
+class TestPoseScoringRules:
+    def test_scores_supported_lower_body_exercise(self, db_session, test_user):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="标准深蹲",
+            keypoints_data=make_pose_analysis([165, 100, 166, 102, 168]),
+        )
+
+        result = score_record_pose(record)
+
+        assert result["status"] == "scored"
+        assert result["exercise_type"] == "squat"
+        assert result["count"] == 2
+        assert result["score"] == 100
+
+    def test_scores_supported_upper_body_exercise(self, db_session, test_user):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="标准俯卧撑",
+            keypoints_data=make_pose_analysis([160, 85, 162], "push_up"),
+        )
+
+        result = score_record_pose(record)
+
+        assert result["status"] == "scored"
+        assert result["exercise_type"] == "push_up"
+        assert result["count"] == 1
+
+    def test_unsupported_exercise_returns_status(self, db_session, test_user):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="平板支撑",
+            keypoints_data=make_pose_analysis([160, 90, 160]),
+        )
+
+        result = score_record_pose(record)
+
+        assert result["status"] == "unsupported"
+        assert result["score"] is None
+
+    def test_low_confidence_prevents_scoring(self, db_session, test_user):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            keypoints_data=make_pose_analysis([165, 100, 166], confidence=0.1),
+        )
+
+        with pytest.raises(PoseScoringUnavailableError):
+            score_record_pose(record)
+
+
+class TestPoseScoringApi:
+    def test_preview_scoring_does_not_modify_record(
+        self, client, db_session, test_user
+    ):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            keypoints_data=make_pose_analysis([165, 100, 166, 102, 168]),
+        )
+
+        response = client.post(
+            f"/api/ai/records/{record.id}/pose-scoring",
+            headers=auth_headers(test_user),
+            json={"apply": False},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "scored"
+        assert data["applied"] is False
+        assert data["score"] == 100
+
+        db_session.refresh(record)
+        assert record.score == 40
+        assert record.count == 3
+        assert record.feedback == "用户原始反馈"
+
+    def test_apply_scoring_updates_record(self, client, db_session, test_user):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            keypoints_data=make_pose_analysis([165, 100, 166, 102, 168]),
+        )
+
+        response = client.post(
+            f"/api/ai/records/{record.id}/pose-scoring",
+            headers=auth_headers(test_user),
+            json={"apply": True},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["applied"] is True
+        assert data["count"] == 2
+
+        db_session.refresh(record)
+        assert record.score == 100
+        assert record.count == 2
+        assert "动作轨迹完整" in record.feedback
+
+    def test_scoring_requires_pose_analysis(self, client, db_session, test_user):
+        record = create_record(db_session, test_user["user"].id, keypoints_data=None)
+
+        response = client.post(
+            f"/api/ai/records/{record.id}/pose-scoring",
+            headers=auth_headers(test_user),
+            json={"apply": False},
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "缺少姿态分析数据" in response.json()["detail"]
+
+    def test_apply_unsupported_exercise_does_not_modify_record(
+        self, client, db_session, test_user
+    ):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="平板支撑",
+            keypoints_data=make_pose_analysis([165, 100, 166]),
+        )
+
+        response = client.post(
+            f"/api/ai/records/{record.id}/pose-scoring",
+            headers=auth_headers(test_user),
+            json={"apply": True},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == "unsupported"
+
+        db_session.refresh(record)
+        assert record.score == 40
+        assert record.count == 3
+        assert record.feedback == "用户原始反馈"
+
+    def test_scoring_hides_other_users_record(self, client, db_session, test_user):
+        record = create_record(
+            db_session,
+            test_user["user"].id + 1,
+            keypoints_data=make_pose_analysis([165, 100, 166]),
+        )
+
+        response = client.post(
+            f"/api/ai/records/{record.id}/pose-scoring",
+            headers=auth_headers(test_user),
+            json={"apply": False},
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND

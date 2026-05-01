@@ -16,6 +16,7 @@ from app.schemas.pose_analysis import (
     PoseAnalysisSummary,
     PoseAnalysisTriggerRequest,
 )
+from app.schemas.pose_scoring import PoseScoringRequest, PoseScoringResponse
 
 __all__ = [
     "UserCreate",
@@ -36,4 +37,6 @@ __all__ = [
     "PoseAnalysisResponse",
     "PoseAnalysisSummary",
     "PoseAnalysisTriggerRequest",
+    "PoseScoringRequest",
+    "PoseScoringResponse",
 ]
