@@ -25,6 +25,7 @@ class ExerciseRecordResponse(BaseModel):
     count: int
     duration: int
     heart_rate_avg: Optional[float]
+    video_url: Optional[str]
     feedback: Optional[str]
     created_at: datetime
 

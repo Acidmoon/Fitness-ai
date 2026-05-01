@@ -32,8 +32,9 @@ logs/
 DEV/
 .coverage
 nul
-
+Fitness-ai-frontend/
 .cowork-temp/
+AGENTS.md
 
 
 

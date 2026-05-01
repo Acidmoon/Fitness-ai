@@ -78,6 +78,32 @@ class TestExerciseRecords:
         assert isinstance(data, list)
         assert len(data) >= 1
 
+    def test_get_user_records_includes_video_url(self, client, db_session, test_user):
+        """测试获取记录时包含 video_url 字段"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=88,
+            count=12,
+            duration=75,
+            video_url="/videos/test-video.mp4",
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.get("/api/exercise/records", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data[0]["video_url"] == "/videos/test-video.mp4"
+
     def test_get_user_records_with_date_range(self, client, db_session, test_user):
         """测试日期范围过滤"""
         from datetime import datetime, timedelta
@@ -166,6 +192,40 @@ class TestExerciseRecords:
         data = response.json()
         assert len(data) == 1
         assert data[0]["exercise_id"] == exercise1.id
+
+    def test_get_record_detail_success(self, client, db_session, test_user):
+        """测试获取单条记录详情成功"""
+        from app.models.exercise import Exercise, ExerciseRecord
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=92,
+            count=18,
+            duration=95,
+            video_url="/videos/detail.mp4",
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.get(f"/api/exercise/records/{record.id}", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["id"] == record.id
+        assert data["video_url"] == "/videos/detail.mp4"
+
+    def test_get_record_detail_not_found(self, client, db_session, test_user):
+        """测试获取不存在的记录详情"""
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.get("/api/exercise/records/9999", headers=headers)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_get_exercises(self, client, db_session):
         """测试获取标准动作列表（不需要认证）"""

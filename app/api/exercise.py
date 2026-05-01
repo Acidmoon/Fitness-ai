@@ -79,6 +79,27 @@ def get_user_records(
     return records
 
 
+@router.get("/records/{record_id}", response_model=ExerciseRecordResponse)
+def get_record_detail(
+    record_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取单条运动记录详情"""
+    record = (
+        db.query(ExerciseRecord)
+        .filter(
+            ExerciseRecord.id == record_id,
+            ExerciseRecord.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="记录不存在")
+
+    return record
+
+
 @router.get("/exercises", response_model=List[ExerciseResponse])
 def get_exercises(db: Session = Depends(get_db)):
     """获取标准动作列表"""
