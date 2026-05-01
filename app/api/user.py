@@ -12,6 +12,7 @@ from app.schemas.user import (
     UserResponse,
 )
 from app.utils.security import get_current_user, verify_password, hash_password
+from app.utils.video_files import delete_record_videos
 
 router = APIRouter()
 
@@ -117,6 +118,7 @@ def delete_account(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="密码错误"
             )
 
+    delete_record_videos(current_user.records)
     db.delete(current_user)
     db.commit()
 

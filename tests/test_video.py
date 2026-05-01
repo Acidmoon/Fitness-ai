@@ -52,8 +52,7 @@ class TestVideoUpload:
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
-        # Patch UPLOAD_DIR
-        with patch("app.api.video.UPLOAD_DIR", str(upload_dir)):
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
             response = client.post(
                 f"/api/video/records/{record.id}/video",
                 headers=headers,
@@ -93,7 +92,7 @@ class TestVideoUpload:
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
-        with patch("app.api.video.UPLOAD_DIR", str(upload_dir)):
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
             response = client.post(
                 f"/api/video/records/{record.id}/video",
                 headers=headers,
@@ -117,7 +116,7 @@ class TestVideoUpload:
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
-        with patch("app.api.video.UPLOAD_DIR", str(upload_dir)):
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
             response = client.post(
                 "/api/video/records/9999/video",
                 headers=headers,
@@ -154,7 +153,7 @@ class TestVideoUpload:
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
-        with patch("app.api.video.UPLOAD_DIR", str(upload_dir)):
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
             response = client.post(
                 f"/api/video/records/{record.id}/video",
                 headers=headers,
@@ -196,7 +195,7 @@ class TestVideoUpload:
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
-        with patch("app.api.video.UPLOAD_DIR", str(upload_dir)):
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
             response = client.post(
                 f"/api/video/records/{record.id}/video?keep_video=false",
                 headers=headers,
@@ -242,7 +241,7 @@ class TestVideoUpload:
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
-        with patch("app.api.video.UPLOAD_DIR", str(upload_dir)):
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
             response = client.post(
                 f"/api/video/records/{record.id}/video?keep_video=true",
                 headers=headers,
@@ -258,6 +257,53 @@ class TestVideoUpload:
         # 验证文件确实存在（通过 video_url 查找）
         filename = data["video_url"].split("/")[-1]
         assert os.path.exists(upload_dir / filename)
+
+    def test_upload_video_replaces_previous_file(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试重新上传会删除旧文件"""
+        from app.models.exercise import Exercise, ExerciseRecord
+        from unittest.mock import patch
+        import os
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+        old_filename = "old-video.mp4"
+        old_file = upload_dir / old_filename
+        old_file.write_bytes(b"old video content")
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+            video_url=f"/videos/{old_filename}",
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        video_content = BytesIO(b"new fake video content")
+        video_content.name = "test.mp4"
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            response = client.post(
+                f"/api/video/records/{record.id}/video?keep_video=true",
+                headers=headers,
+                files={"video": ("test.mp4", video_content, "video/mp4")},
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["video_url"] != f"/videos/{old_filename}"
+        assert not os.path.exists(old_file)
+        new_filename = data["video_url"].split("/")[-1]
+        assert os.path.exists(upload_dir / new_filename)
 
 
 class TestVideoDelete:
@@ -289,6 +335,7 @@ class TestVideoDelete:
         """测试删除视频成功"""
         from app.models.exercise import Exercise, ExerciseRecord
         from unittest.mock import patch
+        import os
 
         # 创建测试记录并关联视频
         exercise = Exercise(name="测试动作", category="上肢")
@@ -314,7 +361,7 @@ class TestVideoDelete:
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
-        with patch("app.api.video.UPLOAD_DIR", str(upload_dir)):
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
             response = client.delete(
                 f"/api/video/records/{record.id}/video", headers=headers
             )
@@ -325,6 +372,7 @@ class TestVideoDelete:
         # 验证数据库中的视频路径已清空
         db_session.refresh(record)
         assert record.video_url is None
+        assert not os.path.exists(test_video_path)
 
     def test_delete_video_no_video(self, client, db_session, test_user):
         """测试删除没有视频的记录"""
@@ -379,7 +427,7 @@ class TestVideoAccess:
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
-        with patch("app.api.video.UPLOAD_DIR", str(upload_dir)):
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
             response = client.get("/api/video/videos/nonexistent.mp4", headers=headers)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -424,7 +472,7 @@ class TestVideoAccess:
         db_session.commit()
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
-        with patch("app.api.video.UPLOAD_DIR", str(upload_dir)):
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
             response = client.get(f"/api/video/videos/{filename}", headers=headers)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND

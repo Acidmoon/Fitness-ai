@@ -13,6 +13,7 @@ from app.schemas.exercise import (
     ExerciseRecordUpdate,
 )
 from app.utils.security import get_current_user
+from app.utils.video_files import delete_record_videos
 from app.models.user import User
 
 router = APIRouter()
@@ -152,6 +153,7 @@ def delete_record(
     if not db_record:
         raise HTTPException(status_code=404, detail="记录不存在")
 
+    delete_record_videos([db_record])
     db.delete(db_record)
     db.commit()
     return {"message": "删除成功"}
@@ -165,15 +167,16 @@ def batch_delete_records(
 ):
     """批量删除运动记录"""
     # 先查询属于当前用户的记录
-    user_record_ids = {
-        r.id
-        for r in db.query(ExerciseRecord.id)
+    user_records = (
+        db.query(ExerciseRecord)
         .filter(
             ExerciseRecord.id.in_(record_ids),
             ExerciseRecord.user_id == current_user.id,
         )
         .all()
-    }
+    )
+    user_record_ids = {record.id for record in user_records}
+    delete_record_videos(user_records)
 
     # 只删除属于当前用户的记录
     deleted_count = (

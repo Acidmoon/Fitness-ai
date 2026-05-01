@@ -331,10 +331,18 @@ class TestExerciseRecords:
     def test_delete_record_success(self, client, db_session, test_user):
         """测试删除记录成功"""
         from app.models.exercise import Exercise, ExerciseRecord
+        from unittest.mock import patch
 
         exercise = Exercise(name="测试动作", category="上肢")
         db_session.add(exercise)
         db_session.commit()
+
+        import tempfile
+        from pathlib import Path
+
+        upload_dir = Path(tempfile.mkdtemp())
+        video_path = upload_dir / "record-delete.mp4"
+        video_path.write_bytes(b"video content")
 
         record = ExerciseRecord(
             user_id=test_user["user"].id,
@@ -342,15 +350,17 @@ class TestExerciseRecords:
             score=80,
             count=10,
             duration=60,
+            video_url="/videos/record-delete.mp4",
         )
         db_session.add(record)
         db_session.commit()
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
-        response = client.delete(
-            f"/api/exercise/records/{record.id}",
-            headers=headers,
-        )
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            response = client.delete(
+                f"/api/exercise/records/{record.id}",
+                headers=headers,
+            )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["message"] == "删除成功"
 
@@ -359,6 +369,7 @@ class TestExerciseRecords:
             db_session.query(ExerciseRecord).filter_by(id=record.id).first()
         )
         assert deleted_record is None
+        assert not video_path.exists()
 
     def test_delete_record_not_found(self, client, db_session, test_user):
         """测试删除不存在的记录"""
@@ -468,3 +479,51 @@ class TestExerciseRecords:
         # 只删除了当前用户的记录
         remaining = db_session.query(ExerciseRecord).filter_by(id=record2.id).first()
         assert remaining is not None
+
+    def test_batch_delete_records_removes_video_files(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试批量删除时清理关联视频文件"""
+        from app.models.exercise import Exercise, ExerciseRecord
+        from unittest.mock import patch
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+        video_one = upload_dir / "batch-1.mp4"
+        video_two = upload_dir / "batch-2.mp4"
+        video_one.write_bytes(b"video one")
+        video_two.write_bytes(b"video two")
+
+        record1 = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+            video_url="/videos/batch-1.mp4",
+        )
+        record2 = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=85,
+            count=15,
+            duration=90,
+            video_url="/videos/batch-2.mp4",
+        )
+        db_session.add_all([record1, record2])
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            response = client.delete(
+                f"/api/exercise/records?record_ids={record1.id}&record_ids={record2.id}",
+                headers=headers,
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert not video_one.exists()
+        assert not video_two.exists()

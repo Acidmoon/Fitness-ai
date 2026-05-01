@@ -7,13 +7,17 @@ from app.database import get_db
 from app.models.exercise import ExerciseRecord
 from app.models.user import User
 from app.utils.security import get_current_user
+from app.utils.video_files import (
+    build_video_url,
+    delete_video_file,
+    ensure_upload_dir,
+    get_filename_from_video_url,
+    resolve_upload_path,
+)
 
 router = APIRouter()
 
-UPLOAD_DIR = "uploads/videos"  # 定义视频上传目录路径
-os.makedirs(
-    UPLOAD_DIR, exist_ok=True
-)  # 创建目录，如果不存在则创建，exist_ok=True 表示已存在不报错
+ensure_upload_dir()
 
 ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}  # 允许上传的视频格式集合
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 最大文件大小 50MB
@@ -56,28 +60,35 @@ def upload_video(  # 定义上传视频函数
 
     # 生成唯一文件名，避免文件覆盖
     unique_filename = f"{uuid.uuid4()}{file_ext}"  # UUID 生成唯一字符串 + 原扩展名
-    file_path = os.path.join(UPLOAD_DIR, unique_filename)  # 拼接完整文件路径
+    file_path = resolve_upload_path(unique_filename)
+    if not file_path:
+        raise HTTPException(status_code=500, detail="视频文件路径生成失败")
 
-    # 保存文件到服务器
-    with open(file_path, "wb") as buffer:  # 以二进制写入模式打开文件
-        buffer.write(video.file.read())  # 读取上传文件内容并写入
+    previous_video_url = record.video_url
+    video_deleted = False
 
-    # 根据 keep_video 参数决定是否保留文件
-    if keep_video:
-        record.video_url = f"/videos/{unique_filename}"  # 存储相对路径到数据库
-        video_deleted = False  # 标记视频未删除
-    else:  # 不保留视频（临时处理）
-        video_deleted = True  # 标记视频已删除
-        # 立即删除临时文件
-        try:
-            os.remove(file_path)
-        except OSError:
-            # 文件删除失败也继续，反正不会存储路径
-            pass
-        record.video_url = None  # 不存储视频路径
+    try:
+        # 保存文件到服务器
+        with open(file_path, "wb") as buffer:  # 以二进制写入模式打开文件
+            buffer.write(video.file.read())  # 读取上传文件内容并写入
 
-    db.commit()  # 提交数据库事务，保存更改
-    db.refresh(record)  # 刷新记录对象，获取最新数据
+        # 根据 keep_video 参数决定是否保留文件
+        if keep_video:
+            record.video_url = build_video_url(unique_filename)
+        else:  # 不保留视频（临时处理）
+            video_deleted = True  # 标记视频已删除
+            delete_video_file(build_video_url(unique_filename))
+            record.video_url = None  # 不存储视频路径
+
+        db.commit()  # 提交数据库事务，保存更改
+        db.refresh(record)  # 刷新记录对象，获取最新数据
+    except Exception:
+        db.rollback()
+        delete_video_file(build_video_url(unique_filename))
+        raise
+
+    if previous_video_url and previous_video_url != record.video_url:
+        delete_video_file(previous_video_url)
 
     return {  # 返回成功响应
         "message": "视频上传成功",  # 成功消息
@@ -113,13 +124,7 @@ def delete_video(
     if not record.video_url:
         raise HTTPException(status_code=404, detail="该记录没有关联视频")
 
-    # 构建文件路径
-    filename = record.video_url.split("/")[-1]  # 从路径提取文件名
-    file_path = os.path.join(UPLOAD_DIR, filename)  # 拼接完整路径
-
-    # 删除文件
-    if os.path.exists(file_path):  # 检查文件是否存在
-        os.remove(file_path)  # 删除文件
+    delete_video_file(record.video_url)
 
     # 更新数据库
     record.video_url = None  # 清空视频路径
@@ -136,15 +141,11 @@ def get_video(
 ):
     # 安全防护：防止路径穿越攻击
     # 只允许纯文件名，不能包含路径分隔符或向上跳转
-    if not filename or ".." in filename or "/" in filename or "\\" in filename:
+    if get_filename_from_video_url(build_video_url(filename)) != filename:
         raise HTTPException(status_code=400, detail="非法的文件名")
 
-    file_path = os.path.join(UPLOAD_DIR, filename)  # 拼接完整文件路径
-
-    # 二次检查：确保解析后的路径在 UPLOAD_DIR 内
-    real_path = os.path.realpath(file_path)
-    real_upload_dir = os.path.realpath(UPLOAD_DIR)
-    if not real_path.startswith(real_upload_dir + os.sep):
+    file_path = resolve_upload_path(filename)
+    if not file_path:
         raise HTTPException(status_code=403, detail="禁止访问该文件")
 
     # 资源归属校验：只能访问自己记录关联的视频
@@ -152,7 +153,7 @@ def get_video(
         db.query(ExerciseRecord)
         .filter(
             ExerciseRecord.user_id == current_user.id,
-            ExerciseRecord.video_url == f"/videos/{filename}",
+            ExerciseRecord.video_url == build_video_url(filename),
         )
         .first()
     )

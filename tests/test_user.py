@@ -173,3 +173,42 @@ class TestDeleteAccount:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "密码错误" in response.json()["detail"]
+
+    def test_delete_account_removes_video_files(
+        self, client, db_session, test_user, tmp_path
+    ):
+        """测试注销账户时删除关联视频文件"""
+        from app.models.exercise import Exercise, ExerciseRecord
+        from unittest.mock import patch
+
+        exercise = Exercise(name="测试动作", category="上肢")
+        db_session.add(exercise)
+        db_session.commit()
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+        video_path = upload_dir / "account-video.mp4"
+        video_path.write_bytes(b"video content")
+
+        record = ExerciseRecord(
+            user_id=test_user["user"].id,
+            exercise_id=exercise.id,
+            score=80,
+            count=10,
+            duration=60,
+            video_url="/videos/account-video.mp4",
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            response = client.request(
+                "DELETE",
+                "/api/user/account",
+                headers=headers,
+                json={"password": "password123"},
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert not video_path.exists()
