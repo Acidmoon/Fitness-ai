@@ -22,7 +22,7 @@ The system SHALL return the current authenticated user's profile from `GET /api/
 - **THEN** the system returns `403 Forbidden`
 
 ### Requirement: Active users can update profile fields
-The system SHALL allow an authenticated active user to update their username and email through `PUT /api/user/profile`, and updated usernames SHALL not be only digits.
+The system SHALL allow an authenticated active user to update their username and email through `PUT /api/user/profile`, and newly submitted usernames SHALL not be only digits unless the user is preserving an unchanged legacy numeric username.
 
 #### Scenario: Successful profile update
 - **WHEN** an authenticated active user submits a unique valid username and or email
@@ -48,6 +48,11 @@ The system SHALL allow an authenticated active user to update their username and
 #### Scenario: Numeric-only username update
 - **WHEN** an authenticated active user submits a username containing only digits
 - **THEN** the system returns `422 Unprocessable Content`
+
+#### Scenario: Legacy numeric username remains unchanged
+- **WHEN** an authenticated active user whose current username contains only digits submits the same username unchanged in `PUT /api/user/profile`
+- **THEN** the system accepts the update
+- **THEN** the username remains unchanged while other valid profile fields can be updated
 
 ### Requirement: Active users can change password
 The system SHALL allow an authenticated active user to change their password through `PUT /api/user/password`.

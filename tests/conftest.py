@@ -97,6 +97,26 @@ def inactive_test_user(client, db_session):
     return {"token": token, "user": user}
 
 
+@pytest.fixture(scope="function")
+def legacy_numeric_username_user(client, db_session):
+    """创建历史纯数字用户名用户并返回认证 token"""
+    from app.models.user import User
+
+    user = User(
+        username="123456",
+        email="legacy-numeric@example.com",
+        password_hash=hash_password("password123"),
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    from app.utils.security import create_access_token
+
+    token = create_access_token({"sub": user.username})
+    return {"token": token, "user": user}
+
+
 # pytest-asyncio 配置
 @pytest.fixture(scope="session")
 def event_loop():

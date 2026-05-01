@@ -34,6 +34,14 @@ def update_profile(
     """更新当前用户资料"""
     # 更新用户名
     if profile_data.username is not None:
+        if (
+            profile_data.username.isdigit()
+            and profile_data.username != current_user.username
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="用户名不能为纯数字",
+            )
         existing_user = (
             db.query(User)
             .filter(User.username == profile_data.username, User.id != current_user.id)

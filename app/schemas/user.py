@@ -6,13 +6,13 @@ from typing import Optional
 import re
 
 
-def _validate_username(v: str) -> str:
+def _validate_username(v: str, allow_numeric_only: bool = False) -> str:
     """用户名格式校验"""
     if len(v) < 3 or len(v) > 50:
         raise ValueError("用户名长度 3-50 个字符")
     if not re.match(r"^[a-zA-Z0-9_]+$", v):
         raise ValueError("用户名只能包含字母、数字和下划线")
-    if v.isdigit():
+    if not allow_numeric_only and v.isdigit():
         raise ValueError("用户名不能为纯数字")
     return v
 
@@ -90,7 +90,7 @@ class UserProfileUpdate(BaseModel):
     @classmethod
     def validate_username(cls, v):
         if v is not None:
-            return _validate_username(v)
+            return _validate_username(v, allow_numeric_only=True)
         return v
 
     @field_validator("email")

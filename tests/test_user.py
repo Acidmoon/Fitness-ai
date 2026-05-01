@@ -109,6 +109,25 @@ class TestUpdateProfile:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
+    def test_update_profile_allows_unchanged_legacy_numeric_username(
+        self, client, db_session, legacy_numeric_username_user
+    ):
+        """测试历史纯数字用户名原值保留时允许更新其他资料"""
+        headers = {"Authorization": f"Bearer {legacy_numeric_username_user['token']}"}
+        response = client.put(
+            "/api/user/profile",
+            headers=headers,
+            json={
+                "username": "123456",
+                "email": "legacy-updated@example.com",
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["username"] == "123456"
+        assert data["email"] == "legacy-updated@example.com"
+
     def test_update_profile_inactive_user_forbidden(
         self, client, db_session, inactive_test_user
     ):
