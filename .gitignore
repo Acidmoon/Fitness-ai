@@ -32,7 +32,12 @@ logs/
 DEV/
 .coverage
 nul
-Fitness-ai-frontend/
+Fitness-ai-frontend/node_modules/
+Fitness-ai-frontend/dist/
+Fitness-ai-frontend/.env
+Fitness-ai-frontend/.env.*
+!Fitness-ai-frontend/.env.example
+Fitness-ai-frontend/*.tsbuildinfo
 movenet/
 .cowork-temp/
 AGENTS.md
