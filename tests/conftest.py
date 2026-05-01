@@ -77,6 +77,26 @@ def test_user(client, db_session):
     return {"token": token, "user": user}
 
 
+@pytest.fixture(scope="function")
+def inactive_test_user(client, db_session):
+    """创建已注销状态的测试用户并返回认证 token"""
+    from app.models.user import User
+
+    user = User(
+        username="inactiveuser",
+        email="inactive@example.com",
+        password_hash=hash_password("password123"),
+        is_active=False,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    from app.utils.security import create_access_token
+
+    token = create_access_token({"sub": str(user.id)})
+    return {"token": token, "user": user}
+
+
 # pytest-asyncio 配置
 @pytest.fixture(scope="session")
 def event_loop():

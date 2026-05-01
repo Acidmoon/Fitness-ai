@@ -1,10 +1,4 @@
-# User Account Specification
-
-## Purpose
-
-Define the current behavior for authenticated user profile access, profile updates, password changes, and account deletion.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Authenticated users can view their profile
 The system SHALL return the current authenticated user's profile from `GET /api/user/profile` only when the account is active.

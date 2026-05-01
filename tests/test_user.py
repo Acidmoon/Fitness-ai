@@ -20,6 +20,16 @@ class TestGetProfile:
         response = client.get("/api/user/profile")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_get_profile_inactive_user_forbidden(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法获取资料"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.get("/api/user/profile", headers=headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "账户已被注销" in response.json()["detail"]
+
 
 class TestUpdateProfile:
     """更新用户资料测试"""
@@ -90,6 +100,18 @@ class TestUpdateProfile:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
+    def test_update_profile_inactive_user_forbidden(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法更新资料"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.put(
+            "/api/user/profile", headers=headers, json={"username": "blocked_user"}
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "账户已被注销" in response.json()["detail"]
+
 
 class TestChangePassword:
     """修改密码测试"""
@@ -128,6 +150,20 @@ class TestChangePassword:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_change_password_inactive_user_forbidden(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法修改密码"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.put(
+            "/api/user/password",
+            headers=headers,
+            json={"old_password": "password123", "new_password": "newpass123"},
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "账户已被注销" in response.json()["detail"]
 
 
 class TestDeleteAccount:
@@ -173,6 +209,21 @@ class TestDeleteAccount:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "密码错误" in response.json()["detail"]
+
+    def test_delete_account_inactive_user_forbidden(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法再次注销"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.request(
+            "DELETE",
+            "/api/user/account",
+            headers=headers,
+            json={"password": "password123"},
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "账户已被注销" in response.json()["detail"]
 
     def test_delete_account_removes_video_files(
         self, client, db_session, test_user, tmp_path

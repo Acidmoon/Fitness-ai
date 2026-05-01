@@ -1,10 +1,4 @@
-# Exercise Statistics Specification
-
-## Purpose
-
-Define the current authenticated statistics endpoints for exercise summaries, recent trends, and personal bests.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Authenticated users can fetch summary statistics
 The system SHALL return aggregate exercise statistics for the authenticated active user from `GET /api/stats/summary`.

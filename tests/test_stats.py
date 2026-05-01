@@ -61,3 +61,17 @@ class TestStats:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert isinstance(data, list)
+
+    def test_inactive_user_cannot_access_stats(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法访问统计接口"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+
+        summary_response = client.get("/api/stats/summary", headers=headers)
+        weekly_response = client.get("/api/stats/weekly", headers=headers)
+        best_response = client.get("/api/stats/personal-best", headers=headers)
+
+        assert summary_response.status_code == status.HTTP_403_FORBIDDEN
+        assert weekly_response.status_code == status.HTTP_403_FORBIDDEN
+        assert best_response.status_code == status.HTTP_403_FORBIDDEN

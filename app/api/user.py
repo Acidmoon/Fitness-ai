@@ -22,12 +22,6 @@ def get_profile(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     """获取当前用户资料"""
-    # 检查账户是否被注销
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="账户已被注销"
-        )
-
     return current_user
 
 
@@ -38,12 +32,6 @@ def update_profile(
     db: Session = Depends(get_db),
 ):
     """更新当前用户资料"""
-    # 检查账户是否被注销
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="账户已被注销"
-        )
-
     # 更新用户名
     if profile_data.username is not None:
         existing_user = (
@@ -89,11 +77,6 @@ def change_password(
     db: Session = Depends(get_db),
 ):
     """修改当前用户密码"""
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="账户已被注销"
-        )
-
     if not verify_password(password_data.old_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="原密码错误"

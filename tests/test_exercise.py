@@ -48,6 +48,18 @@ class TestExerciseRecords:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "动作不存在" in response.json()["detail"]
 
+    def test_inactive_user_cannot_create_record(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法创建记录"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.post(
+            "/api/exercise/records",
+            json={"exercise_id": 1, "score": 85.5, "count": 20, "duration": 120},
+            headers=headers,
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
     def test_get_user_records_requires_auth(self, client, db_session):
         """测试获取记录需要认证"""
         response = client.get("/api/exercise/records")
@@ -193,6 +205,14 @@ class TestExerciseRecords:
         assert len(data) == 1
         assert data[0]["exercise_id"] == exercise1.id
 
+    def test_inactive_user_cannot_list_records(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法获取记录列表"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.get("/api/exercise/records", headers=headers)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
     def test_get_record_detail_success(self, client, db_session, test_user):
         """测试获取单条记录详情成功"""
         from app.models.exercise import Exercise, ExerciseRecord
@@ -226,6 +246,14 @@ class TestExerciseRecords:
         response = client.get("/api/exercise/records/9999", headers=headers)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_inactive_user_cannot_get_record_detail(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法获取记录详情"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.get("/api/exercise/records/1", headers=headers)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_get_exercises(self, client, db_session):
         """测试获取标准动作列表（不需要认证）"""
@@ -284,6 +312,18 @@ class TestExerciseRecords:
             headers=headers,
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_inactive_user_cannot_update_record(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法修改记录"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.put(
+            "/api/exercise/records/1",
+            json={"score": 90},
+            headers=headers,
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_update_record_forbidden(self, client, db_session, test_user):
         """测试不能修改其他用户的记录"""
@@ -379,6 +419,14 @@ class TestExerciseRecords:
             headers=headers,
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_inactive_user_cannot_delete_record(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法删除记录"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.delete("/api/exercise/records/1", headers=headers)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_batch_delete_records_requires_auth(self, client, db_session):
         """测试批量删除需要认证"""
@@ -479,6 +527,16 @@ class TestExerciseRecords:
         # 只删除了当前用户的记录
         remaining = db_session.query(ExerciseRecord).filter_by(id=record2.id).first()
         assert remaining is not None
+
+    def test_inactive_user_cannot_batch_delete_records(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法批量删除记录"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.delete(
+            "/api/exercise/records?record_ids=1&record_ids=2", headers=headers
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_batch_delete_records_removes_video_files(
         self, client, db_session, test_user, tmp_path

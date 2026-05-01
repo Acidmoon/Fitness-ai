@@ -1,17 +1,4 @@
-# Exercise Records Specification
-
-## Purpose
-
-Define the current behavior for exercise catalog access and authenticated exercise record management.
-
-## Requirements
-
-### Requirement: Exercise catalog is publicly readable
-The system SHALL return the standard exercise list from `GET /api/exercise/exercises` without requiring authentication.
-
-#### Scenario: Fetch exercise list
-- **WHEN** a client requests `GET /api/exercise/exercises`
-- **THEN** the system returns a list of available exercises
+## MODIFIED Requirements
 
 ### Requirement: Authenticated users can create exercise records
 The system SHALL allow an authenticated active user to create an exercise record for an existing exercise.

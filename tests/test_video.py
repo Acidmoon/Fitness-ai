@@ -126,6 +126,27 @@ class TestVideoUpload:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "运动记录不存在" in response.json()["detail"]
 
+    def test_inactive_user_cannot_upload_video(
+        self, client, db_session, inactive_test_user, tmp_path
+    ):
+        """测试已注销账户无法上传视频"""
+        from unittest.mock import patch
+
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+        video_content = BytesIO(b"fake video content")
+        video_content.name = "test.mp4"
+
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
+            response = client.post(
+                "/api/video/records/1/video",
+                headers=headers,
+                files={"video": ("test.mp4", video_content, "video/mp4")},
+            )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
     def test_upload_video_keep_false(self, client, db_session, test_user, tmp_path):
         """测试临时上传模式（不保留视频）"""
         from app.models.exercise import Exercise, ExerciseRecord
@@ -409,6 +430,15 @@ class TestVideoDelete:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "运动记录不存在" in response.json()["detail"]
 
+    def test_inactive_user_cannot_delete_video(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法删除视频"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.delete("/api/video/records/1/video", headers=headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
 
 class TestVideoAccess:
     """视频访问接口测试"""
@@ -477,3 +507,12 @@ class TestVideoAccess:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "视频文件不存在" in response.json()["detail"]
+
+    def test_inactive_user_cannot_access_video(
+        self, client, db_session, inactive_test_user
+    ):
+        """测试已注销账户无法访问视频"""
+        headers = {"Authorization": f"Bearer {inactive_test_user['token']}"}
+        response = client.get("/api/video/videos/test.mp4", headers=headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN

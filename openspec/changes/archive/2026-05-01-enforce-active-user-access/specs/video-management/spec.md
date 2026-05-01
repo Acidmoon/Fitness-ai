@@ -1,10 +1,4 @@
-# Video Management Specification
-
-## Purpose
-
-Define the current behavior for uploading, deleting, and accessing exercise record videos.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Authenticated users can upload videos for owned records
 The system SHALL allow an authenticated active user to upload a video for an exercise record they own through `POST /api/video/records/{record_id}/video`.
@@ -38,13 +32,6 @@ The system SHALL allow an authenticated active user to upload a video for an exe
 - **WHEN** an authenticated inactive user uploads a video to `POST /api/video/records/{record_id}/video`
 - **THEN** the system returns `403 Forbidden`
 
-### Requirement: Uploaded video size is limited
-The system SHALL reject uploaded videos larger than 50 MB.
-
-#### Scenario: File exceeds maximum size
-- **WHEN** an authenticated user uploads a video larger than 50 MB
-- **THEN** the system returns `400 Bad Request`
-
 ### Requirement: Users can delete videos from owned records
 The system SHALL allow an authenticated active user to delete the video associated with a record they own through `DELETE /api/video/records/{record_id}/video`.
 
@@ -66,24 +53,6 @@ The system SHALL allow an authenticated active user to delete the video associat
 - **WHEN** an authenticated inactive user submits `DELETE /api/video/records/{record_id}/video`
 - **THEN** the system returns `403 Forbidden`
 
-### Requirement: Record and account cleanup remove owned stored video files
-The system SHALL remove owned stored video files when deleting exercise records or deleting a user account.
-
-#### Scenario: Single record deletion with stored video
-- **WHEN** an authenticated user deletes a record that references a stored owned video file
-- **THEN** the system deletes the record from the database
-- **THEN** the system removes the associated file from disk if it exists
-
-#### Scenario: Batch deletion includes records with stored videos
-- **WHEN** an authenticated user batch-deletes records they own and one or more records reference stored owned video files
-- **THEN** the system deletes only the owned records requested
-- **THEN** the system removes the associated files for the deleted owned records from disk if they exist
-
-#### Scenario: Account deletion with stored videos
-- **WHEN** an authenticated user deletes their account and their exercise records reference stored owned video files
-- **THEN** the system removes the associated files from disk if they exist
-- **THEN** the system deletes the user account and related records from the database
-
 ### Requirement: Video access is authenticated and ownership-scoped
 The system SHALL require authentication and SHALL only serve video files associated with the authenticated active user's records from `GET /api/video/videos/{filename}`.
 
@@ -102,15 +71,3 @@ The system SHALL require authentication and SHALL only serve video files associa
 #### Scenario: Inactive account accesses video
 - **WHEN** an authenticated inactive user requests `GET /api/video/videos/{filename}`
 - **THEN** the system returns `403 Forbidden`
-
-### Requirement: Video filename input is path-safe
-The system SHALL reject invalid filenames and prevent path traversal during video access.
-
-#### Scenario: Illegal filename
-- **WHEN** a client requests a filename containing path separators or parent directory traversal markers
-- **THEN** the system returns `400 Bad Request`
-
-#### Scenario: Stored path is invalid or escapes upload directory
-- **WHEN** cleanup is triggered for a record whose stored `video_url` does not resolve to an owned file inside the upload directory
-- **THEN** the system skips file deletion for that path
-- **THEN** the system continues the database operation without deleting files outside the upload directory
