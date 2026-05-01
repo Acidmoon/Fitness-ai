@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from app.api import auth, exercise, stats, user, video
+from app.api import ai, auth, exercise, stats, user, video
 from app.config import settings
 from app.exceptions import register_exception_handlers
 from app.logging_config import setup_logging
@@ -49,6 +49,7 @@ app.include_router(exercise.router, prefix="/api/exercise", tags=["运动"])
 app.include_router(stats.router, prefix="/api/stats", tags=["统计"])
 app.include_router(video.router, prefix="/api/video", tags=["视频"])
 app.include_router(user.router, prefix="/api/user", tags=["用户"])
+app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
 
 
 @app.get("/")

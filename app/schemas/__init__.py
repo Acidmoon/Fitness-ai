@@ -9,6 +9,13 @@ from app.schemas.exercise import (
     ExerciseRecordQuery,
 )
 from app.schemas.stats import ExerciseStats, CategoryStats, RecentRecord, StatsSummary
+from app.schemas.pose_analysis import (
+    PoseAnalysisFrame,
+    PoseAnalysisModelMetadata,
+    PoseAnalysisResponse,
+    PoseAnalysisSummary,
+    PoseAnalysisTriggerRequest,
+)
 
 __all__ = [
     "UserCreate",
@@ -24,4 +31,9 @@ __all__ = [
     "CategoryStats",
     "RecentRecord",
     "StatsSummary",
+    "PoseAnalysisFrame",
+    "PoseAnalysisModelMetadata",
+    "PoseAnalysisResponse",
+    "PoseAnalysisSummary",
+    "PoseAnalysisTriggerRequest",
 ]
