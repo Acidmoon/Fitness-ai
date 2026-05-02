@@ -134,11 +134,14 @@ def _load_optional_dependencies() -> Tuple[Any, Any, Callable[[str], Any]]:
         from tflite_runtime.interpreter import Interpreter  # type: ignore
     except ImportError:
         try:
-            from tensorflow.lite import Interpreter  # type: ignore
-        except ImportError as exc:
-            raise PoseAnalysisUnavailableError(
-                "A TensorFlow Lite interpreter is required for MoveNet pose analysis"
-            ) from exc
+            from ai_edge_litert.interpreter import Interpreter  # type: ignore
+        except ImportError:
+            try:
+                from tensorflow.lite import Interpreter  # type: ignore
+            except ImportError as exc:
+                raise PoseAnalysisUnavailableError(
+                    "A TensorFlow Lite interpreter is required for MoveNet pose analysis"
+                ) from exc
 
     return cv2, np, Interpreter
 

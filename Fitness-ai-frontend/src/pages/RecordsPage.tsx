@@ -1,6 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
@@ -22,6 +21,7 @@ import type {
   ExerciseRecord,
   ExerciseRecordFormValues,
 } from "@/types/exercise";
+import { extractApiErrorMessage } from "@/utils/error";
 
 const filterSchema = z.object({
   exerciseId: z.string(),
@@ -165,12 +165,7 @@ export function RecordsPage() {
       closeDrawer();
     },
     onError: (error) => {
-      if (axios.isAxiosError(error)) {
-        setDrawerError(error.response?.data?.detail ?? "创建记录失败");
-        return;
-      }
-
-      setDrawerError("创建记录失败");
+      setDrawerError(extractApiErrorMessage(error, "创建记录失败"));
     },
   });
 
@@ -190,12 +185,7 @@ export function RecordsPage() {
       closeDrawer();
     },
     onError: (error) => {
-      if (axios.isAxiosError(error)) {
-        setDrawerError(error.response?.data?.detail ?? "更新记录失败");
-        return;
-      }
-
-      setDrawerError("更新记录失败");
+      setDrawerError(extractApiErrorMessage(error, "更新记录失败"));
     },
   });
 

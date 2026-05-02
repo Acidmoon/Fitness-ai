@@ -1,6 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
@@ -20,6 +19,7 @@ import type {
   PasswordChangeValues,
   UserProfileUpdateValues,
 } from "@/types/user";
+import { extractApiErrorMessage } from "@/utils/error";
 
 const profileSchema = z.object({
   username: z
@@ -100,12 +100,7 @@ export function ProfilePage() {
       await queryClient.invalidateQueries({ queryKey: ["user", "profile"] });
     },
     onError: (error) => {
-      if (axios.isAxiosError(error)) {
-        setProfileError(error.response?.data?.detail ?? "资料更新失败");
-        return;
-      }
-
-      setProfileError("资料更新失败");
+      setProfileError(extractApiErrorMessage(error, "资料更新失败"));
     },
   });
 
@@ -117,12 +112,7 @@ export function ProfilePage() {
       passwordForm.reset();
     },
     onError: (error) => {
-      if (axios.isAxiosError(error)) {
-        setPasswordError(error.response?.data?.detail ?? "密码修改失败");
-        return;
-      }
-
-      setPasswordError("密码修改失败");
+      setPasswordError(extractApiErrorMessage(error, "密码修改失败"));
     },
   });
 
@@ -137,12 +127,7 @@ export function ProfilePage() {
       }, 900);
     },
     onError: (error) => {
-      if (axios.isAxiosError(error)) {
-        setDeleteError(error.response?.data?.detail ?? "账户注销失败");
-        return;
-      }
-
-      setDeleteError("账户注销失败");
+      setDeleteError(extractApiErrorMessage(error, "账户注销失败"));
     },
   });
 

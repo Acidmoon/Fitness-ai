@@ -1,5 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import axios from "axios";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
@@ -8,13 +7,15 @@ import { z } from "zod";
 import { StatusBadge } from "@/components/StatusBadge";
 import { register as registerUser } from "@/services/auth-api";
 import type { RegisterFormValues } from "@/types/auth";
+import { extractApiErrorMessage } from "@/utils/error";
 
 const registerSchema = z.object({
   username: z
     .string()
     .min(3, "用户名长度至少 3 位")
     .max(50, "用户名长度不能超过 50 位")
-    .regex(/^[a-zA-Z0-9_]+$/, "用户名只能包含字母、数字和下划线"),
+    .regex(/^[a-zA-Z0-9_]+$/, "用户名只能包含字母、数字和下划线")
+    .refine((value) => !/^\d+$/.test(value), "用户名不能为纯数字"),
   email: z.string().email("请输入有效邮箱"),
   password: z
     .string()
@@ -52,12 +53,7 @@ export function RegisterPage() {
         navigate("/login", { replace: true });
       }, 800);
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setSubmitError(error.response?.data?.detail ?? "注册失败，请稍后重试");
-        return;
-      }
-
-      setSubmitError("注册失败，请稍后重试");
+      setSubmitError(extractApiErrorMessage(error, "注册失败，请稍后重试"));
     }
   }
 

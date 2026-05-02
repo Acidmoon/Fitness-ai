@@ -1,5 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import axios from "axios";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -9,6 +8,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { login } from "@/services/auth-api";
 import { setAccessToken } from "@/services/auth-storage";
 import type { LoginFormValues } from "@/types/auth";
+import { extractApiErrorMessage } from "@/utils/error";
 
 const loginSchema = z.object({
   username: z.string().min(1, "请输入用户名"),
@@ -40,12 +40,7 @@ export function LoginPage() {
       setAccessToken(data.access_token);
       navigate(from, { replace: true });
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setSubmitError(error.response?.data?.detail ?? "登录失败，请稍后重试");
-        return;
-      }
-
-      setSubmitError("登录失败，请稍后重试");
+      setSubmitError(extractApiErrorMessage(error, "登录失败，请稍后重试"));
     }
   }
 

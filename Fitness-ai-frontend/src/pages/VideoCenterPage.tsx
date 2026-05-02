@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -9,6 +8,7 @@ import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingState } from "@/components/states/LoadingState";
 import { getExercises, getRecords } from "@/services/exercise-api";
 import { deleteVideo, fetchVideoBlob, uploadVideo } from "@/services/video-api";
+import { extractApiErrorMessage } from "@/utils/error";
 
 function extractFilename(videoUrl: string) {
   return videoUrl.split("/").pop() ?? "";
@@ -54,12 +54,7 @@ export function VideoCenterPage() {
     },
     onError: (error) => {
       setUploadingRecordId(null);
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.detail ?? "视频上传失败");
-        return;
-      }
-
-      setErrorMessage("视频上传失败");
+      setErrorMessage(extractApiErrorMessage(error, "视频上传失败"));
     },
   });
 
@@ -71,12 +66,7 @@ export function VideoCenterPage() {
       await queryClient.invalidateQueries({ queryKey: ["exercise", "records"] });
     },
     onError: (error) => {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.detail ?? "视频删除失败");
-        return;
-      }
-
-      setErrorMessage("视频删除失败");
+      setErrorMessage(extractApiErrorMessage(error, "视频删除失败"));
     },
   });
 
@@ -89,12 +79,7 @@ export function VideoCenterPage() {
       window.open(objectUrl, "_blank", "noopener,noreferrer");
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.detail ?? "视频预览失败");
-        return;
-      }
-
-      setErrorMessage("视频预览失败");
+      setErrorMessage(extractApiErrorMessage(error, "视频预览失败"));
     }
   }
 

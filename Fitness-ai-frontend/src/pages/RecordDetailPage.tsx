@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -15,6 +14,7 @@ import {
 } from "@/services/pose-analysis-api";
 import { deleteVideo, fetchVideoBlob, uploadVideo } from "@/services/video-api";
 import type { PoseScoringResult } from "@/types/pose-scoring";
+import { extractApiErrorMessage } from "@/utils/error";
 
 function extractFilename(videoUrl: string) {
   return videoUrl.split("/").pop() ?? "";
@@ -84,12 +84,7 @@ export function RecordDetailPage() {
     },
     onError: (error) => {
       setDetailMessage("");
-      if (axios.isAxiosError(error)) {
-        setDetailError(error.response?.data?.detail ?? "视频上传失败");
-        return;
-      }
-
-      setDetailError("视频上传失败");
+      setDetailError(extractApiErrorMessage(error, "视频上传失败"));
     },
   });
 
@@ -105,12 +100,7 @@ export function RecordDetailPage() {
     },
     onError: (error) => {
       setDetailMessage("");
-      if (axios.isAxiosError(error)) {
-        setDetailError(error.response?.data?.detail ?? "视频删除失败");
-        return;
-      }
-
-      setDetailError("视频删除失败");
+      setDetailError(extractApiErrorMessage(error, "视频删除失败"));
     },
   });
 
@@ -129,12 +119,7 @@ export function RecordDetailPage() {
     },
     onError: (error) => {
       setDetailMessage("");
-      if (axios.isAxiosError(error)) {
-        setDetailError(error.response?.data?.detail ?? "姿态分析失败");
-        return;
-      }
-
-      setDetailError("姿态分析失败");
+      setDetailError(extractApiErrorMessage(error, "姿态分析失败"));
     },
   });
 
@@ -149,12 +134,7 @@ export function RecordDetailPage() {
     },
     onError: (error) => {
       setDetailMessage("");
-      if (axios.isAxiosError(error)) {
-        setDetailError(error.response?.data?.detail ?? "AI 评分预览失败");
-        return;
-      }
-
-      setDetailError("AI 评分预览失败");
+      setDetailError(extractApiErrorMessage(error, "AI 评分预览失败"));
     },
   });
 
@@ -171,12 +151,7 @@ export function RecordDetailPage() {
     },
     onError: (error) => {
       setDetailMessage("");
-      if (axios.isAxiosError(error)) {
-        setDetailError(error.response?.data?.detail ?? "AI 评分应用失败");
-        return;
-      }
-
-      setDetailError("AI 评分应用失败");
+      setDetailError(extractApiErrorMessage(error, "AI 评分应用失败"));
     },
   });
 
@@ -188,12 +163,7 @@ export function RecordDetailPage() {
       window.open(objectUrl, "_blank", "noopener,noreferrer");
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setDetailError(error.response?.data?.detail ?? "视频预览失败");
-        return;
-      }
-
-      setDetailError("视频预览失败");
+      setDetailError(extractApiErrorMessage(error, "视频预览失败"));
     }
   }
 
