@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     MOVENET_SAMPLE_FPS: int = 5
 
     # CORS 配置
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:8080"
 
     # 日志配置
     LOG_LEVEL: str = "INFO"
