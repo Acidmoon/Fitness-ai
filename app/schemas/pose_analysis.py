@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -36,5 +37,21 @@ class PoseAnalysisResponse(BaseModel):
     summary: Optional[PoseAnalysisSummary] = None
     frames: List[PoseAnalysisFrame] = []
     error: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+PoseAnalysisJobStatus = Literal["queued", "running", "succeeded", "failed"]
+
+
+class PoseAnalysisJobResponse(BaseModel):
+    id: int
+    record_id: int
+    status: PoseAnalysisJobStatus
+    error: Optional[str] = None
+    result_summary: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)

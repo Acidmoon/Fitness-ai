@@ -1,13 +1,18 @@
-import os
 from typing import Iterable, Optional
 
-VIDEO_URL_PREFIX = "/videos/"
-UPLOAD_DIR = "uploads/videos"
+from app.config import settings
+from app.utils.video_storage import (
+    LocalVideoStorage,
+    VIDEO_DELETE_STATUS_DELETED,
+    VIDEO_DELETE_STATUS_MISSING,
+    VIDEO_DELETE_STATUS_SKIPPED,
+    VIDEO_URL_PREFIX,
+    VideoUploadTooLargeError,
+)
+
+UPLOAD_DIR = settings.VIDEO_UPLOAD_DIR
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 VIDEO_SIGNATURE_READ_SIZE = 32
-VIDEO_DELETE_STATUS_DELETED = "deleted"
-VIDEO_DELETE_STATUS_MISSING = "missing"
-VIDEO_DELETE_STATUS_SKIPPED = "skipped"
 ALLOWED_VIDEO_MIME_TYPES = {
     ".mp4": {"video/mp4", "application/mp4", "application/octet-stream"},
     ".mov": {"video/quicktime", "application/octet-stream"},
@@ -27,73 +32,42 @@ MP4_COMPATIBLE_BRANDS = {
 }
 
 
-class VideoUploadTooLargeError(Exception):
-    pass
-
-
 class UnsupportedVideoContentError(Exception):
     pass
 
 
+def get_video_storage() -> LocalVideoStorage:
+    if settings.VIDEO_STORAGE_BACKEND != "local":
+        raise RuntimeError("VIDEO_STORAGE_BACKEND 当前仅支持 local")
+    return LocalVideoStorage(UPLOAD_DIR)
+
+
 def ensure_upload_dir() -> None:
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    get_video_storage().ensure_ready()
 
 
 def is_safe_filename(filename: str) -> bool:
-    return bool(
-        filename
-        and ".." not in filename
-        and "/" not in filename
-        and "\\" not in filename
-    )
+    return LocalVideoStorage.is_safe_filename(filename)
 
 
 def build_video_url(filename: str) -> str:
-    return f"{VIDEO_URL_PREFIX}{filename}"
+    return get_video_storage().build_url(filename)
 
 
 def resolve_upload_path(filename: str) -> Optional[str]:
-    if not is_safe_filename(filename):
-        return None
-
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    real_path = os.path.realpath(file_path)
-    real_upload_dir = os.path.realpath(UPLOAD_DIR)
-    if not real_path.startswith(real_upload_dir + os.sep):
-        return None
-
-    return file_path
+    return get_video_storage().resolve_path(filename)
 
 
 def get_filename_from_video_url(video_url: Optional[str]) -> Optional[str]:
-    if not video_url or not video_url.startswith(VIDEO_URL_PREFIX):
-        return None
-
-    filename = video_url[len(VIDEO_URL_PREFIX) :]
-    if not is_safe_filename(filename):
-        return None
-
-    return filename
+    return get_video_storage().get_filename_from_url(video_url)
 
 
 def resolve_video_path_from_url(video_url: Optional[str]) -> Optional[str]:
-    filename = get_filename_from_video_url(video_url)
-    if not filename:
-        return None
-    return resolve_upload_path(filename)
+    return get_video_storage().resolve_path_from_url(video_url)
 
 
 def delete_video_file(video_url: Optional[str]) -> str:
-    file_path = resolve_video_path_from_url(video_url)
-    if not file_path:
-        return VIDEO_DELETE_STATUS_SKIPPED
-
-    try:
-        os.remove(file_path)
-        return VIDEO_DELETE_STATUS_DELETED
-    except FileNotFoundError:
-        return VIDEO_DELETE_STATUS_MISSING
-
+    return get_video_storage().delete(video_url)
 
 
 def delete_record_videos(records: Iterable) -> None:
@@ -141,25 +115,37 @@ def validate_video_upload_content(upload_file, file_ext: str) -> None:
 
 
 def stream_upload_to_path(upload_file, file_path: str, max_file_size: int) -> int:
-    total_size = 0
+    return get_video_storage().stream_upload_to_path(
+        upload_file,
+        file_path,
+        max_file_size,
+        UPLOAD_CHUNK_SIZE,
+    )
 
-    try:
-        with open(file_path, "wb") as buffer:
-            while True:
-                chunk = upload_file.file.read(UPLOAD_CHUNK_SIZE)
-                if not chunk:
-                    break
 
-                total_size += len(chunk)
-                if total_size > max_file_size:
-                    raise VideoUploadTooLargeError
-
-                buffer.write(chunk)
-    except Exception:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        raise
-    finally:
-        upload_file.file.seek(0)
-
-    return total_size
+__all__ = [
+    "ALLOWED_VIDEO_MIME_TYPES",
+    "MP4_COMPATIBLE_BRANDS",
+    "UPLOAD_CHUNK_SIZE",
+    "UPLOAD_DIR",
+    "UnsupportedVideoContentError",
+    "VIDEO_DELETE_STATUS_DELETED",
+    "VIDEO_DELETE_STATUS_MISSING",
+    "VIDEO_DELETE_STATUS_SKIPPED",
+    "VIDEO_SIGNATURE_READ_SIZE",
+    "VIDEO_URL_PREFIX",
+    "VideoUploadTooLargeError",
+    "build_video_url",
+    "delete_record_videos",
+    "delete_video_file",
+    "detect_video_signature",
+    "ensure_upload_dir",
+    "get_filename_from_video_url",
+    "get_video_storage",
+    "is_safe_filename",
+    "read_upload_header",
+    "resolve_upload_path",
+    "resolve_video_path_from_url",
+    "stream_upload_to_path",
+    "validate_video_upload_content",
+]

@@ -1,13 +1,15 @@
 import axios from "axios";
+import type { AxiosError, InternalAxiosRequestConfig } from "axios";
 
+import { resolveApiBaseUrl } from "@/services/api-base-url";
 import { clearAccessToken, getAccessToken } from "@/services/auth-storage";
 
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000",
+  baseURL: resolveApiBaseUrl(),
   timeout: 10000,
 });
 
-http.interceptors.request.use((config) => {
+export function attachBearerToken(config: InternalAxiosRequestConfig) {
   const token = getAccessToken();
 
   if (token) {
@@ -15,15 +17,15 @@ http.interceptors.request.use((config) => {
   }
 
   return config;
-});
+}
 
-http.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      clearAccessToken();
-    }
-
-    return Promise.reject(error);
+export function handleAuthError(error: AxiosError) {
+  if (error.response?.status === 401) {
+    clearAccessToken();
   }
-);
+
+  return Promise.reject(error);
+}
+
+http.interceptors.request.use(attachBearerToken);
+http.interceptors.response.use((response) => response, handleAuthError);

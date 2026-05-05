@@ -22,6 +22,8 @@ vi.mock("@/services/video-api", () => ({
 
 vi.mock("@/services/pose-analysis-api", () => ({
   applyPoseScoring: vi.fn(),
+  createPoseAnalysisJob: vi.fn(),
+  getPoseAnalysisJob: vi.fn(),
   getPoseAnalysis: vi.fn(),
   previewPoseScoring: vi.fn(),
   triggerPoseAnalysis: vi.fn(),
@@ -68,6 +70,16 @@ describe("RecordDetailPage", () => {
       summary: null,
       frames: [],
       error: null,
+    });
+    vi.mocked(poseAnalysisApi.getPoseAnalysisJob).mockResolvedValue({
+      id: 77,
+      record_id: 11,
+      status: "succeeded",
+      error: null,
+      result_summary: null,
+      created_at: "2026-03-11T08:00:00Z",
+      updated_at: "2026-03-11T08:00:01Z",
+      completed_at: "2026-03-11T08:00:01Z",
     });
   });
 
@@ -371,22 +383,15 @@ describe("RecordDetailPage", () => {
       feedback: null,
       created_at: "2026-03-11T08:00:00Z",
     });
-    vi.mocked(poseAnalysisApi.triggerPoseAnalysis).mockResolvedValue({
+    vi.mocked(poseAnalysisApi.createPoseAnalysisJob).mockResolvedValue({
+      id: 77,
       record_id: 11,
-      schema_version: 1,
-      status: "done",
-      model: { name: "thunder", input_size: 256 },
-      summary: {
-        total_frames: 30,
-        processed_frames: 30,
-        sampled_frames: 5,
-        valid_frame_count: 5,
-        average_confidence: 0.88,
-        source_fps: 30,
-        sample_fps: 5,
-      },
-      frames: [],
+      status: "queued",
       error: null,
+      result_summary: null,
+      created_at: "2026-03-11T08:00:00Z",
+      updated_at: "2026-03-11T08:00:00Z",
+      completed_at: null,
     });
 
     renderPage();
@@ -394,7 +399,48 @@ describe("RecordDetailPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "开始姿态分析" }));
 
     expect(await screen.findByText("姿态分析完成。")).toBeInTheDocument();
-    expect(poseAnalysisApi.triggerPoseAnalysis).toHaveBeenCalledWith(11);
+    expect(poseAnalysisApi.createPoseAnalysisJob).toHaveBeenCalledWith(11);
+    expect(poseAnalysisApi.getPoseAnalysisJob).toHaveBeenCalledWith(77);
+  });
+
+  it("shows failed pose analysis job state", async () => {
+    vi.mocked(exerciseApi.getRecordDetail).mockResolvedValue({
+      id: 11,
+      exercise_id: 1,
+      score: 89,
+      count: 14,
+      duration: 65,
+      heart_rate_avg: 126,
+      video_url: "/videos/demo.mp4",
+      feedback: null,
+      created_at: "2026-03-11T08:00:00Z",
+    });
+    vi.mocked(poseAnalysisApi.createPoseAnalysisJob).mockResolvedValue({
+      id: 78,
+      record_id: 11,
+      status: "queued",
+      error: null,
+      result_summary: null,
+      created_at: "2026-03-11T08:00:00Z",
+      updated_at: "2026-03-11T08:00:00Z",
+      completed_at: null,
+    });
+    vi.mocked(poseAnalysisApi.getPoseAnalysisJob).mockResolvedValue({
+      id: 78,
+      record_id: 11,
+      status: "failed",
+      error: "姿态分析失败",
+      result_summary: null,
+      created_at: "2026-03-11T08:00:00Z",
+      updated_at: "2026-03-11T08:00:01Z",
+      completed_at: "2026-03-11T08:00:01Z",
+    });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "开始姿态分析" }));
+
+    expect(await screen.findByText("姿态分析失败")).toBeInTheDocument();
   });
 
   it("shows the preview error message when preview fails", async () => {

@@ -4,15 +4,23 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
+ACCEPTED_ENVIRONMENTS = {"development", "test", "staging", "production"}
 PLACEHOLDER_DATABASE_URLS = {
     "postgresql://user:password@localhost:5432/fitness_ai",
+    "postgresql://username:password@localhost:5432/fitness_ai",
+    "postgresql://<username>:<password>@<host>:5432/<database>",
 }
 PLACEHOLDER_SECRET_KEYS = {
     "your-secret-key-change-in-production",
+    "your-random-secret-key-here-use-openssl-rand-hex-32",
+    "<generate-with-python-secrets-token-hex-32>",
 }
 
 
 class Settings(BaseSettings):
+    # 运行环境
+    ENVIRONMENT: str = "development"
+
     # 数据库
     DATABASE_URL: str
 
@@ -33,6 +41,10 @@ class Settings(BaseSettings):
     # CORS 配置
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:8080"
 
+    # 视频存储配置
+    VIDEO_STORAGE_BACKEND: str = "local"
+    VIDEO_UPLOAD_DIR: str = "uploads/videos"
+
     # 日志配置
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/app.log"
@@ -41,6 +53,15 @@ class Settings(BaseSettings):
     LOG_FORMAT: str = "text"
 
     model_config = SettingsConfigDict(env_file=".env")
+
+    @field_validator("ENVIRONMENT")
+    @classmethod
+    def validate_environment(cls, value: str) -> str:
+        environment = value.strip().lower()
+        if environment not in ACCEPTED_ENVIRONMENTS:
+            accepted = "、".join(sorted(ACCEPTED_ENVIRONMENTS))
+            raise ValueError(f"ENVIRONMENT 必须是以下值之一：{accepted}")
+        return environment
 
     @field_validator("DATABASE_URL")
     @classmethod
@@ -89,10 +110,18 @@ class Settings(BaseSettings):
             raise ValueError("MOVENET_SAMPLE_FPS 必须为正整数")
         return value
 
+    @field_validator("VIDEO_STORAGE_BACKEND")
+    @classmethod
+    def validate_video_storage_backend(cls, value: str) -> str:
+        storage_backend = value.strip().lower()
+        if storage_backend != "local":
+            raise ValueError("VIDEO_STORAGE_BACKEND 当前仅支持 local")
+        return storage_backend
+
     @property
     def allowed_origins_list(self) -> List[str]:
         """将逗号分隔的字符串转换为列表"""
-        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
 
 settings = Settings()

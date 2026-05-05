@@ -42,10 +42,3 @@ movenet/
 .cowork-temp/
 AGENTS.md
 .codex/
-openspec/changes/*
-!openspec/changes/archive/
-!openspec/changes/archive/**
-
-
-
-

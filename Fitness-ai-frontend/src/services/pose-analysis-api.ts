@@ -1,6 +1,9 @@
 import { http } from "@/services/http";
-import type { PoseAnalysisResult } from "@/types/pose-analysis";
+import type { components } from "@/api/types";
+import type { PoseAnalysisJob, PoseAnalysisResult } from "@/types/pose-analysis";
 import type { PoseScoringResult } from "@/types/pose-scoring";
+
+type PoseAnalysisJobContract = components["schemas"]["PoseAnalysisJobResponse"];
 
 export async function getPoseAnalysis(recordId: number) {
   const { data } = await http.get<PoseAnalysisResult>(
@@ -15,6 +18,21 @@ export async function triggerPoseAnalysis(recordId: number, sampleFps?: number) 
     sampleFps ? { sample_fps: sampleFps } : {}
   );
   return data;
+}
+
+export async function createPoseAnalysisJob(recordId: number, sampleFps?: number) {
+  const { data } = await http.post<PoseAnalysisJobContract>(
+    `/api/ai/records/${recordId}/pose-analysis/jobs`,
+    sampleFps ? { sample_fps: sampleFps } : {}
+  );
+  return data as PoseAnalysisJob;
+}
+
+export async function getPoseAnalysisJob(jobId: number) {
+  const { data } = await http.get<PoseAnalysisJobContract>(
+    `/api/ai/pose-analysis/jobs/${jobId}`
+  );
+  return data as PoseAnalysisJob;
 }
 
 export async function previewPoseScoring(recordId: number) {

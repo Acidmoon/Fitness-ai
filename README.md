@@ -186,19 +186,29 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 编辑 `.env` 文件，填入配置：
 ```bash
+ENVIRONMENT=development
 DATABASE_URL=postgresql://user:pass@localhost:5432/fitness_ai
-SECRET_KEY=your-random-secret-key-here
+SECRET_KEY=<使用下方命令生成的随机密钥>
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:8080
 LOG_LEVEL=INFO
 LOG_FORMAT=text
+```
+
+`ENVIRONMENT` 可选值为 `development`、`test`、`staging`、`production`。本地开发使用 `development`；部署环境必须显式设置为 `staging` 或 `production`，并使用真实数据库连接、随机 `SECRET_KEY` 和准确的前端来源白名单。
+
+生成 `SECRET_KEY`：
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 **安全提示**：
 - 不要使用默认的数据库连接字符串
 - `SECRET_KEY` 必须使用随机生成的 32 字节密钥
-- 生产环境 `ALLOWED_ORIGINS` 应设置为具体域名，不要用 `*`
+- 生产环境 `ALLOWED_ORIGINS` 应设置为具体前端域名，不要用 `*`
+- 前后端分离部署时，`ALLOWED_ORIGINS` 必须包含浏览器实际访问的前端 origin，例如 `https://fitness.example.com`
 
 ### 6. 初始化数据库
 ```bash
@@ -225,6 +235,83 @@ npm run dev
 ```
 
 前端默认使用 Vite，本地可通过 `npm run build` 验证生产构建，通过 `npm run test` 运行 Vitest。
+
+前端环境变量：
+
+```bash
+# Fitness-ai-frontend/.env
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+本地开发未设置 `VITE_API_BASE_URL` 时，前端会回退到 `http://127.0.0.1:8000`。生产构建必须显式设置该值，否则会失败并提示配置错误，避免线上包误连本地后端。
+
+### 前后端分离部署示例
+
+假设前端部署在 `https://fitness.example.com`，后端 API 部署在 `https://api.fitness.example.com`：
+
+后端 `.env`：
+
+```bash
+ENVIRONMENT=production
+DATABASE_URL=postgresql://fitness_app:<password>@db.example.com:5432/fitness_ai
+SECRET_KEY=<使用 secrets.token_hex(32) 生成>
+ALLOWED_ORIGINS=https://fitness.example.com
+```
+
+前端构建环境：
+
+```bash
+VITE_API_BASE_URL=https://api.fitness.example.com
+```
+
+如果通过同域反向代理让前端的 `/api` 转发到后端，也可以将 `VITE_API_BASE_URL` 设置为同源 API 路径，但必须在部署文档中固定代理规则，并保持后端 CORS 白名单只包含实际允许的前端来源。
+
+### 分离部署下的视频存储
+
+上传视频必须继续通过后端 API 访问，不要把 `uploads/videos` 直接挂成公开静态目录。原因是视频文件属于用户数据，当前访问控制依赖 `GET /api/video/videos/{filename}` 校验 Bearer token 和记录归属，公开静态目录会绕过这个校验。
+
+本地开发默认使用：
+
+```bash
+VIDEO_STORAGE_BACKEND=local
+VIDEO_UPLOAD_DIR=uploads/videos
+```
+
+`local` 模式适合单实例开发或单实例部署。多实例生产部署时，所有 API 实例必须能读取和删除数据库中引用的视频文件，因此 `VIDEO_UPLOAD_DIR` 应指向共享卷；如果改用 S3 兼容对象存储，应先扩展视频存储 adapter，并保持前端仍通过后端受控接口或后端校验后生成的短期授权链接访问视频。
+
+### 前后端分离鉴权约定
+
+当前分离部署继续使用 Bearer JWT，不依赖跨站 Cookie：
+
+1. 前端通过 `POST /api/auth/login` 提交 OAuth2 password form 字段 `username` 和 `password`。
+2. 后端返回 `{ "access_token": "...", "token_type": "bearer" }`。
+3. 前端在受保护 API 请求中发送 `Authorization: Bearer <access_token>`。
+4. 后端对缺失、无效、过期或用户不存在的 token 返回 `401 Unauthorized`；前端收到 `401` 后清理本地 token 并要求重新登录。
+5. 后端对已识别但不可继续访问的账户状态返回 `403 Forbidden`；前端应展示账户状态或授权错误，不把它当作单纯未登录处理。
+
+本阶段不引入 httpOnly refresh cookie 或跨站 Cookie 会话。后续如果需要 refresh token，需要单独设计 CSRF、SameSite、轮换和注销语义。
+
+### API 契约类型生成
+
+后端 OpenAPI schema 是前后端接口契约的来源。当前提交 `Fitness-ai-frontend/src/api/openapi.json` 和 `Fitness-ai-frontend/src/api/types.ts` 作为可审查产物；后端路由、Pydantic schema 或 response model 变化后，需要重新生成并提交这两个文件。
+
+生成命令：
+
+```bash
+cd Fitness-ai-frontend
+npm run generate:api
+```
+
+校验生成产物是否与当前后端一致：
+
+```bash
+cd Fitness-ai-frontend
+npm run check:api
+```
+
+运行这些命令前需要确保后端 Python 依赖可被 `python` 命令加载，推荐先激活项目虚拟环境。新写或修改前端 API service 时，优先从 `src/api/types.ts` 引用 OpenAPI 生成类型；已有 `src/types/*` 可以继续作为页面 view model 或兼容层存在。
+
+当前已识别的契约改进点：部分返回简单 `{ "message": "..." }` 或临时字典的接口尚未声明显式 `response_model`，生成类型会退化为 `unknown` 或较宽泛结构。后续修改这些接口时应补 Pydantic response schema，再重新运行 `npm run generate:api`。
 
 ---
 
@@ -473,4 +560,3 @@ python -m scripts.seed_data
 ---
 
 **文档维护**: 请在每次重大更新后同步更新此文档
-

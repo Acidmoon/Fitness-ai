@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { StatusBadge } from "@/components/StatusBadge";
@@ -8,9 +8,10 @@ import { LoadingState } from "@/components/states/LoadingState";
 import { getExercises, getRecordDetail } from "@/services/exercise-api";
 import {
   applyPoseScoring,
+  createPoseAnalysisJob,
+  getPoseAnalysisJob,
   getPoseAnalysis,
   previewPoseScoring,
-  triggerPoseAnalysis,
 } from "@/services/pose-analysis-api";
 import { deleteVideo, fetchVideoBlob, uploadVideo } from "@/services/video-api";
 import type { PoseScoringResult } from "@/types/pose-scoring";
@@ -56,6 +57,10 @@ export function RecordDetailPage() {
   const [detailError, setDetailError] = useState("");
   const [poseScoringPreview, setPoseScoringPreview] =
     useState<PoseScoringResult | null>(null);
+  const [poseAnalysisJobId, setPoseAnalysisJobId] = useState<number | null>(null);
+  const [handledPoseAnalysisJobId, setHandledPoseAnalysisJobId] = useState<
+    number | null
+  >(null);
   const queryClient = useQueryClient();
   const exercisesQuery = useQuery({
     queryKey: ["exercise", "catalog"],
@@ -70,6 +75,15 @@ export function RecordDetailPage() {
     queryKey: ["pose-analysis", numericRecordId],
     queryFn: () => getPoseAnalysis(numericRecordId),
     enabled: Number.isFinite(numericRecordId),
+  });
+  const poseAnalysisJobQuery = useQuery({
+    queryKey: ["pose-analysis-job", poseAnalysisJobId],
+    queryFn: () => getPoseAnalysisJob(poseAnalysisJobId!),
+    enabled: poseAnalysisJobId !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "queued" || status === "running" ? 1500 : false;
+    },
   });
 
   const uploadMutation = useMutation({
@@ -104,24 +118,51 @@ export function RecordDetailPage() {
     },
   });
 
-  const poseAnalysisMutation = useMutation({
-    mutationFn: () => triggerPoseAnalysis(numericRecordId),
-    onSuccess: async () => {
+  const poseAnalysisJobMutation = useMutation({
+    mutationFn: () => createPoseAnalysisJob(numericRecordId),
+    onSuccess: (job) => {
       setDetailError("");
       setPoseScoringPreview(null);
-      setDetailMessage("姿态分析完成。");
-      await queryClient.invalidateQueries({
-        queryKey: ["pose-analysis", numericRecordId],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["exercise", "record-detail", numericRecordId],
-      });
+      setHandledPoseAnalysisJobId(null);
+      setPoseAnalysisJobId(job.id);
+      setDetailMessage("姿态分析任务已提交。");
     },
     onError: (error) => {
       setDetailMessage("");
-      setDetailError(extractApiErrorMessage(error, "姿态分析失败"));
+      setDetailError(extractApiErrorMessage(error, "姿态分析任务提交失败"));
     },
   });
+
+  useEffect(() => {
+    const job = poseAnalysisJobQuery.data;
+    if (!job || handledPoseAnalysisJobId === job.id) {
+      return;
+    }
+
+    if (job.status === "succeeded") {
+      setHandledPoseAnalysisJobId(job.id);
+      setDetailError("");
+      setPoseScoringPreview(null);
+      setDetailMessage("姿态分析完成。");
+      void queryClient.invalidateQueries({
+        queryKey: ["pose-analysis", numericRecordId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["exercise", "record-detail", numericRecordId],
+      });
+    }
+
+    if (job.status === "failed") {
+      setHandledPoseAnalysisJobId(job.id);
+      setDetailMessage("");
+      setDetailError(job.error ?? "姿态分析失败");
+    }
+  }, [
+    handledPoseAnalysisJobId,
+    numericRecordId,
+    poseAnalysisJobQuery.data,
+    queryClient,
+  ]);
 
   const poseScoringPreviewMutation = useMutation({
     mutationFn: () => previewPoseScoring(numericRecordId),
@@ -199,11 +240,18 @@ export function RecordDetailPage() {
     (item) => item.id === recordQuery.data.exercise_id
   );
   const poseAnalysis = poseAnalysisQuery.data;
-  const poseAnalysisStatus = poseAnalysisMutation.isPending
+  const poseAnalysisJobStatus = poseAnalysisJobQuery.data?.status;
+  const isPoseAnalysisJobPending =
+    poseAnalysisJobMutation.isPending ||
+    poseAnalysisJobStatus === "queued" ||
+    poseAnalysisJobStatus === "running";
+  const poseAnalysisStatus = isPoseAnalysisJobPending
     ? "processing"
+    : poseAnalysisJobStatus === "failed"
+      ? "failed"
     : poseAnalysis?.status ?? "idle";
   const canTriggerPoseAnalysis =
-    Boolean(recordQuery.data.video_url) && !poseAnalysisMutation.isPending;
+    Boolean(recordQuery.data.video_url) && !isPoseAnalysisJobPending;
   const poseStatusLabel =
     poseAnalysisStatus === "done"
       ? "分析完成"
@@ -392,10 +440,10 @@ export function RecordDetailPage() {
                 onClick={() => {
                   setDetailMessage("");
                   setDetailError("");
-                  poseAnalysisMutation.mutate();
+                  poseAnalysisJobMutation.mutate();
                 }}
               >
-                {poseAnalysisMutation.isPending ? "分析中..." : "开始姿态分析"}
+                {isPoseAnalysisJobPending ? "分析中..." : "开始姿态分析"}
               </button>
             ) : (
               <span className="field-hint">上传视频后可开始姿态分析。</span>
@@ -407,7 +455,9 @@ export function RecordDetailPage() {
               <strong>{poseStatusLabel}</strong>
               <p>
                 {recordQuery.data.video_url
-                  ? "视频已就绪，可随时重新触发姿态分析。"
+                  ? isPoseAnalysisJobPending
+                    ? "姿态分析任务正在后台执行，请等待结果刷新。"
+                    : "视频已就绪，可随时重新触发姿态分析。"
                   : "当前没有视频素材，分析链路保持待分析状态。"}
               </p>
             </article>

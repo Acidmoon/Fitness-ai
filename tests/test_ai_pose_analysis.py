@@ -235,6 +235,106 @@ class TestPoseAnalysisApi:
         assert record.video_url == "/videos/test.mp4"
         assert record.keypoints_data is None
 
+    def test_create_pose_analysis_job_succeeds_and_stores_result(
+        self, client, db_session, test_user, tmp_path
+    ):
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+        (upload_dir / "job.mp4").write_bytes(b"video")
+        record = create_exercise_record(
+            db_session, test_user["user"].id, video_url="/videos/job.mp4"
+        )
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
+            "app.api.ai.analyze_video_file", return_value=sample_pose_analysis_result()
+        ) as analyze_mock:
+            response = client.post(
+                f"/api/ai/records/{record.id}/pose-analysis/jobs",
+                headers=headers,
+                json={"sample_fps": 5},
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["record_id"] == record.id
+        assert data["status"] == "queued"
+        analyze_mock.assert_called_once()
+
+        job_response = client.get(
+            f"/api/ai/pose-analysis/jobs/{data['id']}", headers=headers
+        )
+        assert job_response.status_code == status.HTTP_200_OK
+        assert job_response.json()["status"] == "succeeded"
+        assert job_response.json()["result_summary"]["average_confidence"] == 0.88
+
+        db_session.refresh(record)
+        assert record.keypoints_data["status"] == "done"
+
+    def test_create_pose_analysis_job_rejects_other_users_record(
+        self, client, db_session, test_user
+    ):
+        record = create_exercise_record(
+            db_session, test_user["user"].id + 1, video_url="/videos/job.mp4"
+        )
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+        response = client.post(
+            f"/api/ai/records/{record.id}/pose-analysis/jobs", headers=headers
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_create_pose_analysis_job_records_failure(
+        self, client, db_session, test_user, tmp_path
+    ):
+        upload_dir = tmp_path / "videos"
+        upload_dir.mkdir()
+        (upload_dir / "job.mp4").write_bytes(b"video")
+        record = create_exercise_record(
+            db_session, test_user["user"].id, video_url="/videos/job.mp4"
+        )
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+        with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
+            "app.api.ai.analyze_video_file",
+            side_effect=PoseAnalysisInferenceError("analysis failed"),
+        ):
+            response = client.post(
+                f"/api/ai/records/{record.id}/pose-analysis/jobs", headers=headers
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        job_id = response.json()["id"]
+
+        job_response = client.get(
+            f"/api/ai/pose-analysis/jobs/{job_id}", headers=headers
+        )
+        assert job_response.status_code == status.HTTP_200_OK
+        assert job_response.json()["status"] == "failed"
+        assert job_response.json()["error"] == "analysis failed"
+
+        db_session.refresh(record)
+        assert record.keypoints_data is None
+
+    def test_get_pose_analysis_job_hides_other_users_job(
+        self, client, db_session, test_user
+    ):
+        from app.models.pose_analysis_job import PoseAnalysisJob
+
+        job = PoseAnalysisJob(
+            record_id=1,
+            user_id=test_user["user"].id + 1,
+            status="queued",
+        )
+        db_session.add(job)
+        db_session.commit()
+
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.get(f"/api/ai/pose-analysis/jobs/{job.id}", headers=headers)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
 
 def test_compact_pose_analysis_result_reduces_stored_frames():
     large_keypoint = {

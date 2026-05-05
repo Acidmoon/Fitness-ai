@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from fastapi import status
 from jose import jwt
 from unittest.mock import patch
@@ -185,6 +187,67 @@ class TestLogin:
         assert payload["sub"] == str(test_user["user"].id)
         assert payload["sub"].isdigit()
         assert payload["sub_type"] == JWT_SUB_TYPE_USER_ID
+
+    def test_protected_endpoint_accepts_valid_bearer_token(
+        self, client, db_session, test_user
+    ):
+        """测试分离前端使用 Bearer token 访问受保护接口"""
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = client.get("/api/user/profile", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["username"] == "testuser"
+
+    def test_protected_endpoint_rejects_invalid_token(self, client, db_session):
+        """测试无效 token 返回 401"""
+        response = client.get(
+            "/api/user/profile",
+            headers={"Authorization": "Bearer not-a-valid-jwt"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_protected_endpoint_rejects_expired_token(
+        self, client, db_session, test_user
+    ):
+        """测试过期 token 返回 401"""
+        expired_token = create_access_token(
+            {"sub": str(test_user["user"].id), "sub_type": JWT_SUB_TYPE_USER_ID},
+            expires_delta=timedelta(seconds=-1),
+        )
+        response = client.get(
+            "/api/user/profile",
+            headers={"Authorization": f"Bearer {expired_token}"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_protected_endpoint_rejects_unknown_user_token(self, client, db_session):
+        """测试 token 可验证但用户不存在时返回 401"""
+        unknown_user_token = create_access_token(
+            {"sub": "999999", "sub_type": JWT_SUB_TYPE_USER_ID}
+        )
+        response = client.get(
+            "/api/user/profile",
+            headers={"Authorization": f"Bearer {unknown_user_token}"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_cors_preflight_allows_authorization_header(self, client, db_session):
+        """测试允许来源可通过 Authorization 头发起跨域受保护请求"""
+        response = client.options(
+            "/api/user/profile",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "Authorization",
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+        assert "Authorization" in response.headers["access-control-allow-headers"]
 
     def test_login_inactive_user_forbidden(self, client, db_session, inactive_test_user):
         """测试已注销账户不能登录拿到新 token"""

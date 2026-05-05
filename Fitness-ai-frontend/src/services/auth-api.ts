@@ -1,16 +1,18 @@
 import { http } from "@/services/http";
+import type { components } from "@/api/types";
 import type {
   LoginFormValues,
   RegisterFormValues,
-  TokenResponse,
 } from "@/types/auth";
+
+type LoginTokenResponse = components["schemas"]["Token"];
 
 export async function login(values: LoginFormValues) {
   const formData = new URLSearchParams();
   formData.set("username", values.username);
   formData.set("password", values.password);
 
-  const { data } = await http.post<TokenResponse>("/api/auth/login", formData, {
+  const { data } = await http.post<LoginTokenResponse>("/api/auth/login", formData, {
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
     },

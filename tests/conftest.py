@@ -11,10 +11,10 @@ os.environ.setdefault(
     "SECRET_KEY", "test-secret-key-for-pytest-not-for-production-use-123456"
 )
 
-from app.database import Base, get_db
-from app.main import app
-from app.utils.login_rate_limit import clear_all_login_rate_limits
-from app.utils.security import hash_password
+from app.database import Base, get_db  # noqa: E402
+from app.main import app  # noqa: E402
+from app.utils.login_rate_limit import clear_all_login_rate_limits  # noqa: E402
+from app.utils.security import hash_password  # noqa: E402
 
 # 使用 SQLite 内存数据库进行测试（无需 PostgreSQL）
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
