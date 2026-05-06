@@ -143,6 +143,7 @@ private fun AuthenticatedApp(viewModel: FitnessAiViewModel, session: com.fitness
                 record = records.firstOrNull { it.id == recordId },
                 operation = operation,
                 actionState = actionState,
+                apiMode = viewModel.isApiMode,
                 onBack = { navController.popBackStack() },
                 onRetryLoad = viewModel::refreshRecords,
                 onClearActionError = viewModel::clearRecordActionError,
@@ -153,7 +154,8 @@ private fun AuthenticatedApp(viewModel: FitnessAiViewModel, session: com.fitness
                 },
                 onPickVideo = { uri -> viewModel.attachVideo(recordId, uri) },
                 onRecordVideo = { navController.navigate("training/$recordId/camera") },
-                onStartAnalysis = { onResult -> viewModel.startAnalysis(recordId, onResult) }
+                onStartAnalysis = { onResult -> viewModel.startAnalysis(recordId, onResult) },
+                onScorePose = { apply, onResult -> viewModel.scorePose(recordId, apply, onResult) }
             )
         }
         composable(Routes.Stats) {

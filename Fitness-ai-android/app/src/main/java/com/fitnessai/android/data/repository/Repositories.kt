@@ -36,6 +36,9 @@ interface VideoRepository {
 
 interface AnalysisRepository {
     suspend fun startAnalysis(recordId: String): Result<Unit>
+    suspend fun scorePose(recordId: String, apply: Boolean): Result<Unit> = Result.failure(
+        UnsupportedOperationException("当前模式不支持后端评分")
+    )
     fun clearAnalysis(recordId: String)
 }
 

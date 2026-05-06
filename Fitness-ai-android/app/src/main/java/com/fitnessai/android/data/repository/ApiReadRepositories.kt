@@ -1,10 +1,16 @@
 package com.fitnessai.android.data.repository
 
 import com.fitnessai.android.data.api.ExerciseApiService
+import com.fitnessai.android.data.api.ApiErrorKind
+import com.fitnessai.android.data.api.ApiRequestException
+import com.fitnessai.android.data.api.PoseScoringApiService
+import com.fitnessai.android.data.api.PoseScoringRequestDto
 import com.fitnessai.android.data.api.StatsApiService
 import com.fitnessai.android.data.api.apiResult
+import com.fitnessai.android.data.api.toAnalysisResult
 import com.fitnessai.android.data.api.toStatsSummary
 import com.fitnessai.android.data.api.toTrainingRecord
+import com.fitnessai.android.data.model.AnalysisStatus
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,5 +59,39 @@ class ApiStatsRepository(
         return apiResult {
             _stats.value = service.getSummary().toStatsSummary()
         }
+    }
+}
+
+class ApiScoringAnalysisRepository(
+    private val service: PoseScoringApiService,
+    private val records: TrainingRecordRepository,
+    private val delegate: AnalysisRepository
+) : AnalysisRepository {
+    override suspend fun startAnalysis(recordId: String): Result<Unit> {
+        return delegate.startAnalysis(recordId)
+    }
+
+    override suspend fun scorePose(recordId: String, apply: Boolean): Result<Unit> {
+        return apiResult {
+            val numericRecordId = recordId.toIntOrNull() ?: throw ApiRequestException(
+                kind = ApiErrorKind.Validation,
+                message = "后端记录 ID 无效"
+            )
+            val result = service.scorePose(numericRecordId, PoseScoringRequestDto(apply = apply))
+            val analysis = result.toAnalysisResult()
+            if (analysis.status == AnalysisStatus.Failed) {
+                throw ApiRequestException(
+                    kind = ApiErrorKind.Validation,
+                    message = analysis.message ?: "评分未完成"
+                )
+            }
+            records.getRecord(recordId)?.let { current ->
+                records.updateRecord(current.copy(analysisResult = analysis))
+            }
+        }
+    }
+
+    override fun clearAnalysis(recordId: String) {
+        delegate.clearAnalysis(recordId)
     }
 }

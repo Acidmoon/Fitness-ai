@@ -37,7 +37,7 @@ class AppRepositoryContainerTest {
         assertTrue(repositories.authRepository is ApiAuthRepository)
         assertTrue(repositories.recordRepository is ApiTrainingRecordRepository)
         assertTrue(repositories.statsRepository is ApiStatsRepository)
-        assertTrue(repositories.analysisRepository is SimulatedAnalysisRepository)
+        assertTrue(repositories.analysisRepository is ApiScoringAnalysisRepository)
         assertTrue(repositories.videoRepository is LocalVideoRepository)
     }
 

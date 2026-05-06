@@ -109,7 +109,7 @@ interface PoseScoringApiService {
     @POST("api/ai/records/{record_id}/pose-scoring")
     suspend fun scorePose(
         @Path("record_id") recordId: Int,
-        @Body request: PoseScoringRequestDto? = null
+        @Body request: PoseScoringRequestDto = PoseScoringRequestDto()
     ): PoseScoringResultDto
 }
 

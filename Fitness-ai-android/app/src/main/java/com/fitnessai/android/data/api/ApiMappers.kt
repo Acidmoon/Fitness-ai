@@ -76,9 +76,13 @@ fun PoseAnalysisResultDto.toAnalysisResult(): AnalysisResult {
 
 fun PoseScoringResultDto.toAnalysisResult(): AnalysisResult {
     return AnalysisResult(
-        status = if (status == "scored") AnalysisStatus.Completed else AnalysisStatus.Failed,
+        status = when (status.lowercase()) {
+            "scored", "completed", "done", "success" -> AnalysisStatus.Completed
+            else -> AnalysisStatus.Failed
+        },
         averageConfidence = confidence,
         scorePreview = score?.toInt(),
+        countPreview = count,
         message = feedback.joinToString("\n").ifBlank { null }
     )
 }

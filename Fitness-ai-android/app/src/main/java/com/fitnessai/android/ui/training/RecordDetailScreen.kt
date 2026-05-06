@@ -51,6 +51,7 @@ fun RecordDetailScreen(
     record: TrainingRecord?,
     operation: ApiOperationState = ApiOperationState.Ready,
     actionState: RecordActionState = RecordActionState(),
+    apiMode: Boolean = false,
     onBack: () -> Unit,
     onRetryLoad: () -> Unit = {},
     onClearActionError: () -> Unit = {},
@@ -58,7 +59,8 @@ fun RecordDetailScreen(
     onDelete: () -> Unit,
     onPickVideo: (Uri) -> Unit,
     onRecordVideo: () -> Unit,
-    onStartAnalysis: ((String?) -> Unit) -> Unit
+    onStartAnalysis: ((String?) -> Unit) -> Unit,
+    onScorePose: (Boolean, (String?) -> Unit) -> Unit = { _, onResult -> onResult(null) }
 ) {
     if (record == null) {
         Column(modifier = Modifier.fillMaxSize().padding(18.dp)) {
@@ -164,12 +166,16 @@ fun RecordDetailScreen(
         AnalysisSection(
             record = record,
             actionState = actionState,
+            apiMode = apiMode,
             onStart = {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 } else {
                     onStartAnalysis { error -> message = error }
                 }
+            },
+            onScorePose = { apply ->
+                onScorePose(apply) { error -> message = error }
             }
         )
         message?.let { ErrorState(message = it) { message = null } }
@@ -237,13 +243,18 @@ private fun VideoSection(
 private fun AnalysisSection(
     record: TrainingRecord,
     actionState: RecordActionState,
-    onStart: () -> Unit
+    apiMode: Boolean,
+    onStart: () -> Unit,
+    onScorePose: (Boolean) -> Unit
 ) {
     val result = record.analysisResult
     LineCard(modifier = Modifier.fillMaxWidth()) {
         Text("模拟分析", style = MaterialTheme.typography.titleMedium)
         if (actionState.analyzing) {
             LoadingState("正在分析")
+        }
+        if (actionState.scoring) {
+            LoadingState("正在评分")
         }
         when (result.status) {
             AnalysisStatus.Idle -> Text(
@@ -258,6 +269,7 @@ private fun AnalysisSection(
                 Text("有效帧 ${result.validFrameCount}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("平均置信度 ${result.averageConfidence}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("预览分数 ${result.scorePreview}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("预览次数 ${result.countPreview ?: "-"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             AnalysisStatus.Failed -> Text(result.message ?: "分析失败", color = MaterialTheme.colorScheme.error)
         }
@@ -268,6 +280,24 @@ private fun AnalysisSection(
         ) {
             Icon(Icons.Outlined.PlayCircle, contentDescription = null)
             Text("开始分析", modifier = Modifier.padding(start = 8.dp))
+        }
+        if (apiMode && result.status == AnalysisStatus.Completed) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = { onScorePose(false) },
+                    enabled = !actionState.isBusy,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("评分预览")
+                }
+                Button(
+                    onClick = { onScorePose(true) },
+                    enabled = !actionState.isBusy,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("应用评分")
+                }
+            }
         }
     }
 }

@@ -32,6 +32,7 @@ data class AnalysisResult(
     val validFrameCount: Int? = null,
     val averageConfidence: Double? = null,
     val scorePreview: Int? = null,
+    val countPreview: Int? = null,
     val message: String? = null
 )
 

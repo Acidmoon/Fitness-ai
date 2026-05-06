@@ -73,6 +73,20 @@ class ApiMappersTest {
             }
             """.trimIndent()
         )
+        val scoring = json.decodeFromString<PoseScoringResultDto>(
+            """
+            {
+              "record_id": 11,
+              "status": "scored",
+              "applied": false,
+              "exercise_type": "pushup",
+              "score": 91.5,
+              "count": 26,
+              "confidence": 0.88,
+              "feedback": ["节奏稳定", "髋部略低"]
+            }
+            """.trimIndent()
+        )
         val weekly = json.decodeFromString<List<WeeklyStatsDto>>(
             """
             [
@@ -95,6 +109,7 @@ class ApiMappersTest {
         val trainingRecord = record.toTrainingRecord(exercise)
         val summary = stats.toStatsSummary()
         val result = analysis.toAnalysisResult()
+        val scoringResult = scoring.toAnalysisResult()
         val weeklyPoint = weekly.first().toWeeklyStatsPoint()
         val best = personalBest.first().toPersonalBestStats()
 
@@ -108,6 +123,11 @@ class ApiMappersTest {
         assertEquals(AnalysisStatus.Completed, result.status)
         assertEquals("MoveNet", result.modelName)
         assertEquals(58, result.validFrameCount)
+        assertEquals(AnalysisStatus.Completed, scoringResult.status)
+        assertEquals(91, scoringResult.scorePreview)
+        assertEquals(26, scoringResult.countPreview)
+        assertEquals(0.88, scoringResult.averageConfidence ?: 0.0, 0.0)
+        assertEquals("节奏稳定\n髋部略低", scoringResult.message)
         assertEquals("2026-05-04", weeklyPoint.date)
         assertEquals(2, weeklyPoint.sessions)
         assertEquals(86.5, weeklyPoint.averageScore, 0.0)

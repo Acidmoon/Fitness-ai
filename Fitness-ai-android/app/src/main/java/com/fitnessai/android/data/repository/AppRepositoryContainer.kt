@@ -47,7 +47,15 @@ object AppRepositoryContainer {
             BackendMode.Mock -> LocalStatsRepository(recordRepository)
             BackendMode.Api -> ApiStatsRepository(requireNotNull(services).stats)
         }
-        val analysisRepository = SimulatedAnalysisRepository(recordRepository, notificationScheduler)
+        val localAnalysisRepository = SimulatedAnalysisRepository(recordRepository, notificationScheduler)
+        val analysisRepository = when (configuration.mode) {
+            BackendMode.Mock -> localAnalysisRepository
+            BackendMode.Api -> ApiScoringAnalysisRepository(
+                service = requireNotNull(services).poseScoring,
+                records = recordRepository,
+                delegate = localAnalysisRepository
+            )
+        }
         val videoRepository = LocalVideoRepository(recordRepository, analysisRepository)
         val authRepository = when (configuration.mode) {
             BackendMode.Mock -> InMemoryAuthRepository()

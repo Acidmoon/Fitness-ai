@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 
 class FitnessAiViewModel(application: Application) : AndroidViewModel(application) {
     private val configuration = AppBackendConfiguration.fromBuildConfig()
-    private val isApiMode = configuration.mode == BackendMode.Api
+    val isApiMode: Boolean = configuration.mode == BackendMode.Api
     private val repositories = AppRepositoryContainer.create(application, configuration)
     private val authRepository = repositories.authRepository
     private val recordRepository = repositories.recordRepository
@@ -156,6 +156,27 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun retryAnalysis(recordId: String, onResult: (String?) -> Unit) {
         startAnalysis(recordId, onResult)
+    }
+
+    fun scorePose(recordId: String, apply: Boolean, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            if (!isApiMode) {
+                onResult(null)
+                return@launch
+            }
+            if (_recordActionState.value.isBusy) {
+                onResult("操作正在进行中")
+                return@launch
+            }
+            _recordActionState.value = RecordActionState(scoring = true)
+            val result = analysisRepository.scorePose(recordId, apply)
+            val error = result.exceptionOrNull()?.userMessage()
+            if (result.isSuccess && apply) {
+                refreshReadData()
+            }
+            _recordActionState.value = RecordActionState(errorMessage = error)
+            onResult(error)
+        }
     }
 
     fun clearRecordActionError() {
