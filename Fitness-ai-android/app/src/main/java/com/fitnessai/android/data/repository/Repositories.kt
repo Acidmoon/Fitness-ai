@@ -37,7 +37,7 @@ interface StatsRepository {
 }
 
 interface VideoRepository {
-    fun attachVideo(recordId: String, uri: Uri)
+    suspend fun attachVideo(recordId: String, uri: Uri): Result<Unit>
 }
 
 interface AnalysisRepository {

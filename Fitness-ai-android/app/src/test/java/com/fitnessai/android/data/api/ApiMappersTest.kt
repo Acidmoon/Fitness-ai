@@ -118,6 +118,8 @@ class ApiMappersTest {
         assertEquals("俯卧撑", trainingRecord.exerciseName)
         assertEquals("上肢", trainingRecord.category)
         assertEquals(88, trainingRecord.score)
+        assertEquals("http://10.0.2.2:8000/videos/pushup.mp4", resolveBackendVideoUrl("/videos/pushup.mp4", "http://10.0.2.2:8000/"))
+        assertEquals("https://cdn.example.com/a.mp4", resolveBackendVideoUrl("https://cdn.example.com/a.mp4", "http://10.0.2.2:8000/"))
         assertEquals(2, summary.totalRecords)
         assertEquals(56, summary.totalCount)
         assertEquals(AnalysisStatus.Completed, result.status)

@@ -19,7 +19,7 @@ fun UserProfileDto.toUserSession(fallbackRole: com.fitnessai.android.data.model.
     )
 }
 
-fun ExerciseRecordDto.toTrainingRecord(exercise: ExerciseDto? = null): TrainingRecord {
+fun ExerciseRecordDto.toTrainingRecord(exercise: ExerciseDto? = null, baseUrl: String? = null): TrainingRecord {
     return TrainingRecord(
         id = id.toString(),
         exerciseId = exerciseId.toString(),
@@ -29,6 +29,7 @@ fun ExerciseRecordDto.toTrainingRecord(exercise: ExerciseDto? = null): TrainingR
         score = score.toInt(),
         durationSeconds = duration,
         recordedAt = parseBackendDateTime(createdAt),
+        videoUri = videoUrl?.toPlayableVideoUri(baseUrl),
         analysisResult = AnalysisResult(
             status = if (feedback.isNullOrBlank()) AnalysisStatus.Idle else AnalysisStatus.Completed,
             message = feedback
@@ -101,4 +102,17 @@ private fun parseBackendDateTime(value: String): LocalDateTime {
     return runCatching { OffsetDateTime.parse(value).toLocalDateTime() }
         .recoverCatching { LocalDateTime.parse(value) }
         .getOrDefault(LocalDateTime.now())
+}
+
+private fun String.toPlayableVideoUri(baseUrl: String?): android.net.Uri? {
+    return runCatching { android.net.Uri.parse(resolveBackendVideoUrl(this, baseUrl)) }.getOrNull()
+}
+
+fun resolveBackendVideoUrl(videoUrl: String, baseUrl: String?): String {
+    val value = videoUrl.trim()
+    if (value.startsWith("http://") || value.startsWith("https://") || value.startsWith("content://")) {
+        return value
+    }
+    val normalizedBase = baseUrl?.let { if (it.endsWith("/")) it else "$it/" }.orEmpty()
+    return "$normalizedBase${value.removePrefix("/")}"
 }

@@ -152,14 +152,12 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun attachVideo(recordId: String, uri: Uri) {
-        _recordActionState.value = RecordActionState(uploadingVideo = true)
-        runCatching {
-            videoRepository.attachVideo(recordId, uri)
-        }.onFailure { throwable ->
-            _recordActionState.value = RecordActionState(errorMessage = throwable.userMessage())
-            return
+        viewModelScope.launch {
+            _recordActionState.value = RecordActionState(uploadingVideo = true)
+            val result = videoRepository.attachVideo(recordId, uri)
+            val error = result.exceptionOrNull()?.userMessage()
+            _recordActionState.value = RecordActionState(errorMessage = error)
         }
-        _recordActionState.value = RecordActionState()
     }
 
     fun startAnalysis(recordId: String, onResult: (String?) -> Unit) {

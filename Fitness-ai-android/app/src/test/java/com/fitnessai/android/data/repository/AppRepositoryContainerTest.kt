@@ -38,7 +38,7 @@ class AppRepositoryContainerTest {
         assertTrue(repositories.recordRepository is ApiTrainingRecordRepository)
         assertTrue(repositories.statsRepository is ApiStatsRepository)
         assertTrue(repositories.analysisRepository is ApiScoringAnalysisRepository)
-        assertTrue(repositories.videoRepository is LocalVideoRepository)
+        assertTrue(repositories.videoRepository is ApiVideoRepository)
     }
 
     private object NoopNotificationScheduler : NotificationScheduler {

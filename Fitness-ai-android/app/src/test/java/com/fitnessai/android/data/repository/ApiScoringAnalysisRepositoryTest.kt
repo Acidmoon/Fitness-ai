@@ -118,7 +118,7 @@ class ApiScoringAnalysisRepositoryTest {
         server.start()
         try {
             val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-            val records = ApiTrainingRecordRepository(services.exercise)
+            val records = ApiTrainingRecordRepository(services.exercise, server.url("/").toString())
             val stats = ApiStatsRepository(services.stats)
             val scoring = ApiScoringAnalysisRepository(
                 service = services.poseScoring,

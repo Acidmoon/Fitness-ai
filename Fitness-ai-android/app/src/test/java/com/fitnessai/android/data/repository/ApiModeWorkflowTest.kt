@@ -78,7 +78,7 @@ class ApiModeWorkflowTest {
             val tokenStore = InMemoryTokenStore()
             val services = ApiClientFactory.create(server.url("/").toString(), tokenStore)
             val auth = ApiAuthRepository(services, tokenStore)
-            val records = ApiTrainingRecordRepository(services.exercise)
+            val records = ApiTrainingRecordRepository(services.exercise, server.url("/").toString())
             val stats = ApiStatsRepository(services.stats)
 
             assertTrue(auth.login("tester", "password123").isSuccess)
@@ -146,7 +146,7 @@ class ApiModeWorkflowTest {
         try {
             val tokenStore = InMemoryTokenStore("retained-token")
             val services = ApiClientFactory.create(server.url("/").toString(), tokenStore)
-            val records = ApiTrainingRecordRepository(services.exercise)
+            val records = ApiTrainingRecordRepository(services.exercise, server.url("/").toString())
 
             assertTrue(records.refresh().isFailure)
             assertTrue(

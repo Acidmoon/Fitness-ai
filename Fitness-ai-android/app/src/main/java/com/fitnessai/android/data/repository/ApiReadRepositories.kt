@@ -3,6 +3,7 @@ package com.fitnessai.android.data.repository
 import com.fitnessai.android.data.api.ExerciseApiService
 import com.fitnessai.android.data.api.ApiErrorKind
 import com.fitnessai.android.data.api.ApiRequestException
+import com.fitnessai.android.data.api.VideoApiService
 import com.fitnessai.android.data.api.ExerciseRecordCreateDto
 import com.fitnessai.android.data.api.ExerciseRecordUpdateDto
 import com.fitnessai.android.data.api.PoseScoringApiService
@@ -17,12 +18,16 @@ import com.fitnessai.android.data.model.AnalysisStatus
 import com.fitnessai.android.data.model.ExerciseCatalogItem
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
 class ApiTrainingRecordRepository(
-    private val service: ExerciseApiService
+    private val service: ExerciseApiService,
+    private val baseUrl: String
 ) : TrainingRecordRepository, ExerciseCatalogRepository {
     private val _records = MutableStateFlow<List<TrainingRecord>>(emptyList())
     override val records: StateFlow<List<TrainingRecord>> = _records
@@ -35,7 +40,7 @@ class ApiTrainingRecordRepository(
             _exercises.value = exerciseDtos.map { it.toExerciseCatalogItem() }
             val exercisesById = exerciseDtos.associateBy { it.id }
             _records.value = service.getRecords(limit = 100).map { record ->
-                record.toTrainingRecord(exercisesById[record.exerciseId])
+                record.toTrainingRecord(exercisesById[record.exerciseId], baseUrl)
             }
         }
     }
@@ -60,7 +65,7 @@ class ApiTrainingRecordRepository(
                     name = it.name,
                     category = it.category
                 )
-            })
+            }, baseUrl)
             _records.update { records -> listOf(created) + records.filterNot { it.id == created.id } }
             created
         }
@@ -82,7 +87,7 @@ class ApiTrainingRecordRepository(
                     name = it.name,
                     category = it.category
                 )
-            })
+            }, baseUrl)
             _records.update { records -> records.map { if (it.id == updated.id) updated else it } }
             updated
         }
@@ -110,6 +115,41 @@ class ApiTrainingRecordRepository(
             kind = ApiErrorKind.Validation,
             message = "后端记录 ID 无效"
         )
+    }
+}
+
+fun interface VideoContentProvider {
+    fun read(uri: android.net.Uri): VideoContent
+}
+
+data class VideoContent(
+    val bytes: ByteArray,
+    val mimeType: String = "video/mp4",
+    val fileName: String = "training-video.mp4"
+)
+
+class ApiVideoRepository(
+    private val service: VideoApiService,
+    private val records: TrainingRecordRepository,
+    private val analysis: AnalysisRepository,
+    private val contentProvider: VideoContentProvider
+) : VideoRepository {
+    override suspend fun attachVideo(recordId: String, uri: android.net.Uri): Result<Unit> {
+        return attachVideoContent(recordId, contentProvider.read(uri))
+    }
+
+    suspend fun attachVideoContent(recordId: String, content: VideoContent): Result<Unit> {
+        return apiResult {
+            val backendRecordId = recordId.toIntOrNull() ?: throw ApiRequestException(
+                kind = ApiErrorKind.Validation,
+                message = "后端记录 ID 无效"
+            )
+            val body = content.bytes.toRequestBody(content.mimeType.toMediaTypeOrNull())
+            val part = MultipartBody.Part.createFormData("video", content.fileName, body)
+            service.uploadVideo(recordId = backendRecordId, video = part)
+            analysis.clearAnalysis(recordId)
+            records.refresh().getOrThrow()
+        }
     }
 }
 

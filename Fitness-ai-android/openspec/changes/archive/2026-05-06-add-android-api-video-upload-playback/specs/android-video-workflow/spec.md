@@ -1,6 +1,5 @@
-## Purpose
-Define Android video capture, selection, playback, and local video workflow behavior for training records.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: Android app records video for a training record
 The Android app SHALL allow a tester to capture a new video and attach it to a training record in the selected backend mode.
 

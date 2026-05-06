@@ -48,7 +48,7 @@ class ApiReadRepositoriesTest {
         server.start()
         try {
             val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-            val repository = ApiTrainingRecordRepository(services.exercise)
+            val repository = ApiTrainingRecordRepository(services.exercise, server.url("/").toString())
 
             val result = repository.refresh()
 
@@ -115,7 +115,7 @@ class ApiReadRepositoriesTest {
         server.start()
         try {
             val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-            val repository = ApiTrainingRecordRepository(services.exercise)
+            val repository = ApiTrainingRecordRepository(services.exercise, server.url("/").toString())
 
             assertTrue(repository.refresh().isSuccess)
             assertEquals(1, repository.exercises.value.size)

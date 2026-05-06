@@ -120,10 +120,12 @@ class LocalVideoRepository(
     private val records: TrainingRecordRepository,
     private val analysis: AnalysisRepository
 ) : VideoRepository {
-    override fun attachVideo(recordId: String, uri: Uri) {
-        val record = records.getRecord(recordId) ?: return
-        runCatching { kotlinx.coroutines.runBlocking { records.updateRecord(record.copy(videoUri = uri)) } }
+    override suspend fun attachVideo(recordId: String, uri: Uri): Result<Unit> {
+        val record = records.getRecord(recordId)
+            ?: return Result.failure(IllegalArgumentException("记录不存在"))
+        val result = records.updateRecord(record.copy(videoUri = uri))
         analysis.clearAnalysis(recordId)
+        return result.map { Unit }
     }
 }
 
@@ -179,7 +181,7 @@ internal fun TrainingRecordRepository.replaceRecord(record: TrainingRecord) {
     kotlinx.coroutines.runBlocking { updateRecord(record) }
 }
 
-class AndroidNotificationScheduler(private val application: Application) : NotificationScheduler {
+class AndroidNotificationScheduler(val application: Application) : NotificationScheduler {
     private val channelId = "analysis-complete"
 
     init {
