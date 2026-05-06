@@ -13,13 +13,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.fitnessai.android.app.ApiOperationState
 import com.fitnessai.android.app.HomeState
 import com.fitnessai.android.ui.components.EmptyState
+import com.fitnessai.android.ui.components.ErrorState
 import com.fitnessai.android.ui.components.LineCard
+import com.fitnessai.android.ui.components.LoadingState
 
 @Composable
 fun HomeScreen(
     state: HomeState,
+    onRetry: () -> Unit,
     onOpenTraining: () -> Unit,
     onOpenRecord: (String) -> Unit
 ) {
@@ -30,6 +34,23 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("首页", style = MaterialTheme.typography.displaySmall)
+        when (val operation = state.operation) {
+            ApiOperationState.Loading -> {
+                LoadingState("正在加载训练概览")
+                return@Column
+            }
+            ApiOperationState.Refreshing -> LoadingState("正在刷新训练概览")
+            is ApiOperationState.RecoverableError -> {
+                ErrorState(message = operation.message, onRetry = onRetry)
+                return@Column
+            }
+            ApiOperationState.Unauthenticated -> {
+                ErrorState(message = "登录状态已失效，请重新登录")
+                return@Column
+            }
+            ApiOperationState.Empty,
+            ApiOperationState.Ready -> Unit
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MetricCard("记录", state.summary.totalRecords.toString(), Modifier.weight(1f))
             MetricCard("次数", state.summary.totalCount.toString(), Modifier.weight(1f))

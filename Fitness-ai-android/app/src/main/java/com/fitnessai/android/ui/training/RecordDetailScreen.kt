@@ -35,18 +35,25 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.PermissionChecker
+import com.fitnessai.android.app.ApiOperationState
+import com.fitnessai.android.app.RecordActionState
 import com.fitnessai.android.data.model.AnalysisStatus
 import com.fitnessai.android.data.model.RecordDraft
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.ui.components.EmptyState
 import com.fitnessai.android.ui.components.ErrorState
 import com.fitnessai.android.ui.components.LineCard
+import com.fitnessai.android.ui.components.LoadingState
 import com.fitnessai.android.ui.video.VideoPlayer
 
 @Composable
 fun RecordDetailScreen(
     record: TrainingRecord?,
+    operation: ApiOperationState = ApiOperationState.Ready,
+    actionState: RecordActionState = RecordActionState(),
     onBack: () -> Unit,
+    onRetryLoad: () -> Unit = {},
+    onClearActionError: () -> Unit = {},
     onSave: (RecordDraft) -> Boolean,
     onDelete: () -> Unit,
     onPickVideo: (Uri) -> Unit,
@@ -55,7 +62,17 @@ fun RecordDetailScreen(
 ) {
     if (record == null) {
         Column(modifier = Modifier.fillMaxSize().padding(18.dp)) {
-            EmptyState(title = "记录不存在", message = "该训练记录已删除或不可用。")
+            when (operation) {
+                ApiOperationState.Loading,
+                ApiOperationState.Refreshing -> LoadingState("正在加载记录")
+                is ApiOperationState.RecoverableError -> ErrorState(
+                    message = operation.message,
+                    onRetry = onRetryLoad
+                )
+                ApiOperationState.Unauthenticated -> ErrorState(message = "登录状态已失效，请重新登录")
+                ApiOperationState.Empty,
+                ApiOperationState.Ready -> EmptyState(title = "记录不存在", message = "该训练记录已删除或不可用。")
+            }
             Button(onClick = onBack, modifier = Modifier.padding(top = 12.dp)) {
                 Text("返回")
             }
@@ -66,6 +83,7 @@ fun RecordDetailScreen(
     var editing by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    val actionsEnabled = !actionState.isBusy && operation !is ApiOperationState.Unauthenticated
     val context = LocalContext.current
     val cameraPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -117,16 +135,25 @@ fun RecordDetailScreen(
             Text("时长 ${record.durationSeconds?.let { "$it 秒" } ?: "-"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = { editing = true }, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = { editing = true },
+                modifier = Modifier.weight(1f),
+                enabled = actionsEnabled
+            ) {
                 Text("编辑")
             }
-            OutlinedButton(onClick = { showDelete = true }, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = { showDelete = true },
+                modifier = Modifier.weight(1f),
+                enabled = actionsEnabled
+            ) {
                 Icon(Icons.Outlined.Delete, contentDescription = null)
                 Text("删除", modifier = Modifier.padding(start = 6.dp))
             }
         }
         VideoSection(
             record = record,
+            actionsEnabled = actionsEnabled,
             onRecordVideo = {
                 val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                     PermissionChecker.PERMISSION_GRANTED
@@ -136,6 +163,7 @@ fun RecordDetailScreen(
         )
         AnalysisSection(
             record = record,
+            actionState = actionState,
             onStart = {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -145,6 +173,7 @@ fun RecordDetailScreen(
             }
         )
         message?.let { ErrorState(message = it) { message = null } }
+        actionState.errorMessage?.let { ErrorState(message = it, onRetry = onClearActionError) }
     }
 
     if (showDelete) {
@@ -172,6 +201,7 @@ fun RecordDetailScreen(
 @Composable
 private fun VideoSection(
     record: TrainingRecord,
+    actionsEnabled: Boolean,
     onRecordVideo: () -> Unit,
     onPickVideo: () -> Unit
 ) {
@@ -183,11 +213,19 @@ private fun VideoSection(
             VideoPlayer(uri = record.videoUri, modifier = Modifier.fillMaxWidth())
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = onRecordVideo, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = onRecordVideo,
+                modifier = Modifier.weight(1f),
+                enabled = actionsEnabled
+            ) {
                 Icon(Icons.Outlined.Videocam, contentDescription = null)
                 Text("拍摄", modifier = Modifier.padding(start = 6.dp))
             }
-            OutlinedButton(onClick = onPickVideo, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = onPickVideo,
+                modifier = Modifier.weight(1f),
+                enabled = actionsEnabled
+            ) {
                 Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
                 Text("选择", modifier = Modifier.padding(start = 6.dp))
             }
@@ -196,10 +234,17 @@ private fun VideoSection(
 }
 
 @Composable
-private fun AnalysisSection(record: TrainingRecord, onStart: () -> Unit) {
+private fun AnalysisSection(
+    record: TrainingRecord,
+    actionState: RecordActionState,
+    onStart: () -> Unit
+) {
     val result = record.analysisResult
     LineCard(modifier = Modifier.fillMaxWidth()) {
         Text("模拟分析", style = MaterialTheme.typography.titleMedium)
+        if (actionState.analyzing) {
+            LoadingState("正在分析")
+        }
         when (result.status) {
             AnalysisStatus.Idle -> Text(
                 if (record.videoUri == null) "视频添加后可开始分析" else "等待开始",
@@ -218,7 +263,7 @@ private fun AnalysisSection(record: TrainingRecord, onStart: () -> Unit) {
         }
         Button(
             onClick = onStart,
-            enabled = record.videoUri != null && !record.hasActiveAnalysis,
+            enabled = record.videoUri != null && !record.hasActiveAnalysis && !actionState.isBusy,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Outlined.PlayCircle, contentDescription = null)

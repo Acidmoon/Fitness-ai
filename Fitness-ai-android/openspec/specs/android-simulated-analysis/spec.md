@@ -1,4 +1,7 @@
-## ADDED Requirements
+## Purpose
+Define simulated and backend-assisted training analysis behavior, analysis status, notifications, and result presentation.
+
+## Requirements
 
 ### Requirement: Android app starts simulated pose analysis
 The Android app SHALL allow a tester to start a simulated pose-analysis workflow for a record with an attached video.

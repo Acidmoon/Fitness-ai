@@ -86,6 +86,24 @@ Use `10.0.2.2` when the Android emulator needs to reach a backend running on the
 
 Release builds should use HTTPS backend URLs. The debug-only cleartext policy is not intended for production API endpoints.
 
+### Local API-Mode Verification
+
+1. Start the Fitness AI backend locally and confirm it is reachable at `http://127.0.0.1:8000/` from the host.
+2. Build the app for emulator API mode:
+
+```powershell
+.\gradlew.bat assembleDebug -PFITNESS_AI_BACKEND_MODE=api -PFITNESS_AI_BACKEND_BASE_URL=http://10.0.2.2:8000/
+```
+
+3. For a physical Android device, replace `10.0.2.2` with the host computer LAN address, for example `http://192.168.1.20:8000/`.
+4. Launch the debug build, log in with a backend test account, choose a role, open Home, Training, and Stats, and use retry buttons if the backend is temporarily unavailable.
+5. Exercise the full workflow: refresh records, create a training record, open the record detail, add or record a video, start analysis, run scoring when available, and return to Home/Stats to confirm refreshed totals.
+6. Run the repeatable unit verification:
+
+```powershell
+.\gradlew.bat testDebugUnitTest --no-daemon
+```
+
 ## Current Status
 
 Android MVP implementation has started under `app/`. The current code includes mock login, role selection, main tab navigation, local training records, camera/video picker flows, video preview, simulated analysis, local notifications, and focused repository tests.

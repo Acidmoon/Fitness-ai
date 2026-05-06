@@ -99,6 +99,7 @@ private fun AuthenticatedApp(viewModel: FitnessAiViewModel, session: com.fitness
                 val state by viewModel.homeState.collectAsStateWithLifecycle()
                 HomeScreen(
                     state = state,
+                    onRetry = viewModel::refreshHome,
                     onOpenTraining = { navController.navigateTab(Routes.Training) },
                     onOpenRecord = { id -> navController.navigate("training/$id") }
                 )
@@ -107,8 +108,11 @@ private fun AuthenticatedApp(viewModel: FitnessAiViewModel, session: com.fitness
         composable(Routes.Training) {
             MainShell(navController = navController) {
                 val records by viewModel.records.collectAsStateWithLifecycle()
+                val operation by viewModel.recordsOperation.collectAsStateWithLifecycle()
                 TrainingListScreen(
                     records = records,
+                    operation = operation,
+                    onRetry = viewModel::refreshRecords,
                     onCreate = { navController.navigate(Routes.CreateRecord) },
                     onOpenRecord = { id -> navController.navigate("training/$id") }
                 )
@@ -133,9 +137,15 @@ private fun AuthenticatedApp(viewModel: FitnessAiViewModel, session: com.fitness
         composable(Routes.RecordDetail, arguments = listOf(navArgument("recordId") { type = NavType.StringType })) { entry ->
             val recordId = entry.arguments?.getString("recordId").orEmpty()
             val records by viewModel.records.collectAsStateWithLifecycle()
+            val operation by viewModel.recordsOperation.collectAsStateWithLifecycle()
+            val actionState by viewModel.recordActionState.collectAsStateWithLifecycle()
             RecordDetailScreen(
                 record = records.firstOrNull { it.id == recordId },
+                operation = operation,
+                actionState = actionState,
                 onBack = { navController.popBackStack() },
+                onRetryLoad = viewModel::refreshRecords,
+                onClearActionError = viewModel::clearRecordActionError,
                 onSave = { draft -> viewModel.updateRecord(recordId, draft) },
                 onDelete = {
                     viewModel.deleteRecord(recordId)
@@ -149,7 +159,8 @@ private fun AuthenticatedApp(viewModel: FitnessAiViewModel, session: com.fitness
         composable(Routes.Stats) {
             MainShell(navController = navController) {
                 val stats by viewModel.stats.collectAsStateWithLifecycle()
-                StatsScreen(stats = stats)
+                val operation by viewModel.statsOperation.collectAsStateWithLifecycle()
+                StatsScreen(stats = stats, operation = operation, onRetry = viewModel::refreshStats)
             }
         }
         composable(Routes.Profile) {

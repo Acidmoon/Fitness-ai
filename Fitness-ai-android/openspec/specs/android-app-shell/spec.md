@@ -1,5 +1,6 @@
-## ADDED Requirements
-
+## Purpose
+Define the Android app shell, authentication entry, role selection, navigation, and authenticated API operation-state behavior.
+## Requirements
 ### Requirement: Android app starts with mock authentication
 The Android app SHALL allow an internal tester to enter the MVP without requiring a live backend in mock mode, SHALL allow backend API login when API mode is enabled, and SHALL restore a valid stored API session when available.
 
@@ -58,3 +59,24 @@ The Android app SHALL use a modern minimalist line-based visual style across MVP
 #### Scenario: Shared styling is applied
 - **WHEN** a tester navigates between MVP screens
 - **THEN** typography, spacing, colors, icons, and dividers remain visually consistent
+
+### Requirement: Android app communicates API operation state in the authenticated shell
+The Android app SHALL distinguish API-mode loading, empty, recoverable error, retry, and unauthenticated states across authenticated screens.
+
+#### Scenario: API operation is loading
+- **WHEN** an authenticated API-mode screen is waiting for backend data or mutation completion
+- **THEN** the app shows a non-terminal loading or disabled action state appropriate to that screen
+
+#### Scenario: API operation has no data
+- **WHEN** an authenticated API-mode screen successfully loads an empty backend result
+- **THEN** the app shows an empty state instead of an error state
+
+#### Scenario: API operation fails recoverably
+- **WHEN** an authenticated API-mode data, video, analysis, or scoring operation fails without invalidating the token
+- **THEN** the app keeps the tester in the authenticated shell
+- **THEN** the app shows a recoverable error and retry path
+
+#### Scenario: API token is rejected
+- **WHEN** the backend rejects the stored or current token during an authentication validation path
+- **THEN** the app clears the API token
+- **THEN** the app returns to the login flow without crashing

@@ -18,20 +18,28 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.fitnessai.android.app.ApiOperationState
 import com.fitnessai.android.data.model.AnalysisStatus
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.ui.components.EmptyState
+import com.fitnessai.android.ui.components.ErrorState
 import com.fitnessai.android.ui.components.LineCard
+import com.fitnessai.android.ui.components.LoadingState
 
 @Composable
 fun TrainingListScreen(
     records: List<TrainingRecord>,
+    operation: ApiOperationState = ApiOperationState.Ready,
+    onRetry: () -> Unit = {},
     onCreate: () -> Unit,
     onOpenRecord: (String) -> Unit
 ) {
+    val actionsEnabled = operation !is ApiOperationState.Loading &&
+        operation !is ApiOperationState.Refreshing &&
+        operation !is ApiOperationState.Unauthenticated
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(onClick = onCreate) {
+            FloatingActionButton(onClick = { if (actionsEnabled) onCreate() }) {
                 Icon(Icons.Outlined.Add, contentDescription = "新建")
             }
         }
@@ -44,6 +52,23 @@ fun TrainingListScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text("训练", style = MaterialTheme.typography.displaySmall)
+            when (operation) {
+                ApiOperationState.Loading -> {
+                    LoadingState("正在加载训练记录")
+                    return@Column
+                }
+                ApiOperationState.Refreshing -> LoadingState("正在刷新训练记录")
+                is ApiOperationState.RecoverableError -> {
+                    ErrorState(message = operation.message, onRetry = onRetry)
+                    return@Column
+                }
+                ApiOperationState.Unauthenticated -> {
+                    ErrorState(message = "登录状态已失效，请重新登录")
+                    return@Column
+                }
+                ApiOperationState.Empty,
+                ApiOperationState.Ready -> Unit
+            }
             if (records.isEmpty()) {
                 EmptyState(
                     title = "暂无训练记录",

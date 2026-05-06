@@ -10,12 +10,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.fitnessai.android.app.ApiOperationState
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.ui.components.EmptyState
+import com.fitnessai.android.ui.components.ErrorState
 import com.fitnessai.android.ui.components.LineCard
+import com.fitnessai.android.ui.components.LoadingState
 
 @Composable
-fun StatsScreen(stats: StatsSummary) {
+fun StatsScreen(
+    stats: StatsSummary,
+    operation: ApiOperationState = ApiOperationState.Ready,
+    onRetry: () -> Unit = {}
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -23,6 +30,23 @@ fun StatsScreen(stats: StatsSummary) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("统计", style = MaterialTheme.typography.displaySmall)
+        when (operation) {
+            ApiOperationState.Loading -> {
+                LoadingState("正在加载统计")
+                return@Column
+            }
+            ApiOperationState.Refreshing -> LoadingState("正在刷新统计")
+            is ApiOperationState.RecoverableError -> {
+                ErrorState(message = operation.message, onRetry = onRetry)
+                return@Column
+            }
+            ApiOperationState.Unauthenticated -> {
+                ErrorState(message = "登录状态已失效，请重新登录")
+                return@Column
+            }
+            ApiOperationState.Empty,
+            ApiOperationState.Ready -> Unit
+        }
         if (stats.totalRecords == 0) {
             EmptyState(
                 title = "暂无统计",
