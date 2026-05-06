@@ -8,16 +8,20 @@ import com.fitnessai.android.data.api.ExerciseRecordCreateDto
 import com.fitnessai.android.data.api.ExerciseRecordUpdateDto
 import com.fitnessai.android.data.api.PoseScoringApiService
 import com.fitnessai.android.data.api.PoseScoringRequestDto
+import com.fitnessai.android.data.api.PoseAnalysisApiService
+import com.fitnessai.android.data.api.PoseAnalysisTriggerDto
 import com.fitnessai.android.data.api.StatsApiService
 import com.fitnessai.android.data.api.apiResult
 import com.fitnessai.android.data.api.toAnalysisResult
 import com.fitnessai.android.data.api.toExerciseCatalogItem
 import com.fitnessai.android.data.api.toStatsSummary
 import com.fitnessai.android.data.api.toTrainingRecord
+import com.fitnessai.android.data.model.AnalysisResult
 import com.fitnessai.android.data.model.AnalysisStatus
 import com.fitnessai.android.data.model.ExerciseCatalogItem
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
+import kotlinx.coroutines.delay
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -149,6 +153,103 @@ class ApiVideoRepository(
             service.uploadVideo(recordId = backendRecordId, video = part)
             analysis.clearAnalysis(recordId)
             records.refresh().getOrThrow()
+        }
+    }
+}
+
+data class ApiAnalysisPollingConfig(
+    val intervalMillis: Long = 1_000,
+    val maxAttempts: Int = 30
+)
+
+class ApiPoseAnalysisRepository(
+    private val service: PoseAnalysisApiService,
+    private val records: TrainingRecordRepository,
+    private val notifications: NotificationScheduler,
+    private val polling: ApiAnalysisPollingConfig = ApiAnalysisPollingConfig()
+) : AnalysisRepository {
+    override suspend fun startAnalysis(recordId: String): Result<Unit> {
+        return apiResult {
+            val record = records.getRecord(recordId) ?: throw ApiRequestException(
+                kind = ApiErrorKind.NotFound,
+                message = "记录不存在"
+            )
+            if (record.hasActiveAnalysis) {
+                throw ApiRequestException(
+                    kind = ApiErrorKind.Validation,
+                    message = "分析正在进行中"
+                )
+            }
+            val backendRecordId = recordId.toIntOrNull() ?: throw ApiRequestException(
+                kind = ApiErrorKind.Validation,
+                message = "后端记录 ID 无效"
+            )
+            records.updateRecord(record.copy(analysisResult = AnalysisResult(AnalysisStatus.Queued))).getOrThrow()
+            val job = service.createPoseAnalysisJob(backendRecordId, PoseAnalysisTriggerDto())
+            records.getRecord(recordId)?.let {
+                records.updateRecord(it.copy(analysisResult = AnalysisResult(AnalysisStatus.Running))).getOrThrow()
+            }
+            val terminal = pollJob(job.id)
+            when (terminal.status.normalizedJobStatus()) {
+                AnalysisStatus.Completed -> {
+                    val result = service.getPoseAnalysis(backendRecordId).toAnalysisResult()
+                    val completed = requireNotNull(records.getRecord(recordId)).copy(analysisResult = result)
+                    records.updateRecord(completed).getOrThrow()
+                    if (result.status == AnalysisStatus.Completed) {
+                        runCatching { notifications.notifyAnalysisComplete(completed) }
+                    }
+                }
+                AnalysisStatus.Failed -> {
+                    records.getRecord(recordId)?.let {
+                        records.updateRecord(
+                            it.copy(
+                                analysisResult = AnalysisResult(
+                                    status = AnalysisStatus.Failed,
+                                    message = terminal.error ?: "分析失败"
+                                )
+                            )
+                        ).getOrThrow()
+                    }
+                    throw ApiRequestException(
+                        kind = ApiErrorKind.Unexpected,
+                        message = terminal.error ?: "分析失败"
+                    )
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    override fun clearAnalysis(recordId: String) {
+        records.getRecord(recordId)?.let {
+            records.replaceRecord(it.copy(analysisResult = AnalysisResult(AnalysisStatus.Idle)))
+        }
+    }
+
+    private suspend fun pollJob(jobId: Int): com.fitnessai.android.data.api.PoseAnalysisJobDto {
+        repeat(polling.maxAttempts) { attempt ->
+            val job = service.getPoseAnalysisJob(jobId)
+            when (job.status.normalizedJobStatus()) {
+                AnalysisStatus.Completed,
+                AnalysisStatus.Failed -> return job
+                else -> if (attempt < polling.maxAttempts - 1 && polling.intervalMillis > 0) {
+                    delay(polling.intervalMillis)
+                }
+            }
+        }
+        throw ApiRequestException(
+            kind = ApiErrorKind.Unexpected,
+            message = "分析超时，请稍后重试"
+        )
+    }
+
+    private fun String.normalizedJobStatus(): AnalysisStatus {
+        return when (lowercase()) {
+            "queued", "pending" -> AnalysisStatus.Queued
+            "running", "processing", "started" -> AnalysisStatus.Running
+            "done", "completed", "success", "succeeded" -> AnalysisStatus.Completed
+            "failed", "error", "cancelled" -> AnalysisStatus.Failed
+            else -> AnalysisStatus.Running
         }
     }
 }
