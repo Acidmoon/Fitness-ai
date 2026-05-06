@@ -21,9 +21,11 @@ class ApiCoreTest {
 
         tokenStore.saveAccessToken("abc123")
         assertEquals("abc123", tokenStore.getAccessToken())
+        assertEquals("abc123", tokenStore.currentAccessToken())
 
         tokenStore.clearAccessToken()
         assertNull(tokenStore.getAccessToken())
+        assertNull(tokenStore.currentAccessToken())
     }
 
     @Test

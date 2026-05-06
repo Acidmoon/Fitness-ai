@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 interface AuthRepository {
     val session: StateFlow<UserSession?>
+    suspend fun bootstrap(): Result<Unit> = Result.success(Unit)
     suspend fun login(username: String, password: String): Result<Unit>
     fun selectRole(role: UserRole)
     suspend fun logout()

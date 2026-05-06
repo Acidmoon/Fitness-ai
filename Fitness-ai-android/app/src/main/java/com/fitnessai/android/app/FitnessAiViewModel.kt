@@ -51,6 +51,12 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
         initialValue = HomeState(StatsSummary(0, 0, 0, null), emptyList())
     )
 
+    init {
+        viewModelScope.launch {
+            authRepository.bootstrap()
+        }
+    }
+
     fun login(username: String, password: String, onResult: (String?) -> Unit) {
         viewModelScope.launch {
             val result = authRepository.login(username, password)

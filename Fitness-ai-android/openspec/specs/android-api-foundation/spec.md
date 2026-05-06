@@ -22,23 +22,40 @@ The Android app SHALL convert backend HTTP failures and network failures into re
 - **WHEN** an API request fails because the server or network is unavailable
 - **THEN** the repository returns a recoverable connection failure state without crashing the app
 
+#### Scenario: Profile validation receives authentication failure
+- **WHEN** API login or API session bootstrap receives a 401 or 403 while fetching the backend profile
+- **THEN** the repository returns a recoverable authentication failure
+- **THEN** any stored or cached token from that attempt is cleared
+
 ### Requirement: Android app stores and attaches bearer tokens
-The Android app SHALL store backend access tokens after successful API login and attach them to authenticated backend requests.
+The Android app SHALL store backend access tokens after successful API login, cache the current token for request authorization, restore valid stored tokens on API-mode startup, and attach bearer tokens to authenticated backend requests.
 
 #### Scenario: API login returns token
 - **WHEN** backend login succeeds with an access token and token type
 - **THEN** the app stores the access token through the token store
+- **THEN** the current token is available to the authorization interceptor without a per-request persistent-storage read
 
 #### Scenario: Authenticated request is sent
-- **WHEN** a repository calls an endpoint that requires authentication and a token is stored
+- **WHEN** a repository calls an endpoint that requires authentication and a token is stored or cached
 - **THEN** the OkHttp client sends an `Authorization` header with the bearer token
+
+#### Scenario: Valid stored token restores API session
+- **WHEN** the app starts in API mode with a stored access token
+- **THEN** the app validates the token by fetching the backend profile
+- **THEN** a successful profile response restores the Android session state
+
+#### Scenario: Stale stored token is rejected
+- **WHEN** API-mode startup profile validation receives an authentication or authorization failure
+- **THEN** the app clears the stored and cached access token
+- **THEN** the app remains unauthenticated without crashing
 
 #### Scenario: User logs out
 - **WHEN** the user logs out while API mode is active
 - **THEN** the app clears the stored access token
+- **THEN** the app clears the cached access token used by the authorization interceptor
 
 ### Requirement: Android app defines backend DTOs and mappers
-The Android app SHALL define API DTOs and mappers for backend authentication, profile, exercise records, statistics, video, pose-analysis, and pose-scoring contracts needed by Android features.
+The Android app SHALL define precise API DTOs and mappers for backend authentication, profile, exercise records, statistics, video, pose-analysis, and pose-scoring contracts needed by Android features.
 
 #### Scenario: Auth and profile DTOs are mapped
 - **WHEN** the backend returns token or profile responses
@@ -48,9 +65,40 @@ The Android app SHALL define API DTOs and mappers for backend authentication, pr
 - **WHEN** the backend returns exercise record or statistics responses
 - **THEN** the API layer maps them into Android training record and stats domain models without exposing raw DTOs to Compose screens
 
+#### Scenario: Weekly stats DTO parses numeric backend fields
+- **WHEN** the backend returns weekly statistics containing date, session count, and average score values
+- **THEN** the Android API layer parses those fields into typed DTO properties using numeric Kotlin types for numeric JSON values
+
+#### Scenario: Personal-best DTO parses numeric backend fields
+- **WHEN** the backend returns personal-best statistics containing exercise name, best score, and best count values
+- **THEN** the Android API layer parses those fields into typed DTO properties using numeric Kotlin types for numeric JSON values
+
+#### Scenario: Stats DTO tests use backend-shaped JSON
+- **WHEN** Android API DTO tests decode representative stats JSON from current backend response shapes
+- **THEN** the tests fail if numeric fields are modeled as incompatible string-only values
+
 #### Scenario: Video and analysis DTOs are available
 - **WHEN** later changes add video upload, playback, pose-analysis jobs, or scoring repositories
 - **THEN** those repositories can reuse typed DTOs that match the current backend response shapes
+
+### Requirement: Android app supports local debug API networking safely
+The Android app SHALL allow API mode debug builds to reach documented local HTTP backend URLs while preserving stricter release-build network security.
+
+#### Scenario: Debug build uses emulator host URL
+- **WHEN** a debug build runs in API mode with `http://10.0.2.2:8000/`
+- **THEN** Android network security policy permits the request to the host backend
+
+#### Scenario: Debug build uses a LAN backend URL
+- **WHEN** a debug build runs on a physical device with a documented reachable LAN HTTP backend URL
+- **THEN** Android network security policy permits the local development request
+
+#### Scenario: Release build does not broadly allow cleartext
+- **WHEN** a release build is produced
+- **THEN** the app does not include a broad production cleartext allowance for arbitrary HTTP API endpoints
+
+#### Scenario: Local networking behavior is documented
+- **WHEN** a developer enables API mode for local testing
+- **THEN** project documentation explains emulator `10.0.2.2`, physical device LAN URLs, and release HTTPS expectations
 
 ### Requirement: Android app selects mock or API repositories from one configuration point
 The Android app SHALL choose mock-backed or API-backed repository implementations from a single app-level configuration point.

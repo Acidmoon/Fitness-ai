@@ -1,6 +1,8 @@
 package com.fitnessai.android.data.repository
 
 import com.fitnessai.android.data.api.ApiServices
+import com.fitnessai.android.data.api.ApiErrorKind
+import com.fitnessai.android.data.api.ApiErrorMapper
 import com.fitnessai.android.data.api.TokenStore
 import com.fitnessai.android.data.api.apiResult
 import com.fitnessai.android.data.api.toUserSession
@@ -17,15 +19,21 @@ class ApiAuthRepository(
     private val _session = MutableStateFlow<UserSession?>(null)
     override val session: StateFlow<UserSession?> = _session
 
+    override suspend fun bootstrap(): Result<Unit> {
+        val token = tokenStore.getAccessToken()
+        if (token.isNullOrBlank()) {
+            return Result.success(Unit)
+        }
+        return apiResult {
+            _session.value = fetchProfileOrClearToken()
+        }
+    }
+
     override suspend fun login(username: String, password: String): Result<Unit> {
         return apiResult {
             val token = services.auth.login(username.trim(), password)
             tokenStore.saveAccessToken(token.accessToken)
-            _session.value = runCatching {
-                services.user.getProfile().toUserSession()
-            }.getOrElse {
-                UserSession(userId = username.trim(), displayName = username.trim())
-            }
+            _session.value = fetchProfileOrClearToken()
         }
     }
 
@@ -36,5 +44,17 @@ class ApiAuthRepository(
     override suspend fun logout() {
         tokenStore.clearAccessToken()
         _session.value = null
+    }
+
+    private suspend fun fetchProfileOrClearToken(): UserSession {
+        return try {
+            services.user.getProfile().toUserSession()
+        } catch (throwable: Throwable) {
+            val mapped = ApiErrorMapper.toException(throwable)
+            if (mapped.kind == ApiErrorKind.Authentication) {
+                tokenStore.clearAccessToken()
+            }
+            throw mapped
+        }
     }
 }

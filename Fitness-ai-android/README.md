@@ -76,13 +76,15 @@ BUILD SUCCESSFUL
 
 ## Backend API Mode
 
-Mock mode is the default so internal MVP testing does not require a running backend. To build against a local backend from the Android emulator, use:
+Mock mode is the default so internal MVP testing does not require a running backend. Debug builds include a development-only network policy that permits local HTTP backend access. To build against a local backend from the Android emulator, use:
 
 ```powershell
 .\gradlew.bat assembleDebug -PFITNESS_AI_BACKEND_MODE=api -PFITNESS_AI_BACKEND_BASE_URL=http://10.0.2.2:8000/
 ```
 
 Use `10.0.2.2` when the Android emulator needs to reach a backend running on the host machine. On a physical device, use an address reachable from the device, such as the host computer's LAN IP (`http://192.168.x.x:8000/`) and ensure firewall rules allow the connection.
+
+Release builds should use HTTPS backend URLs. The debug-only cleartext policy is not intended for production API endpoints.
 
 ## Current Status
 

@@ -68,3 +68,15 @@ data class StatsSummary(
     val totalDurationSeconds: Int,
     val bestScore: Int?
 )
+
+data class WeeklyStatsPoint(
+    val date: String,
+    val sessions: Int,
+    val averageScore: Double
+)
+
+data class PersonalBestStats(
+    val exerciseName: String,
+    val bestScore: Double?,
+    val bestCount: Int?
+)

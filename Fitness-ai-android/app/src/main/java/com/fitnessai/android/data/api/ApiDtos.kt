@@ -97,6 +97,20 @@ data class StatsSummaryDto(
 )
 
 @Serializable
+data class WeeklyStatsDto(
+    val date: String,
+    val sessions: Int,
+    @SerialName("average_score") val averageScore: Double
+)
+
+@Serializable
+data class PersonalBestStatsDto(
+    @SerialName("exercise_name") val exerciseName: String,
+    @SerialName("best_score") val bestScore: Double? = null,
+    @SerialName("best_count") val bestCount: Int? = null
+)
+
+@Serializable
 data class VideoUploadResponseDto(
     val message: String,
     @SerialName("video_url") val videoUrl: String? = null,

@@ -2,9 +2,11 @@ package com.fitnessai.android.data.api
 
 import com.fitnessai.android.data.model.AnalysisResult
 import com.fitnessai.android.data.model.AnalysisStatus
+import com.fitnessai.android.data.model.PersonalBestStats
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.data.model.UserSession
+import com.fitnessai.android.data.model.WeeklyStatsPoint
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 
@@ -38,6 +40,22 @@ fun StatsSummaryDto.toStatsSummary(): StatsSummary {
         totalCount = exerciseStats.totalRepetitions,
         totalDurationSeconds = exerciseStats.totalDuration,
         bestScore = exerciseStats.bestScore.toInt()
+    )
+}
+
+fun WeeklyStatsDto.toWeeklyStatsPoint(): WeeklyStatsPoint {
+    return WeeklyStatsPoint(
+        date = date,
+        sessions = sessions,
+        averageScore = averageScore
+    )
+}
+
+fun PersonalBestStatsDto.toPersonalBestStats(): PersonalBestStats {
+    return PersonalBestStats(
+        exerciseName = exerciseName,
+        bestScore = bestScore,
+        bestCount = bestCount
     )
 }
 

@@ -62,10 +62,10 @@ interface StatsApiService {
     suspend fun getSummary(): StatsSummaryDto
 
     @GET("api/stats/weekly")
-    suspend fun getWeeklyStats(): List<Map<String, String>>
+    suspend fun getWeeklyStats(): List<WeeklyStatsDto>
 
     @GET("api/stats/personal-best")
-    suspend fun getPersonalBest(): List<Map<String, String>>
+    suspend fun getPersonalBest(): List<PersonalBestStatsDto>
 }
 
 interface VideoApiService {
