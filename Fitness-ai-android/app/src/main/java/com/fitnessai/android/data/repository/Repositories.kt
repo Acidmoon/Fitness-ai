@@ -2,6 +2,7 @@ package com.fitnessai.android.data.repository
 
 import android.net.Uri
 import com.fitnessai.android.data.model.AnalysisResult
+import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.data.model.UserRole
 import com.fitnessai.android.data.model.UserSession
@@ -17,10 +18,16 @@ interface AuthRepository {
 
 interface TrainingRecordRepository {
     val records: StateFlow<List<TrainingRecord>>
+    suspend fun refresh(): Result<Unit> = Result.success(Unit)
     fun getRecord(id: String): TrainingRecord?
     fun createRecord(record: TrainingRecord)
     fun updateRecord(record: TrainingRecord)
     fun deleteRecord(id: String)
+}
+
+interface StatsRepository {
+    val stats: StateFlow<StatsSummary>
+    suspend fun refresh(): Result<Unit>
 }
 
 interface VideoRepository {

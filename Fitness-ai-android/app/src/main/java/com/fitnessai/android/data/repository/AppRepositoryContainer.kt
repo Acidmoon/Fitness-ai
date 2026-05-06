@@ -11,6 +11,7 @@ import com.fitnessai.android.data.config.BackendMode
 data class AppRepositories(
     val authRepository: AuthRepository,
     val recordRepository: TrainingRecordRepository,
+    val statsRepository: StatsRepository,
     val analysisRepository: AnalysisRepository,
     val videoRepository: VideoRepository
 )
@@ -33,19 +34,31 @@ object AppRepositoryContainer {
         tokenStore: TokenStore,
         notificationScheduler: NotificationScheduler
     ): AppRepositories {
-        val recordRepository = InMemoryTrainingRecordRepository()
+        val services = if (configuration.mode == BackendMode.Api) {
+            ApiClientFactory.create(configuration.baseUrl, tokenStore)
+        } else {
+            null
+        }
+        val recordRepository = when (configuration.mode) {
+            BackendMode.Mock -> InMemoryTrainingRecordRepository()
+            BackendMode.Api -> ApiTrainingRecordRepository(requireNotNull(services).exercise)
+        }
+        val statsRepository = when (configuration.mode) {
+            BackendMode.Mock -> LocalStatsRepository(recordRepository)
+            BackendMode.Api -> ApiStatsRepository(requireNotNull(services).stats)
+        }
         val analysisRepository = SimulatedAnalysisRepository(recordRepository, notificationScheduler)
         val videoRepository = LocalVideoRepository(recordRepository, analysisRepository)
         val authRepository = when (configuration.mode) {
             BackendMode.Mock -> InMemoryAuthRepository()
             BackendMode.Api -> {
-                val services = ApiClientFactory.create(configuration.baseUrl, tokenStore)
-                ApiAuthRepository(services, tokenStore)
+                ApiAuthRepository(requireNotNull(services), tokenStore)
             }
         }
         return AppRepositories(
             authRepository = authRepository,
             recordRepository = recordRepository,
+            statsRepository = statsRepository,
             analysisRepository = analysisRepository,
             videoRepository = videoRepository
         )

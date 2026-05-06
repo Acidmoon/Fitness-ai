@@ -13,7 +13,6 @@ import com.fitnessai.android.data.repository.AppRepositoryContainer
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -21,24 +20,13 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
     private val repositories = AppRepositoryContainer.create(application)
     private val authRepository = repositories.authRepository
     private val recordRepository = repositories.recordRepository
+    private val statsRepository = repositories.statsRepository
     private val analysisRepository = repositories.analysisRepository
     private val videoRepository = repositories.videoRepository
 
     val session: StateFlow<UserSession?> = authRepository.session
     val records: StateFlow<List<TrainingRecord>> = recordRepository.records
-
-    val stats: StateFlow<StatsSummary> = records.map { records ->
-        StatsSummary(
-            totalRecords = records.size,
-            totalCount = records.sumOf { it.count },
-            totalDurationSeconds = records.sumOf { it.durationSeconds ?: 0 },
-            bestScore = records.mapNotNull { it.score }.maxOrNull()
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = StatsSummary(0, 0, 0, null)
-    )
+    val stats: StateFlow<StatsSummary> = statsRepository.stats
 
     val homeState: StateFlow<HomeState> = combine(records, stats) { records, stats ->
         HomeState(
@@ -53,13 +41,19 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
 
     init {
         viewModelScope.launch {
-            authRepository.bootstrap()
+            val result = authRepository.bootstrap()
+            if (result.isSuccess && session.value != null) {
+                refreshReadData()
+            }
         }
     }
 
     fun login(username: String, password: String, onResult: (String?) -> Unit) {
         viewModelScope.launch {
             val result = authRepository.login(username, password)
+            if (result.isSuccess) {
+                refreshReadData()
+            }
             onResult(result.exceptionOrNull()?.message)
         }
     }
@@ -79,6 +73,7 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
     fun createRecord(draft: RecordDraft): String? {
         val record = draft.toRecordOrNull() ?: return null
         recordRepository.createRecord(record)
+        viewModelScope.launch { statsRepository.refresh() }
         return record.id
     }
 
@@ -86,11 +81,13 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
         val current = recordRepository.getRecord(id) ?: return false
         val next = draft.toRecordOrNull(existing = current) ?: return false
         recordRepository.updateRecord(next)
+        viewModelScope.launch { statsRepository.refresh() }
         return true
     }
 
     fun deleteRecord(id: String) {
         recordRepository.deleteRecord(id)
+        viewModelScope.launch { statsRepository.refresh() }
     }
 
     fun attachVideo(recordId: String, uri: Uri) {
@@ -122,6 +119,11 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
                 com.fitnessai.android.data.model.AnalysisStatus.Idle
             )
         )
+    }
+
+    private suspend fun refreshReadData() {
+        recordRepository.refresh()
+        statsRepository.refresh()
     }
 }
 

@@ -18,12 +18,13 @@ class AppRepositoryContainerTest {
 
         assertTrue(repositories.authRepository is InMemoryAuthRepository)
         assertTrue(repositories.recordRepository is InMemoryTrainingRecordRepository)
+        assertTrue(repositories.statsRepository is LocalStatsRepository)
         assertTrue(repositories.analysisRepository is SimulatedAnalysisRepository)
         assertTrue(repositories.videoRepository is LocalVideoRepository)
     }
 
     @Test
-    fun apiModeUsesApiAuthAndKeepsUnintegratedCapabilitiesLocal() {
+    fun apiModeUsesApiAuthAndApiReadRepositoriesWhileKeepingUnintegratedCapabilitiesLocal() {
         val repositories = AppRepositoryContainer.createForTest(
             configuration = BackendConfiguration(
                 mode = BackendMode.Api,
@@ -34,7 +35,8 @@ class AppRepositoryContainerTest {
         )
 
         assertTrue(repositories.authRepository is ApiAuthRepository)
-        assertTrue(repositories.recordRepository is InMemoryTrainingRecordRepository)
+        assertTrue(repositories.recordRepository is ApiTrainingRecordRepository)
+        assertTrue(repositories.statsRepository is ApiStatsRepository)
         assertTrue(repositories.analysisRepository is SimulatedAnalysisRepository)
         assertTrue(repositories.videoRepository is LocalVideoRepository)
     }

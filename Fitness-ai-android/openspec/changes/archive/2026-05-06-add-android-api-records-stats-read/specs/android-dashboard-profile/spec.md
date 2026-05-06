@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Android app shows Home overview
 The Android app SHALL show a Home overview with summary metrics and recent training records from the selected backend mode.
@@ -33,18 +33,3 @@ The Android app SHALL show a Stats section derived from local MVP training recor
 #### Scenario: Stats refresh fails
 - **WHEN** API mode cannot refresh backend stats because the server or network is unavailable
 - **THEN** the app keeps running and exposes a recoverable data-layer error
-
-### Requirement: Android app shows profile information
-The Android app SHALL show basic mock user and role information in the Profile section.
-
-#### Scenario: Profile is opened
-- **WHEN** a tester opens the Profile section after mock login
-- **THEN** the app displays the mock user identity and selected role
-
-### Requirement: Android app supports logout
-The Android app SHALL allow a tester to leave the authenticated MVP session.
-
-#### Scenario: Tester logs out
-- **WHEN** a tester confirms logout from the Profile section
-- **THEN** the app clears the current mock session
-- **THEN** the app returns to the login flow

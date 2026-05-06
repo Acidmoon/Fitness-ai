@@ -11,6 +11,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.fitnessai.android.R
 import com.fitnessai.android.data.model.AnalysisResult
 import com.fitnessai.android.data.model.AnalysisStatus
+import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.data.model.UserRole
 import com.fitnessai.android.data.model.UserSession
@@ -63,6 +64,8 @@ class InMemoryTrainingRecordRepository : TrainingRecordRepository {
     )
     override val records: StateFlow<List<TrainingRecord>> = _records
 
+    override suspend fun refresh(): Result<Unit> = Result.success(Unit)
+
     override fun getRecord(id: String): TrainingRecord? {
         return _records.value.firstOrNull { it.id == id }
     }
@@ -77,6 +80,27 @@ class InMemoryTrainingRecordRepository : TrainingRecordRepository {
 
     override fun deleteRecord(id: String) {
         _records.update { records -> records.filterNot { it.id == id } }
+    }
+}
+
+class LocalStatsRepository(
+    private val records: TrainingRecordRepository
+) : StatsRepository {
+    private val _stats = MutableStateFlow(calculate(records.records.value))
+    override val stats: StateFlow<StatsSummary> = _stats
+
+    override suspend fun refresh(): Result<Unit> {
+        _stats.value = calculate(records.records.value)
+        return Result.success(Unit)
+    }
+
+    private fun calculate(records: List<TrainingRecord>): StatsSummary {
+        return StatsSummary(
+            totalRecords = records.size,
+            totalCount = records.sumOf { it.count },
+            totalDurationSeconds = records.sumOf { it.durationSeconds ?: 0 },
+            bestScore = records.mapNotNull { it.score }.maxOrNull()
+        )
     }
 }
 
