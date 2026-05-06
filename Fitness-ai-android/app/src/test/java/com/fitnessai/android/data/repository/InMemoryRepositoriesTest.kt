@@ -22,7 +22,7 @@ class InMemoryRepositoriesTest {
     }
 
     @Test
-    fun recordsCanBeCreatedUpdatedAndDeleted() {
+    fun recordsCanBeCreatedUpdatedAndDeleted() = runTest {
         val repository = InMemoryTrainingRecordRepository()
         val record = TrainingRecord(
             exerciseName = "跳绳",

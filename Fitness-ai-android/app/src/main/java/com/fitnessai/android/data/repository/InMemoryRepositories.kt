@@ -11,6 +11,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.fitnessai.android.R
 import com.fitnessai.android.data.model.AnalysisResult
 import com.fitnessai.android.data.model.AnalysisStatus
+import com.fitnessai.android.data.model.ExerciseCatalogItem
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.data.model.UserRole
@@ -43,7 +44,7 @@ class InMemoryAuthRepository : AuthRepository {
     }
 }
 
-class InMemoryTrainingRecordRepository : TrainingRecordRepository {
+class InMemoryTrainingRecordRepository : TrainingRecordRepository, ExerciseCatalogRepository {
     private val _records = MutableStateFlow(
         listOf(
             TrainingRecord(
@@ -63,6 +64,14 @@ class InMemoryTrainingRecordRepository : TrainingRecordRepository {
         )
     )
     override val records: StateFlow<List<TrainingRecord>> = _records
+    private val _exercises = MutableStateFlow(
+        listOf(
+            ExerciseCatalogItem("mock-situp", "仰卧起坐", "核心"),
+            ExerciseCatalogItem("mock-pushup", "俯卧撑", "上肢"),
+            ExerciseCatalogItem("mock-jump", "跳绳", "有氧")
+        )
+    )
+    override val exercises: StateFlow<List<ExerciseCatalogItem>> = _exercises
 
     override suspend fun refresh(): Result<Unit> = Result.success(Unit)
 
@@ -70,16 +79,19 @@ class InMemoryTrainingRecordRepository : TrainingRecordRepository {
         return _records.value.firstOrNull { it.id == id }
     }
 
-    override fun createRecord(record: TrainingRecord) {
+    override suspend fun createRecord(record: TrainingRecord): Result<TrainingRecord> {
         _records.update { records -> listOf(record) + records }
+        return Result.success(record)
     }
 
-    override fun updateRecord(record: TrainingRecord) {
+    override suspend fun updateRecord(record: TrainingRecord): Result<TrainingRecord> {
         _records.update { records -> records.map { if (it.id == record.id) record else it } }
+        return Result.success(record)
     }
 
-    override fun deleteRecord(id: String) {
+    override suspend fun deleteRecord(id: String): Result<Unit> {
         _records.update { records -> records.filterNot { it.id == id } }
+        return Result.success(Unit)
     }
 }
 
@@ -110,7 +122,7 @@ class LocalVideoRepository(
 ) : VideoRepository {
     override fun attachVideo(recordId: String, uri: Uri) {
         val record = records.getRecord(recordId) ?: return
-        records.updateRecord(record.copy(videoUri = uri))
+        runCatching { kotlinx.coroutines.runBlocking { records.updateRecord(record.copy(videoUri = uri)) } }
         analysis.clearAnalysis(recordId)
     }
 }
@@ -130,10 +142,10 @@ class SimulatedAnalysisRepository(
             return Result.failure(IllegalStateException("分析正在进行中"))
         }
 
-        records.updateRecord(record.copy(analysisResult = AnalysisResult(AnalysisStatus.Queued)))
+        records.replaceRecord(record.copy(analysisResult = AnalysisResult(AnalysisStatus.Queued)))
         delay(700)
         records.getRecord(recordId)?.let {
-            records.updateRecord(it.copy(analysisResult = AnalysisResult(AnalysisStatus.Running)))
+            records.replaceRecord(it.copy(analysisResult = AnalysisResult(AnalysisStatus.Running)))
         }
         delay(1400)
 
@@ -152,15 +164,19 @@ class SimulatedAnalysisRepository(
                 message = "模拟分析已完成"
             )
         )
-        records.updateRecord(completed)
+        records.replaceRecord(completed)
         notifications.notifyAnalysisComplete(completed)
         return Result.success(Unit)
     }
 
     override fun clearAnalysis(recordId: String) {
         val record = records.getRecord(recordId) ?: return
-        records.updateRecord(record.copy(analysisResult = AnalysisResult(AnalysisStatus.Idle)))
+        records.replaceRecord(record.copy(analysisResult = AnalysisResult(AnalysisStatus.Idle)))
     }
+}
+
+internal fun TrainingRecordRepository.replaceRecord(record: TrainingRecord) {
+    kotlinx.coroutines.runBlocking { updateRecord(record) }
 }
 
 class AndroidNotificationScheduler(private val application: Application) : NotificationScheduler {

@@ -38,6 +38,7 @@ import androidx.core.content.PermissionChecker
 import com.fitnessai.android.app.ApiOperationState
 import com.fitnessai.android.app.RecordActionState
 import com.fitnessai.android.data.model.AnalysisStatus
+import com.fitnessai.android.data.model.ExerciseCatalogItem
 import com.fitnessai.android.data.model.RecordDraft
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.ui.components.EmptyState
@@ -52,10 +53,11 @@ fun RecordDetailScreen(
     operation: ApiOperationState = ApiOperationState.Ready,
     actionState: RecordActionState = RecordActionState(),
     apiMode: Boolean = false,
+    exerciseOptions: List<ExerciseCatalogItem> = emptyList(),
     onBack: () -> Unit,
     onRetryLoad: () -> Unit = {},
     onClearActionError: () -> Unit = {},
-    onSave: (RecordDraft) -> Boolean,
+    onSave: (RecordDraft, (Boolean, String?) -> Unit) -> Unit,
     onDelete: () -> Unit,
     onPickVideo: (Uri) -> Unit,
     onRecordVideo: () -> Unit,
@@ -108,11 +110,15 @@ fun RecordDetailScreen(
         RecordEditorScreen(
             title = "编辑训练",
             initial = record,
+            apiMode = apiMode,
+            exerciseOptions = exerciseOptions,
+            saving = actionState.saving,
             onBack = { editing = false },
-            onSave = { draft ->
-                val saved = onSave(draft)
-                if (saved) editing = false
-                saved
+            onSave = { draft, onResult ->
+                onSave(draft) { saved, error ->
+                    if (saved) editing = false
+                    onResult(saved, error)
+                }
             }
         )
         return

@@ -27,12 +27,14 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
     private val repositories = AppRepositoryContainer.create(application, configuration)
     private val authRepository = repositories.authRepository
     private val recordRepository = repositories.recordRepository
+    private val exerciseCatalogRepository = repositories.exerciseCatalogRepository
     private val statsRepository = repositories.statsRepository
     private val analysisRepository = repositories.analysisRepository
     private val videoRepository = repositories.videoRepository
 
     val session: StateFlow<UserSession?> = authRepository.session
     val records: StateFlow<List<TrainingRecord>> = recordRepository.records
+    val exerciseCatalog = exerciseCatalogRepository.exercises
     val stats: StateFlow<StatsSummary> = statsRepository.stats
     private val _recordsOperation = MutableStateFlow(initialReadState())
     val recordsOperation: StateFlow<ApiOperationState> = _recordsOperation
@@ -97,24 +99,56 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun getRecord(id: String): TrainingRecord? = recordRepository.getRecord(id)
 
-    fun createRecord(draft: RecordDraft): String? {
-        val record = draft.toRecordOrNull() ?: return null
-        recordRepository.createRecord(record)
-        viewModelScope.launch { statsRepository.refresh() }
-        return record.id
+    fun createRecord(draft: RecordDraft, onResult: (String?, String?) -> Unit) {
+        val record = draft.toRecordOrNull() ?: run {
+            onResult(null, "请填写动作、分类和有效次数")
+            return
+        }
+        viewModelScope.launch {
+            _recordActionState.value = RecordActionState(saving = true)
+            val result = recordRepository.createRecord(record)
+            val created = result.getOrNull()
+            if (result.isSuccess) {
+                refreshReadData()
+            }
+            val error = result.exceptionOrNull()?.userMessage()
+            _recordActionState.value = RecordActionState(errorMessage = error)
+            onResult(created?.id, error)
+        }
     }
 
-    fun updateRecord(id: String, draft: RecordDraft): Boolean {
-        val current = recordRepository.getRecord(id) ?: return false
-        val next = draft.toRecordOrNull(existing = current) ?: return false
-        recordRepository.updateRecord(next)
-        viewModelScope.launch { statsRepository.refresh() }
-        return true
+    fun updateRecord(id: String, draft: RecordDraft, onResult: (Boolean, String?) -> Unit) {
+        val current = recordRepository.getRecord(id) ?: run {
+            onResult(false, "记录不存在")
+            return
+        }
+        val next = draft.toRecordOrNull(existing = current) ?: run {
+            onResult(false, "请填写动作、分类和有效次数")
+            return
+        }
+        viewModelScope.launch {
+            _recordActionState.value = RecordActionState(saving = true)
+            val result = recordRepository.updateRecord(next)
+            if (result.isSuccess) {
+                refreshReadData()
+            }
+            val error = result.exceptionOrNull()?.userMessage()
+            _recordActionState.value = RecordActionState(errorMessage = error)
+            onResult(result.isSuccess, error)
+        }
     }
 
-    fun deleteRecord(id: String) {
-        recordRepository.deleteRecord(id)
-        viewModelScope.launch { statsRepository.refresh() }
+    fun deleteRecord(id: String, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            _recordActionState.value = RecordActionState(deleting = true)
+            val result = recordRepository.deleteRecord(id)
+            if (result.isSuccess) {
+                refreshReadData()
+            }
+            val error = result.exceptionOrNull()?.userMessage()
+            _recordActionState.value = RecordActionState(errorMessage = error)
+            onResult(result.isSuccess, error)
+        }
     }
 
     fun attachVideo(recordId: String, uri: Uri) {
@@ -192,6 +226,7 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
         }
         return TrainingRecord(
             id = existing?.id ?: java.util.UUID.randomUUID().toString(),
+            exerciseId = exerciseId.ifBlank { existing?.exerciseId },
             exerciseName = exerciseName.trim(),
             category = category.trim(),
             count = parsedCount,
@@ -218,6 +253,7 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
                 ApiOperationState.Loading
             }
         }
+        exerciseCatalogRepository.refresh()
         val result = recordRepository.refresh()
         _recordsOperation.value = operationAfter(result, records.value.isEmpty())
     }

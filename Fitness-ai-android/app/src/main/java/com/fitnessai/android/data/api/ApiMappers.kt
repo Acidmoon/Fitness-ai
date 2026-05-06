@@ -2,6 +2,7 @@ package com.fitnessai.android.data.api
 
 import com.fitnessai.android.data.model.AnalysisResult
 import com.fitnessai.android.data.model.AnalysisStatus
+import com.fitnessai.android.data.model.ExerciseCatalogItem
 import com.fitnessai.android.data.model.PersonalBestStats
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
@@ -21,6 +22,7 @@ fun UserProfileDto.toUserSession(fallbackRole: com.fitnessai.android.data.model.
 fun ExerciseRecordDto.toTrainingRecord(exercise: ExerciseDto? = null): TrainingRecord {
     return TrainingRecord(
         id = id.toString(),
+        exerciseId = exerciseId.toString(),
         exerciseName = exercise?.name ?: "动作 #$exerciseId",
         category = exercise?.category ?: "未分类",
         count = count,
@@ -31,6 +33,14 @@ fun ExerciseRecordDto.toTrainingRecord(exercise: ExerciseDto? = null): TrainingR
             status = if (feedback.isNullOrBlank()) AnalysisStatus.Idle else AnalysisStatus.Completed,
             message = feedback
         )
+    )
+}
+
+fun ExerciseDto.toExerciseCatalogItem(): ExerciseCatalogItem {
+    return ExerciseCatalogItem(
+        id = id.toString(),
+        name = name,
+        category = category ?: "未分类"
     )
 }
 

@@ -11,6 +11,7 @@ import com.fitnessai.android.data.config.BackendMode
 data class AppRepositories(
     val authRepository: AuthRepository,
     val recordRepository: TrainingRecordRepository,
+    val exerciseCatalogRepository: ExerciseCatalogRepository,
     val statsRepository: StatsRepository,
     val analysisRepository: AnalysisRepository,
     val videoRepository: VideoRepository
@@ -66,6 +67,7 @@ object AppRepositoryContainer {
         return AppRepositories(
             authRepository = authRepository,
             recordRepository = recordRepository,
+            exerciseCatalogRepository = recordRepository as ExerciseCatalogRepository,
             statsRepository = statsRepository,
             analysisRepository = analysisRepository,
             videoRepository = videoRepository

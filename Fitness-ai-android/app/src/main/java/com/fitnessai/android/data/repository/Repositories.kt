@@ -2,6 +2,7 @@ package com.fitnessai.android.data.repository
 
 import android.net.Uri
 import com.fitnessai.android.data.model.AnalysisResult
+import com.fitnessai.android.data.model.ExerciseCatalogItem
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.data.model.UserRole
@@ -20,9 +21,14 @@ interface TrainingRecordRepository {
     val records: StateFlow<List<TrainingRecord>>
     suspend fun refresh(): Result<Unit> = Result.success(Unit)
     fun getRecord(id: String): TrainingRecord?
-    fun createRecord(record: TrainingRecord)
-    fun updateRecord(record: TrainingRecord)
-    fun deleteRecord(id: String)
+    suspend fun createRecord(record: TrainingRecord): Result<TrainingRecord>
+    suspend fun updateRecord(record: TrainingRecord): Result<TrainingRecord>
+    suspend fun deleteRecord(id: String): Result<Unit>
+}
+
+interface ExerciseCatalogRepository {
+    val exercises: StateFlow<List<ExerciseCatalogItem>>
+    suspend fun refresh(): Result<Unit> = Result.success(Unit)
 }
 
 interface StatsRepository {

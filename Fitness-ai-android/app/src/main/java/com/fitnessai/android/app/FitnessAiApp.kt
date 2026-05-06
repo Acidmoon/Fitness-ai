@@ -119,18 +119,24 @@ private fun AuthenticatedApp(viewModel: FitnessAiViewModel, session: com.fitness
             }
         }
         composable(Routes.CreateRecord) {
+            val exercises by viewModel.exerciseCatalog.collectAsStateWithLifecycle()
+            val actionState by viewModel.recordActionState.collectAsStateWithLifecycle()
             RecordEditorScreen(
                 title = "新建训练",
                 initial = null,
+                apiMode = viewModel.isApiMode,
+                exerciseOptions = exercises,
+                saving = actionState.saving,
                 onBack = { navController.popBackStack() },
-                onSave = { draft ->
-                    val id = viewModel.createRecord(draft)
+                onSave = { draft, onResult ->
+                    viewModel.createRecord(draft) { id, error ->
                     if (id != null) {
                         navController.navigate("training/$id") {
                             popUpTo(Routes.Training)
                         }
                     }
-                    id != null
+                        onResult(id != null, error)
+                    }
                 }
             )
         }
@@ -139,18 +145,21 @@ private fun AuthenticatedApp(viewModel: FitnessAiViewModel, session: com.fitness
             val records by viewModel.records.collectAsStateWithLifecycle()
             val operation by viewModel.recordsOperation.collectAsStateWithLifecycle()
             val actionState by viewModel.recordActionState.collectAsStateWithLifecycle()
+            val exercises by viewModel.exerciseCatalog.collectAsStateWithLifecycle()
             RecordDetailScreen(
                 record = records.firstOrNull { it.id == recordId },
                 operation = operation,
                 actionState = actionState,
                 apiMode = viewModel.isApiMode,
+                exerciseOptions = exercises,
                 onBack = { navController.popBackStack() },
                 onRetryLoad = viewModel::refreshRecords,
                 onClearActionError = viewModel::clearRecordActionError,
-                onSave = { draft -> viewModel.updateRecord(recordId, draft) },
+                onSave = { draft, onResult -> viewModel.updateRecord(recordId, draft, onResult) },
                 onDelete = {
-                    viewModel.deleteRecord(recordId)
-                    navController.popBackStack()
+                    viewModel.deleteRecord(recordId) { success, _ ->
+                        if (success) navController.popBackStack()
+                    }
                 },
                 onPickVideo = { uri -> viewModel.attachVideo(recordId, uri) },
                 onRecordVideo = { navController.navigate("training/$recordId/camera") },

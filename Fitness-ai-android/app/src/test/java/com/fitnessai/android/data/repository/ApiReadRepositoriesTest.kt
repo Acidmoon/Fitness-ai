@@ -103,6 +103,61 @@ class ApiReadRepositoriesTest {
     }
 
     @Test
+    fun apiRecordMutationsUseBackendEndpointsAndBearerToken() = runTest {
+        val server = MockWebServer()
+        server.enqueue(jsonResponse("""[{"id":3,"name":"俯卧撑","category":"上肢","description":null}]"""))
+        server.enqueue(jsonResponse("""[]"""))
+        server.enqueue(recordResponse(id = 20, exerciseId = 3, score = 88.0, count = 24, duration = 75))
+        server.enqueue(recordResponse(id = 20, exerciseId = 3, score = 91.0, count = 26, duration = 80))
+        server.enqueue(MockResponse().setResponseCode(204))
+        server.enqueue(jsonResponse("""[{"id":3,"name":"俯卧撑","category":"上肢","description":null}]"""))
+        server.enqueue(jsonResponse("""[]"""))
+        server.start()
+        try {
+            val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
+            val repository = ApiTrainingRecordRepository(services.exercise)
+
+            assertTrue(repository.refresh().isSuccess)
+            assertEquals(1, repository.exercises.value.size)
+            assertEquals("俯卧撑", repository.exercises.value.first().name)
+
+            val created = repository.createRecord(
+                TrainingRecord(
+                    exerciseId = "3",
+                    exerciseName = "俯卧撑",
+                    category = "上肢",
+                    count = 24,
+                    score = 88,
+                    durationSeconds = 75
+                )
+            ).getOrThrow()
+            val updated = repository.updateRecord(
+                created.copy(count = 26, score = 91, durationSeconds = 80)
+            ).getOrThrow()
+            val deleted = repository.deleteRecord(updated.id)
+            assertTrue(deleted.isSuccess)
+            assertTrue(repository.refresh().isSuccess)
+
+            server.takeRequest()
+            server.takeRequest()
+            val createRequest = server.takeRequest()
+            val updateRequest = server.takeRequest()
+            val deleteRequest = server.takeRequest()
+            assertEquals("/api/exercise/records", createRequest.path)
+            assertEquals("Bearer token", createRequest.getHeader("Authorization"))
+            assertTrue(createRequest.body.readUtf8().contains(""""exercise_id":3"""))
+            assertEquals("/api/exercise/records/20", updateRequest.path)
+            assertEquals("Bearer token", updateRequest.getHeader("Authorization"))
+            assertTrue(updateRequest.body.readUtf8().contains(""""count":26"""))
+            assertEquals("/api/exercise/records/20", deleteRequest.path)
+            assertEquals("Bearer token", deleteRequest.getHeader("Authorization"))
+            assertEquals(0, repository.records.value.size)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun localStatsDeriveFromLocalRecords() = runTest {
         val records = InMemoryTrainingRecordRepository()
         val repository = LocalStatsRepository(records)
@@ -127,5 +182,29 @@ class ApiReadRepositoriesTest {
         return MockResponse()
             .setHeader("Content-Type", "application/json")
             .setBody(body)
+    }
+
+    private fun recordResponse(
+        id: Int,
+        exerciseId: Int,
+        score: Double,
+        count: Int,
+        duration: Int
+    ): MockResponse {
+        return jsonResponse(
+            """
+            {
+              "id": $id,
+              "exercise_id": $exerciseId,
+              "score": $score,
+              "count": $count,
+              "duration": $duration,
+              "heart_rate_avg": null,
+              "video_url": null,
+              "feedback": null,
+              "created_at": "2026-05-06T01:10:00Z"
+            }
+            """.trimIndent()
+        )
     }
 }

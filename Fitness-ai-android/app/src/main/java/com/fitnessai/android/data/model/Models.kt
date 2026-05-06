@@ -38,6 +38,7 @@ data class AnalysisResult(
 
 data class TrainingRecord(
     val id: String = UUID.randomUUID().toString(),
+    val exerciseId: String? = null,
     val exerciseName: String,
     val category: String,
     val count: Int,
@@ -56,11 +57,18 @@ data class TrainingRecord(
 }
 
 data class RecordDraft(
+    val exerciseId: String = "",
     val exerciseName: String = "",
     val category: String = "",
     val count: String = "",
     val score: String = "",
     val durationSeconds: String = ""
+)
+
+data class ExerciseCatalogItem(
+    val id: String,
+    val name: String,
+    val category: String
 )
 
 data class StatsSummary(

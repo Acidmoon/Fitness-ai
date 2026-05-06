@@ -1,28 +1,4 @@
-## Purpose
-Define Android training record list, detail, creation, editing, deletion, and API-backed training workflow behavior.
-## Requirements
-### Requirement: Android app lists local training records
-The Android app SHALL display locally available training records in mock mode and backend training records in API mode.
-
-#### Scenario: Mock records exist
-- **WHEN** a tester opens the Training section in mock mode and local records exist
-- **THEN** the app displays the records with exercise name, date, count or duration, and score when available
-
-#### Scenario: API records exist
-- **WHEN** a tester opens the Training section in API mode after authenticated backend record refresh succeeds
-- **THEN** the app displays backend records with exercise name, category, date, count or duration, and score when available
-
-#### Scenario: Backend record references unknown exercise
-- **WHEN** API mode receives a backend record whose `exercise_id` is not present in the fetched exercise catalog
-- **THEN** the app displays the record with a stable fallback exercise label instead of dropping the record
-
-#### Scenario: No records exist
-- **WHEN** a tester opens the Training section and no records exist for the selected backend mode
-- **THEN** the app displays an empty state with a way to create a training record
-
-#### Scenario: Record refresh fails
-- **WHEN** API mode cannot refresh backend training records because the server or network is unavailable
-- **THEN** the app keeps running and exposes a recoverable data-layer error
+## MODIFIED Requirements
 
 ### Requirement: Android app creates local training records
 The Android app SHALL allow a tester to create a training record in the selected backend mode.
@@ -96,50 +72,7 @@ The Android app SHALL allow a tester to delete a training record in the selected
 - **THEN** the app displays a recoverable delete error
 - **THEN** the record remains visible
 
-### Requirement: Android app shows API Training operation states
-The Android app SHALL show distinct API-mode loading, empty, error, and retry states for Training list and record detail workflows.
-
-#### Scenario: API Training list is loading
-- **WHEN** API mode is refreshing backend training records
-- **THEN** the Training section shows a loading or refreshing state
-
-#### Scenario: API Training list is empty
-- **WHEN** API mode successfully loads zero backend training records
-- **THEN** the Training section shows an empty state with a way to create a record when record creation is available
-
-#### Scenario: API Training refresh fails
-- **WHEN** API mode cannot refresh backend training records
-- **THEN** the Training section shows a recoverable refresh error
-- **THEN** the Training section offers a retry path
-
-#### Scenario: API record action is in flight
-- **WHEN** API mode is saving, deleting, uploading video, running analysis, or scoring a record
-- **THEN** the record detail screen prevents duplicate conflicting actions until the operation finishes
-
-#### Scenario: API record action fails recoverably
-- **WHEN** an API-mode record detail action fails without invalidating authentication
-- **THEN** the record detail screen displays a recoverable action error
-- **THEN** the tester can retry or continue using the authenticated shell
-
-### Requirement: Android app reflects applied API scoring on training records
-The Android app SHALL reflect applied backend pose-scoring results in training record list, detail, Home, and Stats data.
-
-#### Scenario: Applied API scoring updates record detail
-- **WHEN** backend pose scoring is applied to an API-mode training record
-- **THEN** the record detail screen displays the backend-applied score and count values after refresh
-
-#### Scenario: Applied API scoring updates record list
-- **WHEN** backend pose scoring is applied to an API-mode training record
-- **THEN** the Training section displays the refreshed score and count values for that record
-
-#### Scenario: Applied API scoring updates aggregates
-- **WHEN** backend pose scoring is applied and stats refresh succeeds
-- **THEN** Home and Stats summaries reflect the refreshed backend aggregate values
-
-#### Scenario: Applied scoring refresh fails
-- **WHEN** backend scoring succeeds but a follow-up records or stats refresh fails
-- **THEN** the app displays a recoverable refresh error
-- **THEN** the authenticated session remains active
+## ADDED Requirements
 
 ### Requirement: Android app uses backend exercise catalog for API records
 The Android app SHALL use backend exercise catalog data when creating or editing records in API mode.

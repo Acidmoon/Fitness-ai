@@ -3,14 +3,18 @@ package com.fitnessai.android.data.repository
 import com.fitnessai.android.data.api.ExerciseApiService
 import com.fitnessai.android.data.api.ApiErrorKind
 import com.fitnessai.android.data.api.ApiRequestException
+import com.fitnessai.android.data.api.ExerciseRecordCreateDto
+import com.fitnessai.android.data.api.ExerciseRecordUpdateDto
 import com.fitnessai.android.data.api.PoseScoringApiService
 import com.fitnessai.android.data.api.PoseScoringRequestDto
 import com.fitnessai.android.data.api.StatsApiService
 import com.fitnessai.android.data.api.apiResult
 import com.fitnessai.android.data.api.toAnalysisResult
+import com.fitnessai.android.data.api.toExerciseCatalogItem
 import com.fitnessai.android.data.api.toStatsSummary
 import com.fitnessai.android.data.api.toTrainingRecord
 import com.fitnessai.android.data.model.AnalysisStatus
+import com.fitnessai.android.data.model.ExerciseCatalogItem
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,13 +23,17 @@ import kotlinx.coroutines.flow.update
 
 class ApiTrainingRecordRepository(
     private val service: ExerciseApiService
-) : TrainingRecordRepository {
+) : TrainingRecordRepository, ExerciseCatalogRepository {
     private val _records = MutableStateFlow<List<TrainingRecord>>(emptyList())
     override val records: StateFlow<List<TrainingRecord>> = _records
+    private val _exercises = MutableStateFlow<List<ExerciseCatalogItem>>(emptyList())
+    override val exercises: StateFlow<List<ExerciseCatalogItem>> = _exercises
 
     override suspend fun refresh(): Result<Unit> {
         return apiResult {
-            val exercisesById = service.getExercises().associateBy { it.id }
+            val exerciseDtos = service.getExercises()
+            _exercises.value = exerciseDtos.map { it.toExerciseCatalogItem() }
+            val exercisesById = exerciseDtos.associateBy { it.id }
             _records.value = service.getRecords(limit = 100).map { record ->
                 record.toTrainingRecord(exercisesById[record.exerciseId])
             }
@@ -36,16 +44,72 @@ class ApiTrainingRecordRepository(
         return _records.value.firstOrNull { it.id == id }
     }
 
-    override fun createRecord(record: TrainingRecord) {
-        _records.update { records -> listOf(record) + records }
+    override suspend fun createRecord(record: TrainingRecord): Result<TrainingRecord> {
+        return apiResult {
+            val exerciseId = record.requireBackendExerciseId()
+            val created = service.createRecord(
+                ExerciseRecordCreateDto(
+                    exerciseId = exerciseId,
+                    score = (record.score ?: 0).toDouble(),
+                    count = record.count,
+                    duration = record.durationSeconds ?: 0
+                )
+            ).toTrainingRecord(_exercises.value.firstOrNull { it.id == exerciseId.toString() }?.let {
+                com.fitnessai.android.data.api.ExerciseDto(
+                    id = exerciseId,
+                    name = it.name,
+                    category = it.category
+                )
+            })
+            _records.update { records -> listOf(created) + records.filterNot { it.id == created.id } }
+            created
+        }
     }
 
-    override fun updateRecord(record: TrainingRecord) {
-        _records.update { records -> records.map { if (it.id == record.id) record else it } }
+    override suspend fun updateRecord(record: TrainingRecord): Result<TrainingRecord> {
+        return apiResult {
+            val recordId = record.requireBackendRecordId()
+            val updated = service.updateRecord(
+                recordId = recordId,
+                record = ExerciseRecordUpdateDto(
+                    score = record.score?.toDouble(),
+                    count = record.count,
+                    duration = record.durationSeconds
+                )
+            ).toTrainingRecord(_exercises.value.firstOrNull { it.id == record.exerciseId }?.let {
+                com.fitnessai.android.data.api.ExerciseDto(
+                    id = it.id.toInt(),
+                    name = it.name,
+                    category = it.category
+                )
+            })
+            _records.update { records -> records.map { if (it.id == updated.id) updated else it } }
+            updated
+        }
     }
 
-    override fun deleteRecord(id: String) {
-        _records.update { records -> records.filterNot { it.id == id } }
+    override suspend fun deleteRecord(id: String): Result<Unit> {
+        return apiResult {
+            service.deleteRecord(id.toIntOrNull() ?: throw ApiRequestException(
+                kind = ApiErrorKind.Validation,
+                message = "后端记录 ID 无效"
+            ))
+            _records.update { records -> records.filterNot { it.id == id } }
+        }
+    }
+
+    private fun TrainingRecord.requireBackendExerciseId(): Int {
+        return exerciseId?.toIntOrNull() ?: throw ApiRequestException(
+            kind = ApiErrorKind.Validation,
+            message = "请选择后端动作"
+        )
+    }
+
+    private fun TrainingRecord.requireBackendRecordId(): Int {
+        return id.toIntOrNull() ?: throw ApiRequestException(
+            kind = ApiErrorKind.Validation,
+            message = "后端记录 ID 无效"
+        )
     }
 }
 
