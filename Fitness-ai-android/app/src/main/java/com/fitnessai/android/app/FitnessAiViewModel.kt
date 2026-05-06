@@ -9,11 +9,7 @@ import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.data.model.UserRole
 import com.fitnessai.android.data.model.UserSession
-import com.fitnessai.android.data.repository.AndroidNotificationScheduler
-import com.fitnessai.android.data.repository.InMemoryAuthRepository
-import com.fitnessai.android.data.repository.InMemoryTrainingRecordRepository
-import com.fitnessai.android.data.repository.LocalVideoRepository
-import com.fitnessai.android.data.repository.SimulatedAnalysisRepository
+import com.fitnessai.android.data.repository.AppRepositoryContainer
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -22,11 +18,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class FitnessAiViewModel(application: Application) : AndroidViewModel(application) {
-    private val authRepository = InMemoryAuthRepository()
-    private val recordRepository = InMemoryTrainingRecordRepository()
-    private val notificationScheduler = AndroidNotificationScheduler(application)
-    private val analysisRepository = SimulatedAnalysisRepository(recordRepository, notificationScheduler)
-    private val videoRepository = LocalVideoRepository(recordRepository, analysisRepository)
+    private val repositories = AppRepositoryContainer.create(application)
+    private val authRepository = repositories.authRepository
+    private val recordRepository = repositories.recordRepository
+    private val analysisRepository = repositories.analysisRepository
+    private val videoRepository = repositories.videoRepository
 
     val session: StateFlow<UserSession?> = authRepository.session
     val records: StateFlow<List<TrainingRecord>> = recordRepository.records
@@ -67,7 +63,9 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun logout() {
-        authRepository.logout()
+        viewModelScope.launch {
+            authRepository.logout()
+        }
     }
 
     fun getRecord(id: String): TrainingRecord? = recordRepository.getRecord(id)

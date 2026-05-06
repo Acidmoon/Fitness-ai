@@ -37,7 +37,7 @@ class InMemoryAuthRepository : AuthRepository {
         _session.update { current -> current?.copy(role = role) }
     }
 
-    override fun logout() {
+    override suspend fun logout() {
         _session.value = null
     }
 }

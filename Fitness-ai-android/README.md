@@ -9,7 +9,7 @@ This directory is the working boundary for Android-side planning, design, and im
 - Target users: students, teachers, administrators, and personal fitness users.
 - Platform: Android only.
 - Network: required for the final product, but MVP can run with local mock data.
-- Backend integration: deferred.
+- Backend integration: mock mode remains the default; API mode can be enabled for local backend authentication.
 - Real-time posture correction: deferred.
 - Video input: support both camera recording and selecting an existing local video.
 - Notification: support local analysis-complete notifications.
@@ -73,6 +73,16 @@ Last verified command:
 .\gradlew.bat testDebugUnitTest assembleDebug --no-daemon
 BUILD SUCCESSFUL
 ```
+
+## Backend API Mode
+
+Mock mode is the default so internal MVP testing does not require a running backend. To build against a local backend from the Android emulator, use:
+
+```powershell
+.\gradlew.bat assembleDebug -PFITNESS_AI_BACKEND_MODE=api -PFITNESS_AI_BACKEND_BASE_URL=http://10.0.2.2:8000/
+```
+
+Use `10.0.2.2` when the Android emulator needs to reach a backend running on the host machine. On a physical device, use an address reachable from the device, such as the host computer's LAN IP (`http://192.168.x.x:8000/`) and ensure firewall rules allow the connection.
 
 ## Current Status
 

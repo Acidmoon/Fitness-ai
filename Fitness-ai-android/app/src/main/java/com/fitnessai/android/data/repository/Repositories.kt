@@ -11,7 +11,7 @@ interface AuthRepository {
     val session: StateFlow<UserSession?>
     suspend fun login(username: String, password: String): Result<Unit>
     fun selectRole(role: UserRole)
-    fun logout()
+    suspend fun logout()
 }
 
 interface TrainingRecordRepository {
