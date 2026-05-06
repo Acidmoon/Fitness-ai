@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
@@ -71,20 +74,27 @@ fun RecordEditorScreen(
             if (exerciseOptions.isEmpty()) {
                 ErrorState(message = "动作目录不可用，请返回后重试")
             } else {
-                exerciseOptions.forEach { exercise ->
-                    OutlinedButton(
-                        onClick = {
-                            draft = draft.copy(
-                                exerciseId = exercise.id,
-                                exerciseName = exercise.name,
-                                category = exercise.category
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !saving
-                    ) {
-                        val selected = if (draft.exerciseId == exercise.id) "已选 · " else ""
-                        Text("$selected${exercise.name} · ${exercise.category}")
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 260.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(exerciseOptions, key = { it.id }) { exercise ->
+                        OutlinedButton(
+                            onClick = {
+                                draft = draft.copy(
+                                    exerciseId = exercise.id,
+                                    exerciseName = exercise.name,
+                                    category = exercise.category
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !saving
+                        ) {
+                            val selected = if (draft.exerciseId == exercise.id) "已选 · " else ""
+                            Text("$selected${exercise.name} · ${exercise.category}")
+                        }
                     }
                 }
             }

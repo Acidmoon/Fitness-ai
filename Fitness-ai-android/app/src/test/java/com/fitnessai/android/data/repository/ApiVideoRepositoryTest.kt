@@ -3,8 +3,10 @@ package com.fitnessai.android.data.repository
 import com.fitnessai.android.data.api.ApiClientFactory
 import com.fitnessai.android.data.api.InMemoryTokenStore
 import kotlinx.coroutines.test.runTest
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,7 +46,7 @@ class ApiVideoRepositoryTest {
                 analysis = NoopAnalysisRepository,
                 contentProvider = VideoContentProvider {
                     VideoContent(
-                        bytes = "video".encodeToByteArray(),
+                        body = "video".encodeToByteArray().toRequestBody("video/mp4".toMediaTypeOrNull()),
                         mimeType = "video/mp4",
                         fileName = "clip.mp4"
                     )
@@ -54,7 +56,7 @@ class ApiVideoRepositoryTest {
             val result = repository.attachVideoContent(
                 "10",
                 VideoContent(
-                    bytes = "video".encodeToByteArray(),
+                    body = "video".encodeToByteArray().toRequestBody("video/mp4".toMediaTypeOrNull()),
                     mimeType = "video/mp4",
                     fileName = "clip.mp4"
                 )
@@ -91,11 +93,11 @@ class ApiVideoRepositoryTest {
                 records = records,
                 analysis = NoopAnalysisRepository,
                 contentProvider = VideoContentProvider {
-                    VideoContent("video".encodeToByteArray())
+                    VideoContent.fromBytes("video".encodeToByteArray())
                 }
             )
 
-            val result = repository.attachVideoContent("10", VideoContent("video".encodeToByteArray()))
+            val result = repository.attachVideoContent("10", VideoContent.fromBytes("video".encodeToByteArray()))
 
             assertTrue(result.isFailure)
             assertEquals(beforeCount, records.records.value.size)

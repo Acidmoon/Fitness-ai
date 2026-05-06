@@ -24,7 +24,9 @@ import com.fitnessai.android.data.model.TrainingRecord
 import kotlinx.coroutines.delay
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSink
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -127,10 +129,36 @@ fun interface VideoContentProvider {
 }
 
 data class VideoContent(
-    val bytes: ByteArray,
+    val body: RequestBody,
     val mimeType: String = "video/mp4",
     val fileName: String = "training-video.mp4"
-)
+) {
+    companion object {
+        fun fromBytes(
+            bytes: ByteArray,
+            mimeType: String = "video/mp4",
+            fileName: String = "training-video.mp4"
+        ): VideoContent {
+            return VideoContent(
+                body = bytes.toRequestBody(mimeType.toMediaTypeOrNull()),
+                mimeType = mimeType,
+                fileName = fileName
+            )
+        }
+
+        fun streaming(
+            mimeType: String = "video/mp4",
+            fileName: String = "training-video.mp4",
+            writer: (BufferedSink) -> Unit
+        ): VideoContent {
+            val requestBody = object : RequestBody() {
+                override fun contentType() = mimeType.toMediaTypeOrNull()
+                override fun writeTo(sink: BufferedSink) = writer(sink)
+            }
+            return VideoContent(body = requestBody, mimeType = mimeType, fileName = fileName)
+        }
+    }
+}
 
 class ApiVideoRepository(
     private val service: VideoApiService,
@@ -148,8 +176,7 @@ class ApiVideoRepository(
                 kind = ApiErrorKind.Validation,
                 message = "后端记录 ID 无效"
             )
-            val body = content.bytes.toRequestBody(content.mimeType.toMediaTypeOrNull())
-            val part = MultipartBody.Part.createFormData("video", content.fileName, body)
+            val part = MultipartBody.Part.createFormData("video", content.fileName, content.body)
             service.uploadVideo(recordId = backendRecordId, video = part)
             analysis.clearAnalysis(recordId)
             records.refresh().getOrThrow()

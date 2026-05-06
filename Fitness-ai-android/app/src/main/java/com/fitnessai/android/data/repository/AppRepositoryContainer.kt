@@ -108,8 +108,10 @@ private class AndroidVideoContentProvider(
             val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
             if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
         } ?: "training-video.mp4"
-        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IllegalStateException("无法读取视频内容")
-        return VideoContent(bytes = bytes, mimeType = mimeType, fileName = name)
+        return VideoContent.streaming(mimeType = mimeType, fileName = name) { sink ->
+            resolver.openInputStream(uri)?.use { input ->
+                sink.outputStream().use { output -> input.copyTo(output) }
+            } ?: throw IllegalStateException("无法读取视频内容")
+        }
     }
 }
