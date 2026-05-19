@@ -1,5 +1,7 @@
 # E:\Fitness-ai-backend\app\config.py
 
+import re
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
@@ -30,6 +32,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     LOGIN_RATE_LIMIT_MAX_FAILURES: int = 5
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
+
+    # 姿态分析后端选择
+    POSE_ANALYSIS_BACKEND: str = "movenet"
+
+    # 姿态分析通用配置
+    POSE_ANALYSIS_SAMPLE_FPS: int = 5
 
     # MoveNet 姿态分析配置（默认关闭，避免缺少 native 推理依赖时影响启动）
     MOVENET_ENABLED: bool = False
@@ -62,6 +70,20 @@ class Settings(BaseSettings):
             accepted = "、".join(sorted(ACCEPTED_ENVIRONMENTS))
             raise ValueError(f"ENVIRONMENT 必须是以下值之一：{accepted}")
         return environment
+
+    @field_validator("POSE_ANALYSIS_BACKEND")
+    @classmethod
+    def validate_pose_analysis_backend(cls, value: str) -> str:
+        backend_id = value.strip()
+        if not backend_id:
+            return "movenet"
+        if not re.match(r"^[a-z0-9][a-z0-9_-]*$", backend_id):
+            raise ValueError(
+                "POSE_ANALYSIS_BACKEND must contain only lowercase "
+                "alphanumeric characters, hyphens, and underscores, "
+                "and must start with a lowercase letter or digit"
+            )
+        return backend_id
 
     @field_validator("DATABASE_URL")
     @classmethod
@@ -103,11 +125,11 @@ class Settings(BaseSettings):
             raise ValueError("MOVENET_MIN_CONFIDENCE 必须在 0 到 1 之间")
         return value
 
-    @field_validator("MOVENET_SAMPLE_FPS")
+    @field_validator("MOVENET_SAMPLE_FPS", "POSE_ANALYSIS_SAMPLE_FPS")
     @classmethod
-    def validate_movenet_sample_fps(cls, value: int) -> int:
+    def validate_sample_fps(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("MOVENET_SAMPLE_FPS 必须为正整数")
+            raise ValueError("采样帧率必须为正整数")
         return value
 
     @field_validator("VIDEO_STORAGE_BACKEND")

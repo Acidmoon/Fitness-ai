@@ -6,10 +6,11 @@ from typing import Any, Dict, List, Optional
 from app.config import settings
 from app.schemas.exercise import MAX_KEYPOINTS_DATA_BYTES
 from app.services.pose_analysis_runtime import (
-    MoveNetRuntime,
     PoseAnalysisInferenceError,
     PoseAnalysisUnavailableError,
 )
+from app.services.pose_backends import registry
+from app.services.pose_backends.protocol import PoseAnalysisBackend
 
 POSE_ANALYSIS_SCHEMA_VERSION = 1
 MAX_STORED_SAMPLE_FRAMES = 120
@@ -17,8 +18,8 @@ MAX_STORED_SAMPLE_FRAMES = 120
 
 def analyze_video_file(
     video_path: str,
-    sample_fps: Optional[int] = None,
-    runtime: Optional[MoveNetRuntime] = None,
+    sample_fps: int | None = None,
+    backend: PoseAnalysisBackend | None = None,
 ) -> Dict[str, Any]:
     try:
         import cv2  # type: ignore
@@ -31,8 +32,13 @@ def analyze_video_file(
     if not cap.isOpened():
         raise PoseAnalysisInferenceError("无法打开视频文件进行姿态分析")
 
-    pose_runtime = runtime or MoveNetRuntime()
-    target_sample_fps = sample_fps or settings.MOVENET_SAMPLE_FPS
+    pose_backend = backend or registry.get_backend()
+
+    if not pose_backend.is_available():
+        raise PoseAnalysisUnavailableError(
+            f"Pose analysis backend '{pose_backend.backend_name}' is not available"
+        )
+    target_sample_fps = sample_fps or settings.POSE_ANALYSIS_SAMPLE_FPS
     source_fps = cap.get(cv2.CAP_PROP_FPS) or float(target_sample_fps)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     sample_interval = max(1, int(round(source_fps / target_sample_fps)))
@@ -49,7 +55,7 @@ def analyze_video_file(
                 break
 
             if frame_index % sample_interval == 0:
-                frame_result = pose_runtime.analyze_frame(frame)
+                frame_result = pose_backend.analyze_frame(frame)
                 model_metadata = frame_result.get("model") or model_metadata
                 keypoints = frame_result.get("keypoints", [])
                 confidence_values.extend(
