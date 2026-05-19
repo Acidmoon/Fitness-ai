@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.StateFlow
 interface AuthRepository {
     val session: StateFlow<UserSession?>
     suspend fun bootstrap(): Result<Unit> = Result.success(Unit)
+    suspend fun register(username: String, password: String, email: String?): Result<Unit> =
+        Result.failure(UnsupportedOperationException("当前认证仓库不支持注册"))
     suspend fun login(username: String, password: String): Result<Unit>
     fun selectRole(role: UserRole)
     suspend fun logout()

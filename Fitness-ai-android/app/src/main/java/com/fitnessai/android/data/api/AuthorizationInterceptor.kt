@@ -3,7 +3,10 @@ package com.fitnessai.android.data.api
 import okhttp3.Interceptor
 import okhttp3.Response
 
-class AuthorizationInterceptor(private val tokenStore: TokenStore) : Interceptor {
+class AuthorizationInterceptor(
+    private val tokenStore: TokenStore,
+    private val onAuthFailure: () -> Unit = {}
+) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val token = tokenStore.currentAccessToken()
         val request = if (token.isNullOrBlank()) {
@@ -14,6 +17,10 @@ class AuthorizationInterceptor(private val tokenStore: TokenStore) : Interceptor
                 .header("Authorization", "Bearer $token")
                 .build()
         }
-        return chain.proceed(request)
+        val response = chain.proceed(request)
+        if (response.code == 401) {
+            onAuthFailure()
+        }
+        return response
     }
 }

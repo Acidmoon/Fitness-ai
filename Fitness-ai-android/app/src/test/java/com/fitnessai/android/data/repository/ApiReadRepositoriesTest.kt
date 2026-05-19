@@ -47,8 +47,12 @@ class ApiReadRepositoriesTest {
         )
         server.start()
         try {
-            val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-            val repository = ApiTrainingRecordRepository(services.exercise, server.url("/").toString())
+            val baseUrl = server.url("/").toString()
+            val services = ApiClientFactory.create(baseUrl, InMemoryTokenStore("token"))
+            val repository = ApiTrainingRecordRepository(
+                services = { services },
+                baseUrlProvider = { baseUrl }
+            )
 
             val result = repository.refresh()
 
@@ -88,7 +92,7 @@ class ApiReadRepositoriesTest {
         server.start()
         try {
             val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-            val repository = ApiStatsRepository(services.stats)
+            val repository = ApiStatsRepository { services }
 
             val result = repository.refresh()
 
@@ -114,8 +118,12 @@ class ApiReadRepositoriesTest {
         server.enqueue(jsonResponse("""[]"""))
         server.start()
         try {
-            val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-            val repository = ApiTrainingRecordRepository(services.exercise, server.url("/").toString())
+            val baseUrl = server.url("/").toString()
+            val services = ApiClientFactory.create(baseUrl, InMemoryTokenStore("token"))
+            val repository = ApiTrainingRecordRepository(
+                services = { services },
+                baseUrlProvider = { baseUrl }
+            )
 
             assertTrue(repository.refresh().isSuccess)
             assertEquals(1, repository.exercises.value.size)
@@ -155,27 +163,6 @@ class ApiReadRepositoriesTest {
         } finally {
             server.shutdown()
         }
-    }
-
-    @Test
-    fun localStatsDeriveFromLocalRecords() = runTest {
-        val records = InMemoryTrainingRecordRepository()
-        val repository = LocalStatsRepository(records)
-        val extra = TrainingRecord(
-            exerciseName = "跳绳",
-            category = "有氧",
-            count = 100,
-            score = 91,
-            durationSeconds = 120
-        )
-
-        records.createRecord(extra)
-        repository.refresh()
-
-        assertEquals(3, repository.stats.value.totalRecords)
-        assertEquals(156, repository.stats.value.totalCount)
-        assertEquals(255, repository.stats.value.totalDurationSeconds)
-        assertEquals(91, repository.stats.value.bestScore)
     }
 
     private fun jsonResponse(body: String): MockResponse {

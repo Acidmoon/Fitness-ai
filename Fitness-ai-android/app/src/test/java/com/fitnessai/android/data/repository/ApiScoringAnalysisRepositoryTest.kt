@@ -35,9 +35,9 @@ class ApiScoringAnalysisRepositoryTest {
         try {
             val records = InMemoryTrainingRecordRepository()
             records.createRecord(completedRecord(id = "10"))
+            val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
             val repository = ApiScoringAnalysisRepository(
-                service = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-                    .poseScoring,
+                services = { services },
                 records = records,
                 delegate = NoopAnalysisRepository
             )
@@ -117,11 +117,15 @@ class ApiScoringAnalysisRepositoryTest {
         )
         server.start()
         try {
-            val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-            val records = ApiTrainingRecordRepository(services.exercise, server.url("/").toString())
-            val stats = ApiStatsRepository(services.stats)
+            val baseUrl = server.url("/").toString()
+            val services = ApiClientFactory.create(baseUrl, InMemoryTokenStore("token"))
+            val records = ApiTrainingRecordRepository(
+                services = { services },
+                baseUrlProvider = { baseUrl }
+            )
+            val stats = ApiStatsRepository { services }
             val scoring = ApiScoringAnalysisRepository(
-                service = services.poseScoring,
+                services = { services },
                 records = records,
                 delegate = NoopAnalysisRepository
             )
@@ -165,9 +169,9 @@ class ApiScoringAnalysisRepositoryTest {
                 )
             )
             records.createRecord(existing)
+            val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
             val repository = ApiScoringAnalysisRepository(
-                service = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-                    .poseScoring,
+                services = { services },
                 records = records,
                 delegate = NoopAnalysisRepository
             )

@@ -1,16 +1,18 @@
 package com.fitnessai.android.data.repository
 
-import com.fitnessai.android.data.api.ExerciseApiService
 import com.fitnessai.android.data.api.ApiErrorKind
 import com.fitnessai.android.data.api.ApiRequestException
-import com.fitnessai.android.data.api.VideoApiService
+import com.fitnessai.android.data.api.ApiServices
+import com.fitnessai.android.data.api.ExerciseApiService
 import com.fitnessai.android.data.api.ExerciseRecordCreateDto
 import com.fitnessai.android.data.api.ExerciseRecordUpdateDto
-import com.fitnessai.android.data.api.PoseScoringApiService
-import com.fitnessai.android.data.api.PoseScoringRequestDto
 import com.fitnessai.android.data.api.PoseAnalysisApiService
 import com.fitnessai.android.data.api.PoseAnalysisTriggerDto
+import com.fitnessai.android.data.api.PoseScoringApiService
+import com.fitnessai.android.data.api.PoseScoringRequestDto
 import com.fitnessai.android.data.api.StatsApiService
+import com.fitnessai.android.data.api.VideoApiService
+import com.fitnessai.android.data.api.WeeklyStatsDto
 import com.fitnessai.android.data.api.apiResult
 import com.fitnessai.android.data.api.toAnalysisResult
 import com.fitnessai.android.data.api.toExerciseCatalogItem
@@ -22,18 +24,31 @@ import com.fitnessai.android.data.model.ExerciseCatalogItem
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
 import kotlinx.coroutines.delay
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okio.BufferedSink
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
+/**
+ * Repositories below take a [ServicesProvider] so they always dispatch through the latest
+ * [ApiServices] held by [com.fitnessai.android.core.config.ApiClientHolder]. When the user
+ * changes BaseUrl in Settings, the next call automatically targets the new backend.
+ */
+typealias ServicesProvider = () -> ApiServices
+
+private fun ServicesProvider.exercise(): ExerciseApiService = invoke().exercise
+private fun ServicesProvider.stats(): StatsApiService = invoke().stats
+private fun ServicesProvider.video(): VideoApiService = invoke().video
+private fun ServicesProvider.poseAnalysis(): PoseAnalysisApiService = invoke().poseAnalysis
+private fun ServicesProvider.poseScoring(): PoseScoringApiService = invoke().poseScoring
+
 class ApiTrainingRecordRepository(
-    private val service: ExerciseApiService,
-    private val baseUrl: String
+    private val services: ServicesProvider,
+    private val baseUrlProvider: () -> String
 ) : TrainingRecordRepository, ExerciseCatalogRepository {
     private val _records = MutableStateFlow<List<TrainingRecord>>(emptyList())
     override val records: StateFlow<List<TrainingRecord>> = _records
@@ -42,6 +57,8 @@ class ApiTrainingRecordRepository(
 
     override suspend fun refresh(): Result<Unit> {
         return apiResult {
+            val service = services.exercise()
+            val baseUrl = baseUrlProvider()
             val exerciseDtos = service.getExercises()
             _exercises.value = exerciseDtos.map { it.toExerciseCatalogItem() }
             val exercisesById = exerciseDtos.associateBy { it.id }
@@ -57,6 +74,8 @@ class ApiTrainingRecordRepository(
 
     override suspend fun createRecord(record: TrainingRecord): Result<TrainingRecord> {
         return apiResult {
+            val service = services.exercise()
+            val baseUrl = baseUrlProvider()
             val exerciseId = record.requireBackendExerciseId()
             val created = service.createRecord(
                 ExerciseRecordCreateDto(
@@ -79,6 +98,8 @@ class ApiTrainingRecordRepository(
 
     override suspend fun updateRecord(record: TrainingRecord): Result<TrainingRecord> {
         return apiResult {
+            val service = services.exercise()
+            val baseUrl = baseUrlProvider()
             val recordId = record.requireBackendRecordId()
             val updated = service.updateRecord(
                 recordId = recordId,
@@ -101,10 +122,12 @@ class ApiTrainingRecordRepository(
 
     override suspend fun deleteRecord(id: String): Result<Unit> {
         return apiResult {
-            service.deleteRecord(id.toIntOrNull() ?: throw ApiRequestException(
-                kind = ApiErrorKind.Validation,
-                message = "后端记录 ID 无效"
-            ))
+            services.exercise().deleteRecord(
+                id.toIntOrNull() ?: throw ApiRequestException(
+                    kind = ApiErrorKind.Validation,
+                    message = "后端记录 ID 无效"
+                )
+            )
             _records.update { records -> records.filterNot { it.id == id } }
         }
     }
@@ -161,7 +184,7 @@ data class VideoContent(
 }
 
 class ApiVideoRepository(
-    private val service: VideoApiService,
+    private val services: ServicesProvider,
     private val records: TrainingRecordRepository,
     private val analysis: AnalysisRepository,
     private val contentProvider: VideoContentProvider
@@ -177,7 +200,7 @@ class ApiVideoRepository(
                 message = "后端记录 ID 无效"
             )
             val part = MultipartBody.Part.createFormData("video", content.fileName, content.body)
-            service.uploadVideo(recordId = backendRecordId, video = part)
+            services.video().uploadVideo(recordId = backendRecordId, video = part)
             analysis.clearAnalysis(recordId)
             records.refresh().getOrThrow()
         }
@@ -190,7 +213,7 @@ data class ApiAnalysisPollingConfig(
 )
 
 class ApiPoseAnalysisRepository(
-    private val service: PoseAnalysisApiService,
+    private val services: ServicesProvider,
     private val records: TrainingRecordRepository,
     private val notifications: NotificationScheduler,
     private val polling: ApiAnalysisPollingConfig = ApiAnalysisPollingConfig()
@@ -212,14 +235,14 @@ class ApiPoseAnalysisRepository(
                 message = "后端记录 ID 无效"
             )
             records.updateRecord(record.copy(analysisResult = AnalysisResult(AnalysisStatus.Queued))).getOrThrow()
-            val job = service.createPoseAnalysisJob(backendRecordId, PoseAnalysisTriggerDto())
+            val job = services.poseAnalysis().createPoseAnalysisJob(backendRecordId, PoseAnalysisTriggerDto())
             records.getRecord(recordId)?.let {
                 records.updateRecord(it.copy(analysisResult = AnalysisResult(AnalysisStatus.Running))).getOrThrow()
             }
             val terminal = pollJob(job.id)
             when (terminal.status.normalizedJobStatus()) {
                 AnalysisStatus.Completed -> {
-                    val result = service.getPoseAnalysis(backendRecordId).toAnalysisResult()
+                    val result = services.poseAnalysis().getPoseAnalysis(backendRecordId).toAnalysisResult()
                     val completed = requireNotNull(records.getRecord(recordId)).copy(analysisResult = result)
                     records.updateRecord(completed).getOrThrow()
                     if (result.status == AnalysisStatus.Completed) {
@@ -255,7 +278,7 @@ class ApiPoseAnalysisRepository(
 
     private suspend fun pollJob(jobId: Int): com.fitnessai.android.data.api.PoseAnalysisJobDto {
         repeat(polling.maxAttempts) { attempt ->
-            val job = service.getPoseAnalysisJob(jobId)
+            val job = services.poseAnalysis().getPoseAnalysisJob(jobId)
             when (job.status.normalizedJobStatus()) {
                 AnalysisStatus.Completed,
                 AnalysisStatus.Failed -> return job
@@ -282,20 +305,31 @@ class ApiPoseAnalysisRepository(
 }
 
 class ApiStatsRepository(
-    private val service: StatsApiService
+    private val services: ServicesProvider
 ) : StatsRepository {
     private val _stats = MutableStateFlow(StatsSummary(0, 0, 0, null))
     override val stats: StateFlow<StatsSummary> = _stats
 
+    private val _weekly = MutableStateFlow<List<WeeklyStatsDto>>(emptyList())
+    val weekly: StateFlow<List<WeeklyStatsDto>> = _weekly
+
     override suspend fun refresh(): Result<Unit> {
         return apiResult {
-            _stats.value = service.getSummary().toStatsSummary()
+            _stats.value = services.stats().getSummary().toStatsSummary()
+        }
+    }
+
+    suspend fun refreshWeekly(): Result<List<WeeklyStatsDto>> {
+        return apiResult {
+            val list = services.stats().getWeeklyStats()
+            _weekly.value = list
+            list
         }
     }
 }
 
 class ApiScoringAnalysisRepository(
-    private val service: PoseScoringApiService,
+    private val services: ServicesProvider,
     private val records: TrainingRecordRepository,
     private val delegate: AnalysisRepository
 ) : AnalysisRepository {
@@ -309,7 +343,7 @@ class ApiScoringAnalysisRepository(
                 kind = ApiErrorKind.Validation,
                 message = "后端记录 ID 无效"
             )
-            val result = service.scorePose(numericRecordId, PoseScoringRequestDto(apply = apply))
+            val result = services.poseScoring().scorePose(numericRecordId, PoseScoringRequestDto(apply = apply))
             val analysis = result.toAnalysisResult()
             if (analysis.status == AnalysisStatus.Failed) {
                 throw ApiRequestException(

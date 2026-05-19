@@ -18,11 +18,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        val backendMode = providers.gradleProperty("FITNESS_AI_BACKEND_MODE").orElse("mock").get()
         val backendBaseUrl = providers.gradleProperty("FITNESS_AI_BACKEND_BASE_URL")
             .orElse("http://10.0.2.2:8000/")
             .get()
-        buildConfigField("String", "BACKEND_MODE", "\"$backendMode\"")
         buildConfigField("String", "BACKEND_BASE_URL", "\"$backendBaseUrl\"")
     }
 
@@ -38,19 +36,34 @@ android {
         }
     }
 
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
+        encoding = "UTF-8"
     }
 
     buildFeatures {
         compose = true
         buildConfig = true
     }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        freeCompilerArgs.addAll("-Xjvm-default=all")
+    }
+}
+
+tasks.withType<Test>().configureEach {
+    jvmArgs("-Dfile.encoding=UTF-8")
 }
 
 dependencies {

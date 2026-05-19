@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
+import java.util.concurrent.TimeUnit
 
 object ApiClientFactory {
     private val json = Json {
@@ -12,9 +13,16 @@ object ApiClientFactory {
         explicitNulls = false
     }
 
-    fun create(baseUrl: String, tokenStore: TokenStore): ApiServices {
+    fun create(
+        baseUrl: String,
+        tokenStore: TokenStore,
+        onAuthFailure: () -> Unit = {}
+    ): ApiServices {
         val okHttpClient = OkHttpClient.Builder()
-            .addInterceptor(AuthorizationInterceptor(tokenStore))
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .addInterceptor(AuthorizationInterceptor(tokenStore, onAuthFailure))
             .build()
         val retrofit = Retrofit.Builder()
             .baseUrl(normalizeBaseUrl(baseUrl))

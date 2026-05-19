@@ -15,6 +15,9 @@ import retrofit2.http.Query
 import retrofit2.http.Streaming
 
 interface AuthApiService {
+    @POST("api/auth/register")
+    suspend fun register(@Body request: RegisterRequestDto): UserProfileDto
+
     @FormUrlEncoded
     @POST("api/auth/login")
     suspend fun login(

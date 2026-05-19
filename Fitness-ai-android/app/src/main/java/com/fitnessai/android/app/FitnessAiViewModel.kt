@@ -1,19 +1,22 @@
 package com.fitnessai.android.app
 
-import android.app.Application
 import android.net.Uri
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.fitnessai.android.core.session.SessionEvent
+import com.fitnessai.android.core.session.SessionManager
+import com.fitnessai.android.core.snackbar.SnackbarController
 import com.fitnessai.android.data.api.ApiErrorKind
 import com.fitnessai.android.data.api.ApiRequestException
-import com.fitnessai.android.data.config.AppBackendConfiguration
-import com.fitnessai.android.data.config.BackendMode
 import com.fitnessai.android.data.model.RecordDraft
 import com.fitnessai.android.data.model.StatsSummary
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.data.model.UserRole
 import com.fitnessai.android.data.model.UserSession
-import com.fitnessai.android.data.repository.AppRepositoryContainer
+import com.fitnessai.android.data.repository.AppRepositories
+import com.fitnessai.android.ui.components.TrendPoint
+import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,10 +24,17 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class FitnessAiViewModel(application: Application) : AndroidViewModel(application) {
-    private val configuration = AppBackendConfiguration.fromBuildConfig()
-    val isApiMode: Boolean = configuration.mode == BackendMode.Api
-    private val repositories = AppRepositoryContainer.create(application, configuration)
+/**
+ * Root view-model for the authenticated experience. Now driven entirely by the shared
+ * [AppRepositories] instance from [AppContainer], so a Settings BaseUrl change immediately
+ * affects all subsequent calls. Login/Register/Settings screens use their own dedicated
+ * view-models; this one only tracks home/training/stats reads and analysis state.
+ */
+class FitnessAiViewModel(
+    private val repositories: AppRepositories,
+    private val sessionManager: SessionManager,
+    private val snackbar: SnackbarController
+) : ViewModel() {
     private val authRepository = repositories.authRepository
     private val recordRepository = repositories.recordRepository
     private val exerciseCatalogRepository = repositories.exerciseCatalogRepository
@@ -36,9 +46,10 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
     val records: StateFlow<List<TrainingRecord>> = recordRepository.records
     val exerciseCatalog = exerciseCatalogRepository.exercises
     val stats: StateFlow<StatsSummary> = statsRepository.stats
-    private val _recordsOperation = MutableStateFlow(initialReadState())
+
+    private val _recordsOperation = MutableStateFlow<ApiOperationState>(ApiOperationState.Loading)
     val recordsOperation: StateFlow<ApiOperationState> = _recordsOperation
-    private val _statsOperation = MutableStateFlow(initialReadState())
+    private val _statsOperation = MutableStateFlow<ApiOperationState>(ApiOperationState.Loading)
     val statsOperation: StateFlow<ApiOperationState> = _statsOperation
     private val _recordActionState = MutableStateFlow(RecordActionState())
     val recordActionState: StateFlow<RecordActionState> = _recordActionState
@@ -52,36 +63,38 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
         HomeState(
             summary = stats,
             recentRecords = records.take(3),
+            trendPoints = records.toTrendPoints(),
             operation = mergeHomeOperation(recordsOperation, statsOperation, records, stats)
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = HomeState(StatsSummary(0, 0, 0, null), emptyList(), initialReadState())
+        initialValue = HomeState(StatsSummary(0, 0, 0, null), emptyList(), emptyList(), ApiOperationState.Loading)
     )
 
     init {
         viewModelScope.launch {
             val result = authRepository.bootstrap()
-            if (result.isSuccess && session.value != null) {
+            if (result.isFailure) {
+                val cause = result.exceptionOrNull()
+                if ((cause as? ApiRequestException)?.kind == ApiErrorKind.Network) {
+                    snackbar.warning("无法连接到服务器，请在设置中检查 API 地址")
+                }
+            }
+            if (session.value != null) {
                 refreshReadData()
-            } else if (isApiMode && session.value == null) {
+            } else {
                 _recordsOperation.value = ApiOperationState.Unauthenticated
                 _statsOperation.value = ApiOperationState.Unauthenticated
             }
         }
-    }
-
-    fun login(username: String, password: String, onResult: (String?) -> Unit) {
         viewModelScope.launch {
-            val result = authRepository.login(username, password)
-            if (result.isSuccess) {
-                refreshReadData()
-            } else if (isApiMode) {
-                _recordsOperation.value = ApiOperationState.Unauthenticated
-                _statsOperation.value = ApiOperationState.Unauthenticated
+            sessionManager.events.collect { event ->
+                if (event is SessionEvent.NavigateToLogin) {
+                    _recordsOperation.value = ApiOperationState.Unauthenticated
+                    _statsOperation.value = ApiOperationState.Unauthenticated
+                }
             }
-            onResult(result.exceptionOrNull()?.message)
         }
     }
 
@@ -89,12 +102,12 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
         authRepository.selectRole(role)
     }
 
+    fun onLoggedIn() {
+        viewModelScope.launch { refreshReadData() }
+    }
+
     fun logout() {
-        viewModelScope.launch {
-            authRepository.logout()
-            _recordsOperation.value = ApiOperationState.Unauthenticated
-            _statsOperation.value = ApiOperationState.Unauthenticated
-        }
+        sessionManager.onManualLogout()
     }
 
     fun getRecord(id: String): TrainingRecord? = recordRepository.getRecord(id)
@@ -157,6 +170,7 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
             val result = videoRepository.attachVideo(recordId, uri)
             val error = result.exceptionOrNull()?.userMessage()
             _recordActionState.value = RecordActionState(errorMessage = error)
+            error?.let { snackbar.error(it) }
         }
     }
 
@@ -170,6 +184,7 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
             val result = analysisRepository.startAnalysis(recordId)
             val error = result.exceptionOrNull()?.userMessage()
             _recordActionState.value = RecordActionState(errorMessage = error)
+            error?.let { snackbar.error(it) }
             onResult(error)
         }
     }
@@ -192,10 +207,6 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun scorePose(recordId: String, apply: Boolean, onResult: (String?) -> Unit) {
         viewModelScope.launch {
-            if (!isApiMode) {
-                onResult(null)
-                return@launch
-            }
             if (_recordActionState.value.isBusy) {
                 onResult("操作正在进行中")
                 return@launch
@@ -207,6 +218,7 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
                 refreshReadData()
             }
             _recordActionState.value = RecordActionState(errorMessage = error)
+            error?.let { snackbar.error(it) }
             onResult(error)
         }
     }
@@ -244,12 +256,10 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private suspend fun refreshRecordsInternal(refreshing: Boolean) {
-        if (isApiMode) {
-            _recordsOperation.value = if (refreshing && records.value.isNotEmpty()) {
-                ApiOperationState.Refreshing
-            } else {
-                ApiOperationState.Loading
-            }
+        _recordsOperation.value = if (refreshing && records.value.isNotEmpty()) {
+            ApiOperationState.Refreshing
+        } else {
+            ApiOperationState.Loading
         }
         exerciseCatalogRepository.refresh()
         val result = recordRepository.refresh()
@@ -257,24 +267,21 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private suspend fun refreshStatsInternal(refreshing: Boolean) {
-        if (isApiMode) {
-            _statsOperation.value = if (refreshing && stats.value.totalRecords > 0) {
-                ApiOperationState.Refreshing
-            } else {
-                ApiOperationState.Loading
-            }
+        _statsOperation.value = if (refreshing && stats.value.totalRecords > 0) {
+            ApiOperationState.Refreshing
+        } else {
+            ApiOperationState.Loading
         }
         val result = statsRepository.refresh()
         _statsOperation.value = operationAfter(result, stats.value.totalRecords == 0)
     }
 
     private fun operationAfter(result: Result<Unit>, empty: Boolean): ApiOperationState {
-        if (!isApiMode) return ApiOperationState.Ready
         return result.fold(
             onSuccess = { if (empty) ApiOperationState.Empty else ApiOperationState.Ready },
             onFailure = { throwable ->
                 if ((throwable as? ApiRequestException)?.kind == ApiErrorKind.Authentication) {
-                    viewModelScope.launch { authRepository.logout() }
+                    sessionManager.notifyUnauthorized()
                     ApiOperationState.Unauthenticated
                 } else {
                     ApiOperationState.RecoverableError(throwable.userMessage())
@@ -283,20 +290,44 @@ class FitnessAiViewModel(application: Application) : AndroidViewModel(applicatio
         )
     }
 
-    private fun initialReadState(): ApiOperationState {
-        return if (isApiMode) ApiOperationState.Loading else ApiOperationState.Ready
-    }
-
     private fun Throwable.userMessage(): String {
         return message ?: "操作失败，请稍后重试"
+    }
+
+    class Factory(
+        private val container: AppContainer
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            return FitnessAiViewModel(
+                repositories = container.repositories,
+                sessionManager = container.sessionManager,
+                snackbar = container.snackbarController
+            ) as T
+        }
     }
 }
 
 data class HomeState(
     val summary: StatsSummary,
     val recentRecords: List<TrainingRecord>,
+    val trendPoints: List<TrendPoint>,
     val operation: ApiOperationState = ApiOperationState.Ready
 )
+
+private fun List<TrainingRecord>.toTrendPoints(): List<TrendPoint> {
+    val today = LocalDate.now()
+    val byDate = groupBy { it.recordedAt.toLocalDate() }
+    return (6 downTo 0).map { offset ->
+        val date = today.minusDays(offset.toLong())
+        val dayRecords = byDate[date].orEmpty()
+        TrendPoint(
+            date = date,
+            sessions = dayRecords.size,
+            durationSeconds = dayRecords.sumOf { it.durationSeconds ?: 0 }
+        )
+    }
+}
 
 sealed interface ApiOperationState {
     data object Ready : ApiOperationState

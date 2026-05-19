@@ -15,71 +15,76 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.fitnessai.android.app.ApiOperationState
 import com.fitnessai.android.app.HomeState
+import com.fitnessai.android.ui.components.AppPullToRefreshBox
 import com.fitnessai.android.ui.components.EmptyState
-import com.fitnessai.android.ui.components.ErrorState
 import com.fitnessai.android.ui.components.LineCard
-import com.fitnessai.android.ui.components.LoadingState
+import com.fitnessai.android.ui.components.StateView
+import com.fitnessai.android.ui.components.TrendChart
 
 @Composable
 fun HomeScreen(
     state: HomeState,
     onRetry: () -> Unit,
+    onRefresh: () -> Unit,
     onOpenTraining: () -> Unit,
     onOpenRecord: (String) -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+    AppPullToRefreshBox(
+        isRefreshing = state.operation is ApiOperationState.Refreshing,
+        onRefresh = onRefresh
     ) {
-        Text("首页", style = MaterialTheme.typography.displaySmall)
-        when (val operation = state.operation) {
-            ApiOperationState.Loading -> {
-                LoadingState("正在加载训练概览")
-                return@Column
-            }
-            ApiOperationState.Refreshing -> LoadingState("正在刷新训练概览")
-            is ApiOperationState.RecoverableError -> {
-                ErrorState(message = operation.message, onRetry = onRetry)
-                return@Column
-            }
-            ApiOperationState.Unauthenticated -> {
-                ErrorState(message = "登录状态已失效，请重新登录")
-                return@Column
-            }
-            ApiOperationState.Empty,
-            ApiOperationState.Ready -> Unit
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricCard("记录", state.summary.totalRecords.toString(), Modifier.weight(1f))
-            MetricCard("次数", state.summary.totalCount.toString(), Modifier.weight(1f))
-            MetricCard("最佳", state.summary.bestScore?.toString() ?: "-", Modifier.weight(1f))
-        }
-        if (state.recentRecords.isEmpty()) {
-            EmptyState(
-                title = "暂无训练",
-                message = "创建第一条训练记录后，这里会展示最近活动。",
-                actionLabel = "新建记录",
-                onAction = onOpenTraining
-            )
-        } else {
-            Text("最近训练", style = MaterialTheme.typography.titleMedium)
-            state.recentRecords.forEach { record ->
-                LineCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onOpenRecord(record.id) }
-                ) {
-                    Text(record.exerciseName, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "${record.category} · ${record.count} 次 · ${record.dateLabel}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("首页", style = MaterialTheme.typography.displaySmall)
+            StateView(
+                state = state.operation,
+                loadingMessage = "正在加载训练概览",
+                onRetry = onRetry,
+                empty = {
+                    EmptyState(
+                        title = "暂无训练",
+                        message = "创建第一条训练记录后，这里会展示最近活动。",
+                        actionLabel = "新建记录",
+                        onAction = onOpenTraining
                     )
                 }
-            }
-            Button(onClick = onOpenTraining, modifier = Modifier.fillMaxWidth()) {
-                Text("查看训练")
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MetricCard("记录", state.summary.totalRecords.toString(), Modifier.weight(1f))
+                    MetricCard("次数", state.summary.totalCount.toString(), Modifier.weight(1f))
+                    MetricCard("最佳", state.summary.bestScore?.toString() ?: "-", Modifier.weight(1f))
+                }
+                TrendChart(points = state.trendPoints)
+                if (state.recentRecords.isEmpty()) {
+                    EmptyState(
+                        title = "暂无训练",
+                        message = "创建第一条训练记录后，这里会展示最近活动。",
+                        actionLabel = "新建记录",
+                        onAction = onOpenTraining
+                    )
+                } else {
+                    Text("最近训练", style = MaterialTheme.typography.titleMedium)
+                    state.recentRecords.forEach { record ->
+                        LineCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onOpenRecord(record.id) }
+                        ) {
+                            Text(record.exerciseName, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "${record.category} · ${record.count} 次 · ${record.dateLabel}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Button(onClick = onOpenTraining, modifier = Modifier.fillMaxWidth()) {
+                        Text("查看训练")
+                    }
+                }
             }
         }
     }

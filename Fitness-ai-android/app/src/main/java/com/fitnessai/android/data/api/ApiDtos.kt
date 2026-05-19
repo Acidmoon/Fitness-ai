@@ -11,6 +11,13 @@ data class TokenDto(
 )
 
 @Serializable
+data class RegisterRequestDto(
+    val username: String,
+    val password: String,
+    val email: String? = null
+)
+
+@Serializable
 data class UserProfileDto(
     val id: Int,
     val username: String,

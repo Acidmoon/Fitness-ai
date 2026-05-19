@@ -38,10 +38,14 @@ class ApiVideoRepositoryTest {
         )
         server.start()
         try {
-            val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-            val records = ApiTrainingRecordRepository(services.exercise, server.url("/").toString())
+            val baseUrl = server.url("/").toString()
+            val services = ApiClientFactory.create(baseUrl, InMemoryTokenStore("token"))
+            val records = ApiTrainingRecordRepository(
+                services = { services },
+                baseUrlProvider = { baseUrl }
+            )
             val repository = ApiVideoRepository(
-                service = services.video,
+                services = { services },
                 records = records,
                 analysis = NoopAnalysisRepository,
                 contentProvider = VideoContentProvider {
@@ -89,7 +93,7 @@ class ApiVideoRepositoryTest {
             val records = InMemoryTrainingRecordRepository()
             val beforeCount = records.records.value.size
             val repository = ApiVideoRepository(
-                service = services.video,
+                services = { services },
                 records = records,
                 analysis = NoopAnalysisRepository,
                 contentProvider = VideoContentProvider {

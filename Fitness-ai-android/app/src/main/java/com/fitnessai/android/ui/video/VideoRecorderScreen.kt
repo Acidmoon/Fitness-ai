@@ -88,7 +88,7 @@ fun VideoRecorderScreen(
                 }
             }
         )
-        message?.let { ErrorState(message = it) { message = null } }
+        message?.let { ErrorState(message = it, onRetry = { message = null }) }
         Button(
             modifier = Modifier.fillMaxWidth(),
             onClick = {
@@ -127,10 +127,10 @@ fun VideoRecorderScreen(
             }
         ) {
             if (recording == null) {
-                Icon(Icons.Outlined.Videocam, contentDescription = null)
+                Icon(Icons.Outlined.Videocam, contentDescription = "")
                 Text("开始拍摄", modifier = Modifier.padding(start = 8.dp))
             } else {
-                Icon(Icons.Outlined.Stop, contentDescription = null)
+                Icon(Icons.Outlined.Stop, contentDescription = "")
                 Text("停止并保存", modifier = Modifier.padding(start = 8.dp))
             }
         }

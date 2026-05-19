@@ -153,7 +153,7 @@ fun RecordEditorScreen(
                 }
             }
         ) {
-            Icon(Icons.Outlined.Save, contentDescription = null)
+            Icon(Icons.Outlined.Save, contentDescription = "")
             Text(if (saving) "保存中" else "保存", modifier = Modifier.padding(start = 8.dp))
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth(), enabled = !saving) {

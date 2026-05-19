@@ -1,8 +1,9 @@
 package com.fitnessai.android.data.repository
 
-import com.fitnessai.android.data.api.ApiServices
 import com.fitnessai.android.data.api.ApiErrorKind
 import com.fitnessai.android.data.api.ApiErrorMapper
+import com.fitnessai.android.data.api.ApiServices
+import com.fitnessai.android.data.api.RegisterRequestDto
 import com.fitnessai.android.data.api.TokenStore
 import com.fitnessai.android.data.api.apiResult
 import com.fitnessai.android.data.api.toUserSession
@@ -13,9 +14,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
 class ApiAuthRepository(
-    private val services: ApiServices,
+    private val services: () -> ApiServices,
     private val tokenStore: TokenStore
 ) : AuthRepository {
+    constructor(services: ApiServices, tokenStore: TokenStore) : this({ services }, tokenStore)
+
     private val _session = MutableStateFlow<UserSession?>(null)
     override val session: StateFlow<UserSession?> = _session
 
@@ -31,9 +34,21 @@ class ApiAuthRepository(
 
     override suspend fun login(username: String, password: String): Result<Unit> {
         return apiResult {
-            val token = services.auth.login(username.trim(), password)
+            val token = services().auth.login(username.trim(), password)
             tokenStore.saveAccessToken(token.accessToken)
             _session.value = fetchProfileOrClearToken()
+        }
+    }
+
+    override suspend fun register(username: String, password: String, email: String?): Result<Unit> {
+        return apiResult {
+            services().auth.register(
+                RegisterRequestDto(
+                    username = username.trim(),
+                    password = password,
+                    email = email?.trim()?.takeIf { it.isNotEmpty() }
+                )
+            )
         }
     }
 
@@ -48,7 +63,7 @@ class ApiAuthRepository(
 
     private suspend fun fetchProfileOrClearToken(): UserSession {
         return try {
-            services.user.getProfile().toUserSession()
+            services().user.getProfile().toUserSession()
         } catch (throwable: Throwable) {
             val mapped = ApiErrorMapper.toException(throwable)
             if (mapped.kind == ApiErrorKind.Authentication) {

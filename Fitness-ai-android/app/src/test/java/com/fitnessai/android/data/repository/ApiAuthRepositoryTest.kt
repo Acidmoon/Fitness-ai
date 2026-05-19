@@ -40,10 +40,8 @@ class ApiAuthRepositoryTest {
         server.start()
         try {
             val tokenStore = InMemoryTokenStore()
-            val repository = ApiAuthRepository(
-                services = ApiClientFactory.create(server.url("/").toString(), tokenStore),
-                tokenStore = tokenStore
-            )
+            val services = ApiClientFactory.create(server.url("/").toString(), tokenStore)
+            val repository = ApiAuthRepository(services, tokenStore)
 
             val result = repository.login("backend_user", "password123")
 
@@ -67,10 +65,8 @@ class ApiAuthRepositoryTest {
         server.start()
         try {
             val tokenStore = InMemoryTokenStore("stored-token")
-            val repository = ApiAuthRepository(
-                services = ApiClientFactory.create(server.url("/").toString(), tokenStore),
-                tokenStore = tokenStore
-            )
+            val services = ApiClientFactory.create(server.url("/").toString(), tokenStore)
+            val repository = ApiAuthRepository(services, tokenStore)
 
             val result = repository.bootstrap()
 
@@ -95,10 +91,8 @@ class ApiAuthRepositoryTest {
         server.start()
         try {
             val tokenStore = InMemoryTokenStore("stale-token")
-            val repository = ApiAuthRepository(
-                services = ApiClientFactory.create(server.url("/").toString(), tokenStore),
-                tokenStore = tokenStore
-            )
+            val services = ApiClientFactory.create(server.url("/").toString(), tokenStore)
+            val repository = ApiAuthRepository(services, tokenStore)
 
             val result = repository.bootstrap()
 
@@ -128,10 +122,8 @@ class ApiAuthRepositoryTest {
         server.start()
         try {
             val tokenStore = InMemoryTokenStore()
-            val repository = ApiAuthRepository(
-                services = ApiClientFactory.create(server.url("/").toString(), tokenStore),
-                tokenStore = tokenStore
-            )
+            val services = ApiClientFactory.create(server.url("/").toString(), tokenStore)
+            val repository = ApiAuthRepository(services, tokenStore)
 
             val result = repository.login("blocked_user", "password123")
 
@@ -153,10 +145,8 @@ class ApiAuthRepositoryTest {
         server.start()
         try {
             val tokenStore = InMemoryTokenStore("stored-token")
-            val repository = ApiAuthRepository(
-                services = ApiClientFactory.create(server.url("/").toString(), tokenStore),
-                tokenStore = tokenStore
-            )
+            val services = ApiClientFactory.create(server.url("/").toString(), tokenStore)
+            val repository = ApiAuthRepository(services, tokenStore)
 
             repository.bootstrap()
             repository.logout()

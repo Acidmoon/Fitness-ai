@@ -1,6 +1,7 @@
 package com.fitnessai.android.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -11,13 +12,20 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.fitnessai.android.app.ApiOperationState
+import com.fitnessai.android.core.session.LocalSessionManager
+import com.fitnessai.android.ui.theme.AppIllustrations
 
 @Composable
 fun LineCard(
@@ -28,7 +36,7 @@ fun LineCard(
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         content = {
             Column(
@@ -44,11 +52,17 @@ fun LineCard(
 fun EmptyState(
     title: String,
     message: String,
+    illustration: ImageVector = AppIllustrations.EmptyTrainings,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     LineCard(modifier = modifier.fillMaxWidth()) {
+        Icon(
+            imageVector = illustration,
+            contentDescription = "",
+            tint = MaterialTheme.colorScheme.primary
+        )
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(
             message,
@@ -64,8 +78,17 @@ fun EmptyState(
 }
 
 @Composable
-fun ErrorState(message: String, onRetry: (() -> Unit)? = null) {
+fun ErrorState(
+    message: String,
+    onRetry: (() -> Unit)? = null,
+    illustration: ImageVector = AppIllustrations.GenericError
+) {
     LineCard(modifier = Modifier.fillMaxWidth()) {
+        Icon(
+            imageVector = illustration,
+            contentDescription = "",
+            tint = MaterialTheme.colorScheme.error
+        )
         Text("操作未完成", style = MaterialTheme.typography.titleMedium)
         Text(
             message,
@@ -91,5 +114,32 @@ fun LoadingState(message: String) {
     ) {
         CircularProgressIndicator()
         Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+fun StateView(
+    state: ApiOperationState,
+    loadingMessage: String,
+    onRetry: () -> Unit,
+    empty: @Composable () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val sessionManager = LocalSessionManager.current
+    when (state) {
+        ApiOperationState.Loading -> LoadingState(loadingMessage)
+        is ApiOperationState.RecoverableError -> ErrorState(message = state.message, onRetry = onRetry)
+        ApiOperationState.Unauthenticated -> {
+            LaunchedEffect(Unit) { sessionManager?.notifyUnauthorized() }
+            ErrorState(message = "登录已失效，请重新登录")
+        }
+        ApiOperationState.Empty -> empty()
+        ApiOperationState.Ready -> content()
+        ApiOperationState.Refreshing -> {
+            Box {
+                content()
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+        }
     }
 }

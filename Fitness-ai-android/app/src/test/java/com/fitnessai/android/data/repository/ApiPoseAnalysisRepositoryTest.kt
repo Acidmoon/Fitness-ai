@@ -45,9 +45,9 @@ class ApiPoseAnalysisRepositoryTest {
             val records = InMemoryTrainingRecordRepository()
             records.createRecord(record())
             val notifications = CapturingNotificationScheduler()
+            val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
             val repository = ApiPoseAnalysisRepository(
-                service = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-                    .poseAnalysis,
+                services = { services },
                 records = records,
                 notifications = notifications,
                 polling = ApiAnalysisPollingConfig(intervalMillis = 0, maxAttempts = 3)
@@ -85,9 +85,9 @@ class ApiPoseAnalysisRepositoryTest {
         try {
             val records = InMemoryTrainingRecordRepository()
             records.createRecord(record())
+            val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
             val repository = ApiPoseAnalysisRepository(
-                service = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-                    .poseAnalysis,
+                services = { services },
                 records = records,
                 notifications = CapturingNotificationScheduler(),
                 polling = ApiAnalysisPollingConfig(intervalMillis = 0, maxAttempts = 2)
@@ -114,9 +114,9 @@ class ApiPoseAnalysisRepositoryTest {
         try {
             val records = InMemoryTrainingRecordRepository()
             records.createRecord(record())
+            val services = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
             val repository = ApiPoseAnalysisRepository(
-                service = ApiClientFactory.create(server.url("/").toString(), InMemoryTokenStore("token"))
-                    .poseAnalysis,
+                services = { services },
                 records = records,
                 notifications = CapturingNotificationScheduler(),
                 polling = ApiAnalysisPollingConfig(intervalMillis = 0, maxAttempts = 2)

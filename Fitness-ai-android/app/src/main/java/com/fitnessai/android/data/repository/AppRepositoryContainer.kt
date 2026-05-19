@@ -3,12 +3,10 @@ package com.fitnessai.android.data.repository
 import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
-import com.fitnessai.android.data.api.ApiClientFactory
+import com.fitnessai.android.core.config.ApiClientHolder
+import com.fitnessai.android.data.api.ApiServices
 import com.fitnessai.android.data.api.PreferencesTokenStore
 import com.fitnessai.android.data.api.TokenStore
-import com.fitnessai.android.data.config.AppBackendConfiguration
-import com.fitnessai.android.data.config.BackendConfiguration
-import com.fitnessai.android.data.config.BackendMode
 
 data class AppRepositories(
     val authRepository: AuthRepository,
@@ -22,69 +20,47 @@ data class AppRepositories(
 object AppRepositoryContainer {
     fun create(
         application: Application,
-        configuration: BackendConfiguration = AppBackendConfiguration.fromBuildConfig(),
+        apiClientHolder: ApiClientHolder,
         tokenStore: TokenStore = PreferencesTokenStore(application)
     ): AppRepositories {
         return createForTest(
-            configuration = configuration,
+            apiClientHolder = apiClientHolder,
             tokenStore = tokenStore,
             notificationScheduler = AndroidNotificationScheduler(application)
         )
     }
 
     fun createForTest(
-        configuration: BackendConfiguration,
+        apiClientHolder: ApiClientHolder,
         tokenStore: TokenStore,
         notificationScheduler: NotificationScheduler
     ): AppRepositories {
-        val services = if (configuration.mode == BackendMode.Api) {
-            ApiClientFactory.create(configuration.baseUrl, tokenStore)
-        } else {
-            null
-        }
-        val recordRepository = when (configuration.mode) {
-            BackendMode.Mock -> InMemoryTrainingRecordRepository()
-            BackendMode.Api -> ApiTrainingRecordRepository(
-                service = requireNotNull(services).exercise,
-                baseUrl = configuration.baseUrl
-            )
-        }
-        val statsRepository = when (configuration.mode) {
-            BackendMode.Mock -> LocalStatsRepository(recordRepository)
-            BackendMode.Api -> ApiStatsRepository(requireNotNull(services).stats)
-        }
-        val localAnalysisRepository = SimulatedAnalysisRepository(recordRepository, notificationScheduler)
-        val baseAnalysisRepository = when (configuration.mode) {
-            BackendMode.Mock -> localAnalysisRepository
-            BackendMode.Api -> ApiPoseAnalysisRepository(
-                service = requireNotNull(services).poseAnalysis,
-                records = recordRepository,
-                notifications = notificationScheduler
-            )
-        }
-        val analysisRepository = when (configuration.mode) {
-            BackendMode.Mock -> baseAnalysisRepository
-            BackendMode.Api -> ApiScoringAnalysisRepository(
-                service = requireNotNull(services).poseScoring,
-                records = recordRepository,
-                delegate = baseAnalysisRepository
-            )
-        }
-        val videoRepository = when (configuration.mode) {
-            BackendMode.Mock -> LocalVideoRepository(recordRepository, analysisRepository)
-            BackendMode.Api -> ApiVideoRepository(
-                service = requireNotNull(services).video,
-                records = recordRepository,
-                analysis = analysisRepository,
-                contentProvider = AndroidVideoContentProvider(notificationScheduler)
-            )
-        }
-        val authRepository = when (configuration.mode) {
-            BackendMode.Mock -> InMemoryAuthRepository()
-            BackendMode.Api -> {
-                ApiAuthRepository(requireNotNull(services), tokenStore)
-            }
-        }
+        val services: () -> ApiServices = { apiClientHolder.services.value }
+        val recordRepository = ApiTrainingRecordRepository(
+            services = services,
+            baseUrlProvider = { apiClientHolder.baseUrl.value }
+        )
+        val statsRepository = ApiStatsRepository(services)
+        val baseAnalysisRepository = ApiPoseAnalysisRepository(
+            services = services,
+            records = recordRepository,
+            notifications = notificationScheduler
+        )
+        val analysisRepository = ApiScoringAnalysisRepository(
+            services = services,
+            records = recordRepository,
+            delegate = baseAnalysisRepository
+        )
+        val videoRepository = ApiVideoRepository(
+            services = services,
+            records = recordRepository,
+            analysis = analysisRepository,
+            contentProvider = AndroidVideoContentProvider(notificationScheduler)
+        )
+        val authRepository = ApiAuthRepository(
+            services = services,
+            tokenStore = tokenStore
+        )
         return AppRepositories(
             authRepository = authRepository,
             recordRepository = recordRepository,

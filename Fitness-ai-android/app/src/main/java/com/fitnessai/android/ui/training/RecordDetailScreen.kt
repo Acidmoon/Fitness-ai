@@ -33,16 +33,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.ContextCompat
 import androidx.core.content.PermissionChecker
 import com.fitnessai.android.app.ApiOperationState
 import com.fitnessai.android.app.RecordActionState
+import com.fitnessai.android.core.snackbar.LocalSnackbarController
 import com.fitnessai.android.data.model.AnalysisStatus
 import com.fitnessai.android.data.model.ExerciseCatalogItem
 import com.fitnessai.android.data.model.RecordDraft
 import com.fitnessai.android.data.model.TrainingRecord
 import com.fitnessai.android.ui.components.EmptyState
 import com.fitnessai.android.ui.components.ErrorState
+import com.fitnessai.android.ui.components.AnalysisDisplayMapper
+import com.fitnessai.android.ui.components.AnalysisResultPanel
 import com.fitnessai.android.ui.components.LineCard
 import com.fitnessai.android.ui.components.LoadingState
 import com.fitnessai.android.ui.video.VideoPlayer
@@ -86,23 +90,23 @@ fun RecordDetailScreen(
 
     var editing by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
+    val snackbar = LocalSnackbarController.current
     val actionsEnabled = !actionState.isBusy && operation !is ApiOperationState.Unauthenticated
     val context = LocalContext.current
     val cameraPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) onRecordVideo() else message = "相机权限未开启"
+        if (granted) onRecordVideo() else snackbar.warning("相机权限未开启")
     }
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
-        onStartAnalysis { error -> message = error }
+        onStartAnalysis { error -> error?.let(snackbar::error) }
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             onPickVideo(uri)
-            message = "视频已更新"
+            snackbar.info("视频已更新")
         }
     }
 
@@ -155,7 +159,7 @@ fun RecordDetailScreen(
                 modifier = Modifier.weight(1f),
                 enabled = actionsEnabled
             ) {
-                Icon(Icons.Outlined.Delete, contentDescription = null)
+                Icon(Icons.Outlined.Delete, contentDescription = "")
                 Text("删除", modifier = Modifier.padding(start = 6.dp))
             }
         }
@@ -177,14 +181,13 @@ fun RecordDetailScreen(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 } else {
-                    onStartAnalysis { error -> message = error }
+                    onStartAnalysis { error -> error?.let(snackbar::error) }
                 }
             },
             onScorePose = { apply ->
-                onScorePose(apply) { error -> message = error }
+                onScorePose(apply) { error -> error?.let(snackbar::error) }
             }
         )
-        message?.let { ErrorState(message = it) { message = null } }
         actionState.errorMessage?.let { ErrorState(message = it, onRetry = onClearActionError) }
     }
 
@@ -230,7 +233,7 @@ private fun VideoSection(
                 modifier = Modifier.weight(1f),
                 enabled = actionsEnabled
             ) {
-                Icon(Icons.Outlined.Videocam, contentDescription = null)
+                Icon(Icons.Outlined.Videocam, contentDescription = "")
                 Text("拍摄", modifier = Modifier.padding(start = 6.dp))
             }
             OutlinedButton(
@@ -238,7 +241,7 @@ private fun VideoSection(
                 modifier = Modifier.weight(1f),
                 enabled = actionsEnabled
             ) {
-                Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
+                Icon(Icons.Outlined.PhotoLibrary, contentDescription = "")
                 Text("选择", modifier = Modifier.padding(start = 6.dp))
             }
         }
@@ -254,56 +257,13 @@ private fun AnalysisSection(
     onScorePose: (Boolean) -> Unit
 ) {
     val result = record.analysisResult
-    LineCard(modifier = Modifier.fillMaxWidth()) {
-        Text("模拟分析", style = MaterialTheme.typography.titleMedium)
-        if (actionState.analyzing) {
-            LoadingState("正在分析")
-        }
-        if (actionState.scoring) {
-            LoadingState("正在评分")
-        }
-        when (result.status) {
-            AnalysisStatus.Idle -> Text(
-                if (record.videoUri == null) "视频添加后可开始分析" else "等待开始",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            AnalysisStatus.Queued -> Text("排队中", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            AnalysisStatus.Running -> Text("分析中", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            AnalysisStatus.Completed -> {
-                Text(result.message ?: "完成")
-                Text("模型 ${result.modelName}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("有效帧 ${result.validFrameCount}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("平均置信度 ${result.averageConfidence}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("预览分数 ${result.scorePreview}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("预览次数 ${result.countPreview ?: "-"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            AnalysisStatus.Failed -> Text(result.message ?: "分析失败", color = MaterialTheme.colorScheme.error)
-        }
-        Button(
-            onClick = onStart,
-            enabled = record.videoUri != null && !record.hasActiveAnalysis && !actionState.isBusy,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Outlined.PlayCircle, contentDescription = null)
-            Text("开始分析", modifier = Modifier.padding(start = 8.dp))
-        }
-        if (apiMode && result.status == AnalysisStatus.Completed) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick = { onScorePose(false) },
-                    enabled = !actionState.isBusy,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("评分预览")
-                }
-                Button(
-                    onClick = { onScorePose(true) },
-                    enabled = !actionState.isBusy,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("应用评分")
-                }
-            }
-        }
-    }
+    AnalysisResultPanel(
+        display = AnalysisDisplayMapper.map(result),
+        analyzing = actionState.analyzing,
+        scoring = actionState.scoring,
+        canStart = record.videoUri != null && !record.hasActiveAnalysis && !actionState.isBusy,
+        apiMode = apiMode,
+        onStart = onStart,
+        onScorePose = onScorePose
+    )
 }
