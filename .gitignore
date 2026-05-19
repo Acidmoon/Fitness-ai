@@ -1,44 +1,77 @@
-# Created by venv; see https://docs.python.org/3/library/venv.html
-# Python 虚拟环境
+# ─── Python 虚拟环境 ──────────────────────────────────────────────────────────
 venv/
 env/
 .env/
 .venv/
 virtualenv/
 
-# Python 缓存
+# ─── Python 缓存与构建产物 ────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
-# 依赖包（如果用 pip）
 *.egg-info/
 .eggs/
+dist/
+build/
+*.whl
 
-# IDE 配置
+# ─── 测试与覆盖率 ────────────────────────────────────────────────────────────
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+
+# ─── 环境变量（含敏感信息） ───────────────────────────────────────────────────
+.env
+
+# ─── 运行时产物 ──────────────────────────────────────────────────────────────
+logs/
+uploads/
+tmp/
+
+# ─── 模型权重文件（不入库） ───────────────────────────────────────────────────
+movenet/
+*.tflite
+*.onnx
+
+# ─── IDE 与编辑器 ────────────────────────────────────────────────────────────
 .idea/
 .vscode/
 *.swp
 *.swo
+*.code-workspace
 
-# 系统文件
+# ─── AI 工具本地配置 ─────────────────────────────────────────────────────────
+.claude/
+.codex/
+.cowork-temp/
+.kiro/
+AGENTS.md
+
+# ─── 系统文件 ────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-
-# 环境变量文件（可能包含敏感信息）
-.env
-logs/
-DEV/
-.coverage
 nul
+desktop.ini
+
+# ─── 项目内部开发文档（不公开） ───────────────────────────────────────────────
+DEV/
+
+# ─── 前端 ────────────────────────────────────────────────────────────────────
 Fitness-ai-frontend/node_modules/
 Fitness-ai-frontend/dist/
 Fitness-ai-frontend/.env
 Fitness-ai-frontend/.env.*
 !Fitness-ai-frontend/.env.example
 Fitness-ai-frontend/*.tsbuildinfo
-movenet/
-.cowork-temp/
-AGENTS.md
-.codex/
+
+# ─── Android ─────────────────────────────────────────────────────────────────
+Fitness-ai-android/.gradle/
+Fitness-ai-android/app/build/
+Fitness-ai-android/build/
+Fitness-ai-android/local.properties
+Fitness-ai-android/app/release/
+*.apk
+*.aab
