@@ -1,109 +1,128 @@
 # Fitness AI Android
 
-Android client workspace for the Fitness AI project.
+Kotlin + Jetpack Compose Android client for the Fitness AI platform.
 
-This directory is the working boundary for Android-side planning, design, and implementation. The first milestone is a minimum viable Android app for internal testing, using local/mock data first and leaving backend integration as a later step.
-
-## MVP Direction
-
-- Target users: students, teachers, administrators, and personal fitness users.
-- Platform: Android only.
-- Network: required for the final product, but MVP can run with local mock data.
-- Backend integration: mock mode remains the default; API mode can be enabled for local backend authentication.
-- Real-time posture correction: deferred.
-- Video input: support both camera recording and selecting an existing local video.
-- Notification: support local analysis-complete notifications.
-- UI style: modern, simple, line-based visual design.
-
-## Directory Layout
+## Architecture
 
 ```text
-Fitness-ai-android/
-├── app/
-│   └── src/
-├── README.md
-├── build.gradle.kts
-└── docs/
-    ├── architecture.md
-    ├── mvp-plan.md
-    └── tasks.md
+app/src/main/java/com/fitnessai/android/
+├── app/                    # AppContainer, FitnessAiApplication, FitnessAiViewModel, FitnessAiApp
+├── core/
+│   ├── cache/              # CacheCleaner
+│   ├── config/             # ApiClientHolder, RuntimeConfigStore
+│   ├── network/            # NetworkMonitor (ConnectivityManager)
+│   ├── session/            # SessionManager (401 gate + navigation events)
+│   ├── snackbar/           # SnackbarController (global message channel)
+│   └── theme/              # ThemeManager (DataStore persistence)
+├── data/
+│   ├── api/                # Retrofit services, DTOs, interceptors, error mapping
+│   ├── config/             # BackendConfiguration
+│   ├── model/              # Domain models
+│   └── repository/         # Auth, Records, Stats, Analysis, Video repositories
+└── ui/
+    ├── about/              # AboutScreen
+    ├── auth/               # LoginScreen/ViewModel, RegisterScreen/ViewModel, RegisterValidator
+    ├── components/         # StateView, EmptyState, ErrorState, TrendChart, StatsChart,
+    │                         AnalysisResultPanel, NetworkBanner, PullToRefresh
+    ├── home/               # HomeScreen
+    ├── profile/            # ProfileScreen
+    ├── settings/           # SettingsScreen/ViewModel, ReducedMotionStore
+    ├── stats/              # StatsScreen/ViewModel
+    ├── training/           # TrainingListScreen, RecordDetailScreen, RecordEditorScreen,
+    │                         RecordFilter, RecordFilterBar
+    ├── theme/              # Color, Type, Spacing, Shape, Elevation, Illustrations, Theme
+    └── video/              # VideoRecorderScreen, VideoPlayer
 ```
 
-Future Android source code should live in this directory, for example:
+### Key Design Decisions
 
-```text
-Fitness-ai-android/
-├── app/
-├── build.gradle.kts
-├── settings.gradle.kts
-└── gradle/
-```
+- **AppContainer** is the single dependency-graph root, created once in `FitnessAiApplication.onCreate()`. All ViewModels receive dependencies through `ViewModelProvider.Factory`.
+- **ApiClientHolder** holds a `StateFlow<ApiServices>`. Repositories use a `ServicesProvider = () -> ApiServices` lambda, so a runtime BaseUrl change in Settings immediately affects the next API call without restarting the app.
+- **SessionManager** centralizes 401 handling. The OkHttp interceptor calls `notifyUnauthorized()` which uses an `AtomicBoolean` gate to emit exactly one `NavigateToLogin` event per session. `onLoginSuccess()` resets the gate.
+- **SnackbarController** is a `Channel<SnackbarMessage>` consumed by the root `Scaffold`. Screens dispatch messages via `LocalSnackbarController` instead of managing local state.
+- **ReducedMotionStore** persists a user preference; `LocalReducedMotion` disables NavHost transitions and list animations when enabled.
 
-## Recommended Stack
+## Tech Stack
 
-- Kotlin
-- Jetpack Compose
-- Navigation Compose
-- MVVM
-- Repository abstraction with mock and future API implementations
-- DataStore or Room for local MVP state
-- CameraX for video recording
-- Media3 for video playback
-- Local notifications for simulated analysis completion
+| Layer | Libraries |
+|-------|-----------|
+| UI | Jetpack Compose (BOM 2024.12), Material3, Navigation Compose |
+| Async | Kotlin Coroutines, StateFlow, SharedFlow |
+| Network | Retrofit 2.11, OkHttp 4.12, kotlinx-serialization |
+| Persistence | DataStore Preferences |
+| Media | CameraX 1.4, Media3 ExoPlayer 1.5 |
+| Testing | JUnit 4, kotlinx-coroutines-test, MockWebServer |
 
-## How to Open
-
-Open `Fitness-ai-android` as an Android Studio project. The app module is `:app`.
-
-Local command-line tooling has been installed under `E:\Android`:
-
-- Android SDK: `E:\Android\Sdk`
-- Gradle: `E:\Android\Gradle\gradle-8.10.2`
-- Gradle wrapper distribution: Tencent Cloud mirror
-
-The project includes `gradlew.bat`, so use the wrapper from this directory:
+## Quick Start
 
 ```powershell
+cd Fitness-ai-android
 .\gradlew.bat testDebugUnitTest assembleDebug
 ```
 
-Last verified command:
-
-```text
-.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon
-BUILD SUCCESSFUL
-```
-
-## Backend API Mode
-
-Mock mode is the default so internal MVP testing does not require a running backend. Debug builds include a development-only network policy that permits local HTTP backend access. To build against a local backend from the Android emulator, use:
+Build against a local backend (emulator):
 
 ```powershell
-.\gradlew.bat assembleDebug -PFITNESS_AI_BACKEND_MODE=api -PFITNESS_AI_BACKEND_BASE_URL=http://10.0.2.2:8000/
+.\gradlew.bat assembleDebug -PFITNESS_AI_BACKEND_BASE_URL=http://10.0.2.2:8000/
 ```
 
-Use `10.0.2.2` when the Android emulator needs to reach a backend running on the host machine. On a physical device, use an address reachable from the device, such as the host computer's LAN IP (`http://192.168.x.x:8000/`) and ensure firewall rules allow the connection.
-
-Release builds should use HTTPS backend URLs. The debug-only cleartext policy is not intended for production API endpoints.
-
-### Local API-Mode Verification
-
-1. Start the Fitness AI backend locally and confirm it is reachable at `http://127.0.0.1:8000/` from the host.
-2. Build the app for emulator API mode:
+Physical device — use host LAN IP:
 
 ```powershell
-.\gradlew.bat assembleDebug -PFITNESS_AI_BACKEND_MODE=api -PFITNESS_AI_BACKEND_BASE_URL=http://10.0.2.2:8000/
+.\gradlew.bat assembleDebug -PFITNESS_AI_BACKEND_BASE_URL=http://192.168.x.x:8000/
 ```
 
-3. For a physical Android device, replace `10.0.2.2` with the host computer LAN address, for example `http://192.168.1.20:8000/`.
-4. Launch the debug build, log in with a backend test account, choose a role, open Home, Training, and Stats, and use retry buttons if the backend is temporarily unavailable.
-5. Exercise the full workflow: refresh records, create a training record, open the record detail, add or record a video, start analysis, run scoring when available, and return to Home/Stats to confirm refreshed totals.
-6. Run the repeatable unit verification:
+## Runtime Configuration
+
+The app reads `BuildConfig.BACKEND_BASE_URL` at startup and syncs it with the persisted DataStore value. Users can change the BaseUrl in Settings at runtime — the change takes effect immediately without restarting.
+
+Default: `http://10.0.2.2:8000/` (Android emulator → host loopback).
+
+## Features
+
+| Feature | Status |
+|---------|--------|
+| Login with 401/429/network error mapping | Done |
+| Register with auto-login | Done |
+| Light/Dark theme with 250ms color transition | Done |
+| Theme persistence (System/Light/Dark) | Done |
+| Design tokens (Color, Type, Spacing, Shape, Elevation) | Done |
+| AppContainer full DI wiring | Done |
+| SessionManager 401 gate + auto-navigate to login | Done |
+| Global SnackbarController | Done |
+| NetworkMonitor + offline banner | Done |
+| Material3 PullToRefreshBox (offline-aware) | Done |
+| NavHost slide+fade transitions (220ms) | Done |
+| Reduced motion toggle | Done |
+| Home: trend chart (7-day), metric cards | Done |
+| Training list: search debounce, category filter, sort, animateItem | Done |
+| Stats: week/month/year period switching, weekly endpoint | Done |
+| Record detail: structured analysis panel (score/grade/confidence/feedback) | Done |
+| Settings: BaseUrl hot-rebuild, theme, cache clear, logout | Done |
+| About: version, licenses, feedback intent | Done |
+| Profile: settings/about/logout entries | Done |
+| Paparazzi screenshot regression | Deferred |
+| jqwik property-based tests | Deferred |
+| Full accessibility audit (contentDescription, 48dp) | Deferred |
+
+## Tests
+
+46 unit tests covering:
+
+- Repository layer (auth, records, stats, video, analysis, scoring, workflow)
+- API core (token store, interceptor, error mapper)
+- UI logic (RegisterValidator, RecordFilter, AnalysisDisplayMapper, RuntimeConfig)
+- ViewModels (LoginViewModel, RegisterViewModel, SettingsViewModel, SessionManager)
+
+Run:
 
 ```powershell
-.\gradlew.bat testDebugUnitTest --no-daemon
+.\gradlew.bat testDebugUnitTest
 ```
 
-## Current Status
+## Development Notes
 
-Android MVP implementation has started under `app/`. The current code includes mock login, role selection, main tab navigation, local training records, camera/video picker flows, video preview, simulated analysis, local notifications, and focused repository tests.
+- Source files are UTF-8. `gradle.properties` sets `-Dfile.encoding=UTF-8` for the Gradle daemon and Kotlin daemon. `build.gradle.kts` forces UTF-8 on Java compilation and test JVM args.
+- Mock mode has been removed from production code. All API calls go through `ApiClientHolder`.
+- The `InMemoryTrainingRecordRepository` in `src/test` is for unit tests only.
+- Release builds enable R8 minification (`isMinifyEnabled = true`).

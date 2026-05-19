@@ -6,7 +6,7 @@
 
 - Backend: 用户认证、用户资料、运动记录、统计分析、视频管理、MoveNet 姿态分析入口、规则化动作评分。
 - Web: 登录注册、仪表盘、训练记录、记录详情、统计、视频中心、个人资料，以及与后端 API 的类型化调用。
-- Android: Kotlin + Jetpack Compose MVP，支持 mock 模式和后端 API 模式，覆盖登录、角色选择、训练记录、统计、视频输入和分析流程。
+- Android: Kotlin + Jetpack Compose，完整 MVVM 架构，AppContainer 单例 DI，支持运行时 BaseUrl 热切换、401 自动跳登录、全局 Snackbar、Material3 下拉刷新、NavHost 转场动画、Light/Dark 主题持久化、减少动效开关。覆盖登录/注册/首页趋势图/训练列表筛选排序/统计周期切换/姿态分析面板/设置/关于/个人中心。
 - Quality: 后端 pytest 覆盖核心接口和服务；前端 Vitest 覆盖关键页面和 API service；Android 单元测试覆盖 repository、DTO 映射和 API workflow。
 
 ## Repository Layout
@@ -43,7 +43,7 @@ Local runtime artifacts are intentionally ignored: `.env`, `venv/`, `logs/`, `up
 | Auth | bcrypt password hashing, JWT bearer tokens |
 | AI / video | MoveNet-compatible pose runtime, OpenCV/TFLite optional runtime |
 | Web | React 19, TypeScript, Vite, React Router, TanStack Query, Vitest |
-| Android | Kotlin, Jetpack Compose, MVVM, Retrofit/OkHttp, CameraX, Media3 |
+| Android | Kotlin, Jetpack Compose (BOM 2024.12), Material3, MVVM, Retrofit/OkHttp, CameraX, Media3, DataStore, Navigation Compose |
 | Quality | pytest, pytest-cov, flake8, black, Vitest, Gradle unit tests |
 
 ## Backend Quick Start
@@ -136,18 +136,18 @@ Open `Fitness-ai-android` in Android Studio, or use the Gradle wrapper:
 
 ```powershell
 cd Fitness-ai-android
-.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon
+.\gradlew.bat testDebugUnitTest assembleDebug
 ```
 
-Mock mode is the default and does not require the backend. To build a debug APK against a backend running on the host machine for an emulator:
+The app connects to the backend URL configured in `BuildConfig.BACKEND_BASE_URL` (default `http://10.0.2.2:8000/` for emulator). Users can change the BaseUrl at runtime in Settings without rebuilding.
+
+To override at build time:
 
 ```powershell
-.\gradlew.bat assembleDebug `
-  -PFITNESS_AI_BACKEND_MODE=api `
-  -PFITNESS_AI_BACKEND_BASE_URL=http://10.0.2.2:8000/
+.\gradlew.bat assembleDebug -PFITNESS_AI_BACKEND_BASE_URL=http://10.0.2.2:8000/
 ```
 
-Use a LAN URL instead of `10.0.2.2` for a physical device. Release builds should use HTTPS API endpoints; the debug cleartext network policy is only for local development.
+Use a LAN URL instead of `10.0.2.2` for a physical device. Release builds should use HTTPS API endpoints.
 
 ## API Overview
 
@@ -213,11 +213,11 @@ npm run test
 npm run build
 ```
 
-Android:
+Android (46 tests):
 
 ```powershell
 cd Fitness-ai-android
-.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon
+.\gradlew.bat testDebugUnitTest assembleDebug
 ```
 
 Code style:
@@ -234,7 +234,7 @@ flake8 app tests
 - New protected endpoints must use the existing bearer-token dependency and ownership checks where user data is involved.
 - New video storage behavior must preserve authenticated access; do not bypass `/api/video`.
 - New SQLAlchemy models must be imported from `app/models/__init__.py` so `scripts.init_db` can create their tables.
-- Keep Android mock mode working when adding API-mode features, so demos remain independent of backend availability.
+- Android mock mode has been removed. All API calls go through `ApiClientHolder`. Test-only fakes live in `src/test`.
 
 ## Deployment Notes
 
@@ -272,7 +272,7 @@ cd Fitness-ai-frontend
 npm run test
 npm run build
 cd ..\Fitness-ai-android
-.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon
+.\gradlew.bat testDebugUnitTest assembleDebug
 ```
 
 Update this README when runtime setup, API contracts, deployment assumptions or supported client flows change.
