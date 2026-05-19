@@ -1,9 +1,11 @@
+import os
 from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from loguru import logger
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models.exercise import ExerciseRecord
 from app.models.pose_analysis_job import (
     POSE_ANALYSIS_JOB_STATUS_FAILED,
@@ -58,8 +60,6 @@ def trigger_pose_analysis(
     if not video_path:
         raise HTTPException(status_code=403, detail="视频路径无效")
 
-    import os
-
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="视频文件不存在")
 
@@ -107,8 +107,6 @@ def create_pose_analysis_job(
     if not video_path:
         raise HTTPException(status_code=403, detail="视频路径无效")
 
-    import os
-
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="视频文件不存在")
 
@@ -126,7 +124,6 @@ def create_pose_analysis_job(
 
     background_tasks.add_task(
         process_pose_analysis_job,
-        db,
         job.id,
         request_data.sample_fps if request_data else None,
     )
@@ -234,47 +231,58 @@ def _build_pose_analysis_response(
 
 
 def process_pose_analysis_job(
-    db: Session, job_id: int, sample_fps: int | None = None
+    job_id: int, sample_fps: int | None = None
 ) -> None:
-    job = db.query(PoseAnalysisJob).filter(PoseAnalysisJob.id == job_id).first()
-    if not job:
-        return
-
-    job.status = POSE_ANALYSIS_JOB_STATUS_RUNNING
-    job.updated_at = utc_now()
-    db.commit()
-
-    record = db.query(ExerciseRecord).filter(ExerciseRecord.id == job.record_id).first()
+    """后台任务：使用独立的数据库会话执行姿态分析。"""
+    db = SessionLocal()
     try:
-        if not record or not record.video_url:
-            raise PoseAnalysisInferenceError("记录没有关联视频")
+        job = db.query(PoseAnalysisJob).filter(PoseAnalysisJob.id == job_id).first()
+        if not job:
+            return
 
-        video_path = resolve_video_path_from_url(record.video_url)
-        if not video_path:
-            raise PoseAnalysisInferenceError("视频路径无效")
+        job.status = POSE_ANALYSIS_JOB_STATUS_RUNNING
+        job.updated_at = utc_now()
+        db.commit()
 
-        import os
+        record = (
+            db.query(ExerciseRecord)
+            .filter(ExerciseRecord.id == job.record_id)
+            .first()
+        )
+        try:
+            if not record or not record.video_url:
+                raise PoseAnalysisInferenceError("记录没有关联视频")
 
-        if not os.path.exists(video_path):
-            raise PoseAnalysisInferenceError("视频文件不存在")
+            video_path = resolve_video_path_from_url(record.video_url)
+            if not video_path:
+                raise PoseAnalysisInferenceError("视频路径无效")
 
-        analysis_result = analyze_video_file(video_path, sample_fps=sample_fps)
-        record.keypoints_data = analysis_result
-        job.status = POSE_ANALYSIS_JOB_STATUS_SUCCEEDED
-        job.error = None
-        job.result_summary = analysis_result.get("summary")
-    except (
-        PoseAnalysisDisabledError,
-        PoseAnalysisUnavailableError,
-        PoseAnalysisInferenceError,
-    ) as exc:
-        job.status = POSE_ANALYSIS_JOB_STATUS_FAILED
-        job.error = str(exc)
-    except Exception:
-        job.status = POSE_ANALYSIS_JOB_STATUS_FAILED
-        job.error = "姿态分析任务执行失败"
+            if not os.path.exists(video_path):
+                raise PoseAnalysisInferenceError("视频文件不存在")
 
-    now = utc_now()
-    job.updated_at = now
-    job.completed_at = now
-    db.commit()
+            analysis_result = analyze_video_file(video_path, sample_fps=sample_fps)
+            record.keypoints_data = analysis_result
+            job.status = POSE_ANALYSIS_JOB_STATUS_SUCCEEDED
+            job.error = None
+            job.result_summary = analysis_result.get("summary")
+        except (
+            PoseAnalysisDisabledError,
+            PoseAnalysisUnavailableError,
+            PoseAnalysisInferenceError,
+        ) as exc:
+            job.status = POSE_ANALYSIS_JOB_STATUS_FAILED
+            job.error = str(exc)
+        except Exception as exc:
+            logger.error(f"Pose analysis job {job_id} failed unexpectedly: {exc}")
+            job.status = POSE_ANALYSIS_JOB_STATUS_FAILED
+            job.error = "姿态分析任务执行失败"
+
+        now = utc_now()
+        job.updated_at = now
+        job.completed_at = now
+        db.commit()
+    except Exception as exc:
+        logger.error(f"Pose analysis job {job_id} session error: {exc}")
+        db.rollback()
+    finally:
+        db.close()
