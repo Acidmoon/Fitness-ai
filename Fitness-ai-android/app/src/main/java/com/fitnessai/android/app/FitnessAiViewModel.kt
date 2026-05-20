@@ -84,8 +84,12 @@ class FitnessAiViewModel(
             if (session.value != null) {
                 refreshReadData()
             } else {
-                _recordsOperation.value = ApiOperationState.Unauthenticated
-                _statsOperation.value = ApiOperationState.Unauthenticated
+                // Don't set Unauthenticated here — the user may not have logged in yet.
+                // Setting Unauthenticated would trigger SessionManager.notifyUnauthorized()
+                // from the StateView, which clears the token and causes a race condition
+                // if login completes concurrently.
+                _recordsOperation.value = ApiOperationState.Ready
+                _statsOperation.value = ApiOperationState.Ready
             }
         }
         viewModelScope.launch {
