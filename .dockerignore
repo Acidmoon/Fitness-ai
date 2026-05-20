@@ -1,0 +1,43 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.hypothesis/
+
+# IDE
+.idea/
+.vscode/
+.kiro/
+.claude/
+.codex/
+.cowork-temp/
+
+# Git
+.git/
+.gitignore
+
+# Environment files (use .env.production explicitly)
+.env
+.env.local
+
+# Docs and specs
+DEV/
+openspec/
+docs/
+*.md
+
+# Frontend (built separately)
+Fitness-ai-frontend/
+Fitness-ai-android/
+
+# Temp
+tmp/
+logs/
+uploads/videos/*
+!uploads/videos/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
