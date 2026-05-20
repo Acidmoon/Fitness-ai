@@ -1,4 +1,4 @@
-# Fitness AI
+ # Fitness AI
 
 校园健康体适能检测与管理系统。项目包含 FastAPI 后端、React Web 前端和 Android 客户端，围绕训练记录、数据统计、视频上传、姿态分析和动作评分构建一套体适能 AI 服务平台。
 
@@ -81,6 +81,12 @@ cd Fitness-ai-android
 .\gradlew.bat assembleDebug -PFITNESS_AI_BACKEND_BASE_URL=http://192.168.x.x:8000/
 ```
 
+生产 APK 连接 `https://api-fitness.waterhill.cyou/`（已在 `gradle.properties` 配置）：
+
+```powershell
+.\gradlew.bat clean assembleRelease
+```
+
 ## 环境变量
 
 ### 后端 `.env`
@@ -154,20 +160,50 @@ cd Fitness-ai-android && .\gradlew.bat testDebugUnitTest
 
 ## 部署说明
 
-```env
-# 后端生产环境
-ENVIRONMENT=production
-DATABASE_URL=postgresql://fitness_app:<password>@db.example.com:5432/fitness_ai
-SECRET_KEY=<随机生成>
-ALLOWED_ORIGINS=https://fitness.example.com
+详细部署流程见 [DEPLOY.md](./DEPLOY.md)。
 
-# Web 构建
-VITE_API_BASE_URL=https://api.fitness.example.com
+### 线上环境
+
+| 服务 | 地址 |
+|------|------|
+| 前端 | https://fitness.waterhill.cyou |
+| 后端 API | https://api-fitness.waterhill.cyou |
+| 健康检查 | https://api-fitness.waterhill.cyou/health |
+
+### 一键更新（SSH 到服务器后）
+
+```bash
+cd /path/to/Fitness-ai
+./deploy.sh
+```
+
+### 本地开发环境
+
+```env
+# 后端 .env
+ENVIRONMENT=development
+DATABASE_URL=postgresql://<user>:<password>@localhost:5432/fitness_ai
+SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+
+# Web .env
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+### 生产环境
+
+使用 `.env.production`（基于 `.env.production.example` 创建）：
+
+```env
+ENVIRONMENT=production
+DATABASE_URL=postgresql://fitness:<password>@db:5432/fitness_ai
+SECRET_KEY=<随机生成>
+ALLOWED_ORIGINS=https://fitness.waterhill.cyou
 ```
 
 生产要求：
 
 - 使用随机 `SECRET_KEY`
 - `ALLOWED_ORIGINS` 设为精确前端域名
-- 公网使用 HTTPS
-- 视频存储使用所有实例可访问的共享存储
+- 公网使用 HTTPS（已配置，证书到期 2026-08-18）
+- Docker Compose 编排三个服务（db + backend + frontend）
