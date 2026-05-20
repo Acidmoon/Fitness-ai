@@ -87,9 +87,15 @@ class AppContainer private constructor(
 
             // Sync ApiClientHolder with the persisted BaseUrl whenever it changes (fresh
             // install uses the build default; subsequent launches honor the stored value).
+            // If the stored URL matches the old emulator default, reset it to the current
+            // build default to handle APK upgrades that change the production URL.
             applicationScope.launch {
                 val stored = runtimeConfigStore.config.first().baseUrl
-                if (stored != initialBaseUrl) {
+                val oldEmulatorDefault = "http://10.0.2.2:8000/"
+                if (stored == oldEmulatorDefault && initialBaseUrl != oldEmulatorDefault) {
+                    // User upgraded from a dev build to production — reset to new default
+                    runtimeConfigStore.setBaseUrl(initialBaseUrl)
+                } else if (stored != initialBaseUrl && stored != oldEmulatorDefault) {
                     apiClientHolder.rebuild(stored)
                 }
             }
