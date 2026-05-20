@@ -1,5 +1,6 @@
 .gradle/
 .codex/
+openspec/
 local.properties
 
 build/
