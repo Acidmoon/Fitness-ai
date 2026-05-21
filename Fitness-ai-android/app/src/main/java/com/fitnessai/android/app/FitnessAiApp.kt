@@ -120,9 +120,29 @@ fun FitnessAiApp(viewModel: FitnessAiViewModel) {
         }
     }
 
+    // Determine if we should show the bottom navigation bar.
+    // Only show it on the 4 main tab routes.
+    val backStack by navController.currentBackStackEntryAsState()
+    val currentRoute = backStack?.destination?.route
+    val showBottomBar = currentRoute in setOf(Routes.Home, Routes.Training, Routes.Stats, Routes.Profile)
+
     Scaffold(
         topBar = { NetworkBanner() },
         snackbarHost = { SnackbarHost(hostState) },
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar {
+                    tabs.forEach { tab ->
+                        NavigationBarItem(
+                            selected = currentRoute == tab.route,
+                            onClick = { navController.navigateTab(tab.route) },
+                            icon = tab.icon,
+                            label = { Text(tab.label) }
+                        )
+                    }
+                }
+            }
+        },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Box(Modifier.padding(padding)) {
@@ -156,12 +176,12 @@ private fun FitnessAiNavGraph(
         enterTransition = if (reducedMotion) {
             { fadeIn(tween(0)) }
         } else {
-            { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(220)) + fadeIn(tween(220)) }
+            { fadeIn(tween(150)) }
         },
         exitTransition = if (reducedMotion) {
             { fadeOut(tween(0)) }
         } else {
-            { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(220)) + fadeOut(tween(220)) }
+            { fadeOut(tween(150)) }
         },
         popEnterTransition = if (reducedMotion) {
             { fadeIn(tween(0)) }
@@ -231,30 +251,26 @@ private fun FitnessAiNavGraph(
             )
         }
         composable(Routes.Home) {
-            MainShell(navController = navController) {
-                val state by viewModel.homeState.collectAsStateWithLifecycle()
-                HomeScreen(
-                    state = state,
-                    onRetry = viewModel::refreshHome,
-                    onRefresh = viewModel::refreshHome,
-                    onOpenTraining = { navController.navigateTab(Routes.Training) },
-                    onOpenRecord = { id -> navController.navigate("training/$id") }
-                )
-            }
+            val state by viewModel.homeState.collectAsStateWithLifecycle()
+            HomeScreen(
+                state = state,
+                onRetry = viewModel::refreshHome,
+                onRefresh = viewModel::refreshHome,
+                onOpenTraining = { navController.navigateTab(Routes.Training) },
+                onOpenRecord = { id -> navController.navigate("training/$id") }
+            )
         }
         composable(Routes.Training) {
-            MainShell(navController = navController) {
-                val records by viewModel.records.collectAsStateWithLifecycle()
-                val operation by viewModel.recordsOperation.collectAsStateWithLifecycle()
-                TrainingListScreen(
-                    records = records,
-                    operation = operation,
-                    onRetry = viewModel::refreshRecords,
-                    onRefresh = viewModel::refreshRecords,
-                    onCreate = { navController.navigate(Routes.CreateRecord) },
-                    onOpenRecord = { id -> navController.navigate("training/$id") }
-                )
-            }
+            val records by viewModel.records.collectAsStateWithLifecycle()
+            val operation by viewModel.recordsOperation.collectAsStateWithLifecycle()
+            TrainingListScreen(
+                records = records,
+                operation = operation,
+                onRetry = viewModel::refreshRecords,
+                onRefresh = viewModel::refreshRecords,
+                onCreate = { navController.navigate(Routes.CreateRecord) },
+                onOpenRecord = { id -> navController.navigate("training/$id") }
+            )
         }
         composable(Routes.CreateRecord) {
             val exercises by viewModel.exerciseCatalog.collectAsStateWithLifecycle()
@@ -306,39 +322,35 @@ private fun FitnessAiNavGraph(
             )
         }
         composable(Routes.Stats) {
-            MainShell(navController = navController) {
-                val container = currentAppContainer()
-                val statsViewModel: StatsViewModel = viewModel(
-                    factory = StatsViewModel.Factory(
-                        statsRepository = container.repositories.statsRepository as ApiStatsRepository,
-                        recordRepository = container.repositories.recordRepository
-                    )
+            val container = currentAppContainer()
+            val statsViewModel: StatsViewModel = viewModel(
+                factory = StatsViewModel.Factory(
+                    statsRepository = container.repositories.statsRepository as ApiStatsRepository,
+                    recordRepository = container.repositories.recordRepository
                 )
-                LaunchedEffect(statsViewModel) {
+            )
+            LaunchedEffect(statsViewModel) {
+                statsViewModel.refreshAll()
+            }
+            val operation by viewModel.statsOperation.collectAsStateWithLifecycle()
+            StatsScreen(
+                viewModel = statsViewModel,
+                operation = operation,
+                onRetry = viewModel::refreshStats,
+                onRefresh = {
+                    viewModel.refreshStats()
                     statsViewModel.refreshAll()
                 }
-                val operation by viewModel.statsOperation.collectAsStateWithLifecycle()
-                StatsScreen(
-                    viewModel = statsViewModel,
-                    operation = operation,
-                    onRetry = viewModel::refreshStats,
-                    onRefresh = {
-                        viewModel.refreshStats()
-                        statsViewModel.refreshAll()
-                    }
-                )
-            }
+            )
         }
         composable(Routes.Profile) {
-            MainShell(navController = navController) {
-                val session by viewModel.session.collectAsStateWithLifecycle()
-                ProfileScreen(
-                    session = session,
-                    onSettings = { navController.navigate(Routes.Settings) },
-                    onAbout = { navController.navigate(Routes.About) },
-                    onLogout = { viewModel.logout() }
-                )
-            }
+            val session by viewModel.session.collectAsStateWithLifecycle()
+            ProfileScreen(
+                session = session,
+                onSettings = { navController.navigate(Routes.Settings) },
+                onAbout = { navController.navigate(Routes.About) },
+                onLogout = { viewModel.logout() }
+            )
         }
         composable(Routes.Settings) {
             val container = currentAppContainer()
@@ -363,30 +375,6 @@ private fun FitnessAiNavGraph(
             AboutScreen(onBack = { navController.popBackStack() })
         }
     }
-}
-
-@Composable
-private fun MainShell(
-    navController: NavHostController,
-    content: @Composable () -> Unit
-) {
-    val backStack by navController.currentBackStackEntryAsState()
-    val currentRoute = backStack?.destination?.route
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                tabs.forEach { tab ->
-                    NavigationBarItem(
-                        selected = currentRoute == tab.route,
-                        onClick = { navController.navigateTab(tab.route) },
-                        icon = tab.icon,
-                        label = { Text(tab.label) }
-                    )
-                }
-            }
-        },
-        content = { padding -> Box(Modifier.padding(padding)) { content() } }
-    )
 }
 
 @Composable
