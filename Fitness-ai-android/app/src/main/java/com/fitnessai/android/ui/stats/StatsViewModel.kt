@@ -46,6 +46,11 @@ class StatsViewModel(
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
 
+    init {
+        // Load data once on creation; subsequent refreshes are user-triggered
+        refreshAll()
+    }
+
     val state: StateFlow<StatsUiState> = combine(
         statsRepository.stats,
         statsRepository.weekly,

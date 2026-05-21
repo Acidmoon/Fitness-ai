@@ -17,6 +17,8 @@ import com.fitnessai.android.data.model.UserSession
 import com.fitnessai.android.data.repository.AppRepositories
 import com.fitnessai.android.ui.components.TrendPoint
 import java.time.LocalDate
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -255,8 +257,13 @@ class FitnessAiViewModel(
     }
 
     private suspend fun refreshReadData() {
-        refreshRecordsInternal(refreshing = true)
-        refreshStatsInternal(refreshing = true)
+        // Run records and stats refresh in parallel for faster loading
+        coroutineScope {
+            val recordsJob = async { refreshRecordsInternal(refreshing = true) }
+            val statsJob = async { refreshStatsInternal(refreshing = true) }
+            recordsJob.await()
+            statsJob.await()
+        }
     }
 
     private suspend fun refreshRecordsInternal(refreshing: Boolean) {

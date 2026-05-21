@@ -296,12 +296,13 @@ private fun FitnessAiNavGraph(
         }
         composable(Routes.RecordDetail, arguments = listOf(navArgument("recordId") { type = NavType.StringType })) { entry ->
             val recordId = entry.arguments?.getString("recordId").orEmpty()
-            val records by viewModel.records.collectAsStateWithLifecycle()
+            val record = remember(recordId) { viewModel.getRecord(recordId) }
+                ?: viewModel.records.collectAsStateWithLifecycle().value.firstOrNull { it.id == recordId }
             val operation by viewModel.recordsOperation.collectAsStateWithLifecycle()
             val actionState by viewModel.recordActionState.collectAsStateWithLifecycle()
             val exercises by viewModel.exerciseCatalog.collectAsStateWithLifecycle()
             RecordDetailScreen(
-                record = records.firstOrNull { it.id == recordId },
+                record = record,
                 operation = operation,
                 actionState = actionState,
                 apiMode = true,
@@ -329,9 +330,6 @@ private fun FitnessAiNavGraph(
                     recordRepository = container.repositories.recordRepository
                 )
             )
-            LaunchedEffect(statsViewModel) {
-                statsViewModel.refreshAll()
-            }
             val operation by viewModel.statsOperation.collectAsStateWithLifecycle()
             StatsScreen(
                 viewModel = statsViewModel,
