@@ -3,8 +3,12 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.exercise import ExerciseRecord
 from app.models.user import User
+from app.repositories import (
+    ExerciseRecordRepository,
+    get_exercise_record_repo,
+    get_owned_record_or_404,
+)
 from app.services.video_service import (
     VideoAccessDeniedError,
     VideoNotFoundError,
@@ -28,18 +32,10 @@ def upload_video(
     keep_video: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
     """上传运动记录视频"""
-    record = (
-        db.query(ExerciseRecord)
-        .filter(
-            ExerciseRecord.id == record_id,
-            ExerciseRecord.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not record:
-        raise HTTPException(status_code=404, detail="运动记录不存在")
+    record = get_owned_record_or_404(repo, record_id, current_user.id)
 
     try:
         result = upload_record_video(record, video, keep_video, db)
@@ -60,18 +56,10 @@ def delete_video(
     record_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
     """删除运动记录关联视频"""
-    record = (
-        db.query(ExerciseRecord)
-        .filter(
-            ExerciseRecord.id == record_id,
-            ExerciseRecord.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not record:
-        raise HTTPException(status_code=404, detail="运动记录不存在")
+    record = get_owned_record_or_404(repo, record_id, current_user.id)
 
     try:
         delete_record_video(record, db)

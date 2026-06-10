@@ -49,12 +49,19 @@ class LoginFailureLimiter:
 
 
 login_failure_limiter = LoginFailureLimiter()
+registration_limiter = LoginFailureLimiter()
 
 
 def build_login_rate_limit_scope(request: Request, username: str) -> str:
     client_host = request.client.host if request.client else "unknown"
     normalized_username = username.strip().lower()
     return f"{client_host}:{normalized_username}"
+
+
+def build_registration_rate_limit_scope(request: Request) -> str:
+    """Rate-limit registration attempts per IP."""
+    client_host = request.client.host if request.client else "unknown"
+    return f"register:{client_host}"
 
 
 def clear_all_login_rate_limits() -> None:

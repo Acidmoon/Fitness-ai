@@ -36,16 +36,14 @@ class ExerciseRecordRepository:
             .first()
         )
 
-    def get_user_records(
+    def _build_user_records_query(
         self,
         user_id: int,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         exercise_id: Optional[int] = None,
-        skip: int = 0,
-        limit: int = 20,
-    ) -> List[ExerciseRecord]:
-        """Get paginated records for a user with optional filters."""
+    ):
+        """Build the base query for user records, with optional filters."""
         query = self.db.query(ExerciseRecord).filter(
             ExerciseRecord.user_id == user_id
         )
@@ -58,13 +56,40 @@ class ExerciseRecordRepository:
             query = query.filter(ExerciseRecord.created_at <= end_datetime)
         if exercise_id:
             query = query.filter(ExerciseRecord.exercise_id == exercise_id)
+        return query
 
+    def get_user_records(
+        self,
+        user_id: int,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        exercise_id: Optional[int] = None,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> List[ExerciseRecord]:
+        """Get paginated records for a user with optional filters."""
+        query = self._build_user_records_query(
+            user_id, start_date, end_date, exercise_id,
+        )
         return (
             query.order_by(ExerciseRecord.created_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
         )
+
+    def count_user_records(
+        self,
+        user_id: int,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        exercise_id: Optional[int] = None,
+    ) -> int:
+        """Count records for a user matching optional filters."""
+        query = self._build_user_records_query(
+            user_id, start_date, end_date, exercise_id,
+        )
+        return query.count()
 
     def get_owned_records_by_ids(
         self, record_ids: Sequence[int], user_id: int

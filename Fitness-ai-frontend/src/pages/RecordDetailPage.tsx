@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { ErrorState } from "@/components/states/ErrorState";
@@ -53,14 +53,33 @@ function formatConfidence(value: number | null | undefined) {
 export function RecordDetailPage() {
   const { recordId } = useParams();
   const numericRecordId = Number(recordId);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [detailMessage, setDetailMessage] = useState("");
   const [detailError, setDetailError] = useState("");
   const [poseScoringPreview, setPoseScoringPreview] =
     useState<PoseScoringResult | null>(null);
-  const [poseAnalysisJobId, setPoseAnalysisJobId] = useState<number | null>(null);
   const [handledPoseAnalysisJobId, setHandledPoseAnalysisJobId] = useState<
     number | null
   >(null);
+
+  const poseAnalysisJobId: number | null = (() => {
+    const raw = searchParams.get("job");
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  })();
+
+  function setPoseAnalysisJobId(jobId: number | null) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (jobId !== null) {
+        next.set("job", String(jobId));
+      } else {
+        next.delete("job");
+      }
+      return next;
+    }, { replace: true });
+  }
   const queryClient = useQueryClient();
   const exercisesQuery = useQuery({
     queryKey: ["exercise", "catalog"],

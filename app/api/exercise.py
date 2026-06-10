@@ -4,18 +4,26 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
+
 from app.database import get_db
-from app.models.exercise import Exercise, ExerciseRecord
+from app.models.exercise import ExerciseRecord
+from app.models.user import User
+from app.repositories import (
+    ExerciseRecordRepository,
+    ExerciseRepository,
+    get_exercise_record_repo,
+    get_exercise_repo,
+    get_owned_record_or_404,
+)
 from app.schemas.exercise import (
     ExerciseRecordCreate,
+    ExerciseRecordPage,
     ExerciseRecordResponse,
     ExerciseResponse,
     ExerciseRecordUpdate,
 )
 from app.utils.security import get_current_user
-from app.utils.datetime import utc_day_bounds
 from app.utils.video_files import delete_record_videos
-from app.models.user import User
 
 router = APIRouter()
 
@@ -25,9 +33,10 @@ def create_record(
     record_data: ExerciseRecordCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    exercise_repo: ExerciseRepository = Depends(get_exercise_repo),
 ):
     """创建运动记录"""
-    exercise = db.query(Exercise).filter(Exercise.id == record_data.exercise_id).first()
+    exercise = exercise_repo.get_by_id(record_data.exercise_id)
     if not exercise:
         raise HTTPException(status_code=404, detail="动作不存在")
 
@@ -48,7 +57,7 @@ def create_record(
     return db_record
 
 
-@router.get("/records", response_model=List[ExerciseRecordResponse])
+@router.get("/records", response_model=ExerciseRecordPage)
 def get_user_records(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
@@ -57,53 +66,43 @@ def get_user_records(
     limit: int = Query(
         default=20, ge=1, le=100, description="返回的记录数，范围 1-100"
     ),
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
-    """获取用户运动记录（支持日期范围、动作 ID 过滤）"""
-    query = db.query(ExerciseRecord).filter(ExerciseRecord.user_id == current_user.id)
-
-    if start_date:
-        start_datetime, _ = utc_day_bounds(start_date)
-        query = query.filter(ExerciseRecord.created_at >= start_datetime)
-    if end_date:
-        _, end_datetime = utc_day_bounds(end_date)
-        query = query.filter(ExerciseRecord.created_at <= end_datetime)
-    if exercise_id:
-        query = query.filter(ExerciseRecord.exercise_id == exercise_id)
-
-    records = (
-        query.order_by(ExerciseRecord.created_at.desc()).offset(skip).limit(limit).all()
+    """获取用户运动记录（支持日期范围、动作 ID 过滤，带分页信息）。"""
+    records = repo.get_user_records(
+        user_id=current_user.id,
+        start_date=start_date,
+        end_date=end_date,
+        exercise_id=exercise_id,
+        skip=skip,
+        limit=limit,
     )
-    return records
+    total = repo.count_user_records(
+        user_id=current_user.id,
+        start_date=start_date,
+        end_date=end_date,
+        exercise_id=exercise_id,
+    )
+    return ExerciseRecordPage(items=records, total=total, skip=skip, limit=limit)
 
 
 @router.get("/records/{record_id}", response_model=ExerciseRecordResponse)
 def get_record_detail(
     record_id: int,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
     """获取单条运动记录详情"""
-    record = (
-        db.query(ExerciseRecord)
-        .filter(
-            ExerciseRecord.id == record_id,
-            ExerciseRecord.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not record:
-        raise HTTPException(status_code=404, detail="记录不存在")
-
-    return record
+    return get_owned_record_or_404(repo, record_id, current_user.id)
 
 
 @router.get("/exercises", response_model=List[ExerciseResponse])
-def get_exercises(db: Session = Depends(get_db)):
+def get_exercises(
+    exercise_repo: ExerciseRepository = Depends(get_exercise_repo),
+):
     """获取标准动作列表"""
-    exercises = db.query(Exercise).all()
-    return exercises
+    return exercise_repo.get_all()
 
 
 @router.put("/records/{record_id}", response_model=ExerciseRecordResponse)
@@ -112,19 +111,11 @@ def update_record(
     record_data: ExerciseRecordUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
     """修改运动记录"""
-    db_record = (
-        db.query(ExerciseRecord)
-        .filter(
-            ExerciseRecord.id == record_id, ExerciseRecord.user_id == current_user.id
-        )
-        .first()
-    )
-    if not db_record:
-        raise HTTPException(status_code=404, detail="记录不存在")
+    db_record = get_owned_record_or_404(repo, record_id, current_user.id)
 
-    # 只更新提供的字段
     update_data = record_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_record, field, value)
@@ -139,17 +130,10 @@ def delete_record(
     record_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
     """删除运动记录"""
-    db_record = (
-        db.query(ExerciseRecord)
-        .filter(
-            ExerciseRecord.id == record_id, ExerciseRecord.user_id == current_user.id
-        )
-        .first()
-    )
-    if not db_record:
-        raise HTTPException(status_code=404, detail="记录不存在")
+    db_record = get_owned_record_or_404(repo, record_id, current_user.id)
 
     try:
         delete_record_videos([db_record])
@@ -165,33 +149,18 @@ def batch_delete_records(
     record_ids: List[int] = Query(..., description="要删除的记录 ID 列表"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
     """批量删除运动记录"""
-    # 先查询属于当前用户的记录
-    user_records = (
-        db.query(ExerciseRecord)
-        .filter(
-            ExerciseRecord.id.in_(record_ids),
-            ExerciseRecord.user_id == current_user.id,
-        )
-        .all()
-    )
-    user_record_ids = {record.id for record in user_records}
+    user_records = repo.get_owned_records_by_ids(record_ids, current_user.id)
     try:
         delete_record_videos(user_records)
     except OSError:
         raise HTTPException(status_code=500, detail="记录关联视频清理失败")
 
-    # 只删除属于当前用户的记录
-    deleted_count = (
-        db.query(ExerciseRecord)
-        .filter(
-            ExerciseRecord.id.in_(user_record_ids),
-        )
-        .delete(synchronize_session=False)
-    )
-
+    deleted_count = repo.delete_by_ids([r.id for r in user_records])
     db.commit()
+
     return {
         "message": f"成功删除 {deleted_count} 条记录",
         "deleted_count": deleted_count,

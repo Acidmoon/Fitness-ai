@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { clearAccessToken } from "@/services/auth-storage";
+import { clearAuth } from "@/services/auth-storage";
 
 const navItems = [
   {
@@ -49,7 +49,7 @@ export function AppShell() {
         });
 
   function handleLogout() {
-    clearAccessToken();
+    clearAuth();
     navigate("/login", { replace: true });
   }
 

@@ -35,6 +35,13 @@ class ScoringRule:
     up_angle: float
     target_angle: float
     min_range: float
+    # Configurable deduction rates (per-degree / per-unit penalty)
+    depth_penalty_rate: float = 0.9
+    extension_penalty_rate: float = 0.6
+    range_penalty_rate: float = 0.8
+    no_repetition_penalty: float = 15.0
+    low_confidence_penalty: float = 10.0
+    low_confidence_threshold: float = 0.55
 
 
 @dataclass(frozen=True)
@@ -166,7 +173,7 @@ def apply_pose_scoring_result(
 def find_scoring_rule(exercise: Exercise) -> Optional[ScoringRule]:
     exercise_name = (exercise.name or "").strip().lower()
     for rule in DEFAULT_RULES:
-        if any(alias.lower() in exercise_name for alias in rule.aliases):
+        if any(exercise_name == alias.lower() for alias in rule.aliases):
             return _rule_with_standard_overrides(rule, exercise.standard)
     return None
 
@@ -304,26 +311,32 @@ def score_phase_summary(
     feedback: List[str] = []
 
     if phase_summary.min_angle > rule.target_angle:
-        deduction = min(35.0, (phase_summary.min_angle - rule.target_angle) * 0.9)
+        deduction = min(
+            35.0, (phase_summary.min_angle - rule.target_angle) * rule.depth_penalty_rate
+        )
         score -= deduction
         feedback.append("动作幅度不足，最低点关节角仍偏大")
 
     if phase_summary.max_angle < rule.up_angle:
-        deduction = min(20.0, (rule.up_angle - phase_summary.max_angle) * 0.6)
+        deduction = min(
+            20.0, (rule.up_angle - phase_summary.max_angle) * rule.extension_penalty_rate
+        )
         score -= deduction
         feedback.append("复位不充分，最高点未达到伸展阈值")
 
     if phase_summary.angle_range < rule.min_range:
-        deduction = min(25.0, (rule.min_range - phase_summary.angle_range) * 0.8)
+        deduction = min(
+            25.0, (rule.min_range - phase_summary.angle_range) * rule.range_penalty_rate
+        )
         score -= deduction
         feedback.append("动作行程不足，建议扩大上下阶段差异")
 
     if phase_summary.repetitions == 0:
-        score -= 15.0
+        score -= rule.no_repetition_penalty
         feedback.append("未检测到完整的下放-复位动作周期")
 
-    if phase_summary.average_confidence < 0.55:
-        score -= 10.0
+    if phase_summary.average_confidence < rule.low_confidence_threshold:
+        score -= rule.low_confidence_penalty
         feedback.append("关键点平均置信度偏低，建议调整拍摄角度和光照")
 
     if not feedback:
@@ -378,4 +391,22 @@ def _rule_with_standard_overrides(
         up_angle=float(pose_standard.get("up_angle", rule.up_angle)),
         target_angle=float(pose_standard.get("target_angle", rule.target_angle)),
         min_range=float(pose_standard.get("min_range", rule.min_range)),
+        depth_penalty_rate=float(
+            pose_standard.get("depth_penalty_rate", rule.depth_penalty_rate)
+        ),
+        extension_penalty_rate=float(
+            pose_standard.get("extension_penalty_rate", rule.extension_penalty_rate)
+        ),
+        range_penalty_rate=float(
+            pose_standard.get("range_penalty_rate", rule.range_penalty_rate)
+        ),
+        no_repetition_penalty=float(
+            pose_standard.get("no_repetition_penalty", rule.no_repetition_penalty)
+        ),
+        low_confidence_penalty=float(
+            pose_standard.get("low_confidence_penalty", rule.low_confidence_penalty)
+        ),
+        low_confidence_threshold=float(
+            pose_standard.get("low_confidence_threshold", rule.low_confidence_threshold)
+        ),
     )

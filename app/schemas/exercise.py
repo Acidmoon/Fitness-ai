@@ -2,7 +2,7 @@
 
 import json
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List as PyList
 from datetime import datetime, date
 
 HEART_RATE_MIN = 20
@@ -84,3 +84,11 @@ class ExerciseRecordUpdate(BaseModel):
     @classmethod
     def validate_keypoints_data(cls, value):
         return _validate_keypoints_data_size(value)
+
+
+class ExerciseRecordPage(BaseModel):
+    """分页运动记录响应。"""
+    items: PyList[ExerciseRecordResponse]
+    total: int
+    skip: int
+    limit: int

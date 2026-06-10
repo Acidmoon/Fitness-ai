@@ -35,7 +35,11 @@ class ApiAuthRepository(
     override suspend fun login(username: String, password: String): Result<Unit> {
         return apiResult {
             val token = services().auth.login(username.trim(), password)
-            tokenStore.saveAccessToken(token.accessToken)
+            if (token.refreshToken != null) {
+                tokenStore.saveTokens(token.accessToken, token.refreshToken)
+            } else {
+                tokenStore.saveAccessToken(token.accessToken)
+            }
             _session.value = fetchProfileOrClearToken()
         }
     }
@@ -57,7 +61,7 @@ class ApiAuthRepository(
     }
 
     override suspend fun logout() {
-        tokenStore.clearAccessToken()
+        tokenStore.clearAll()
         _session.value = null
     }
 

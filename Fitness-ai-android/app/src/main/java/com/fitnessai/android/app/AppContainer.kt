@@ -78,6 +78,7 @@ class AppContainer private constructor(
             val repositories = AppRepositoryContainer.create(
                 application = application,
                 apiClientHolder = apiClientHolder,
+                applicationScope = applicationScope,
                 tokenStore = tokenStore
             )
             sessionManager = SessionManager(

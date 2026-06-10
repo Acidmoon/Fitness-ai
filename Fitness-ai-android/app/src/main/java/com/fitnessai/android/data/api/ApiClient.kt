@@ -22,7 +22,13 @@ object ApiClientFactory {
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
-            .addInterceptor(AuthorizationInterceptor(tokenStore, onAuthFailure))
+            .addInterceptor(
+                AuthorizationInterceptor(
+                    tokenStore = tokenStore,
+                    baseUrlProvider = { normalizeBaseUrl(baseUrl) },
+                    onAuthFailure = onAuthFailure,
+                )
+            )
             .build()
         val retrofit = Retrofit.Builder()
             .baseUrl(normalizeBaseUrl(baseUrl))

@@ -81,6 +81,14 @@ class Token(BaseModel):
     token_type: str
 
 
+class TokenWithRefresh(Token):
+    refresh_token: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 # 更新用户资料请求
 class UserProfileUpdate(BaseModel):
     username: Optional[str] = None

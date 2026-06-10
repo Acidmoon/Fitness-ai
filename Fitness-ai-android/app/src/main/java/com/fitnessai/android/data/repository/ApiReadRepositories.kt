@@ -29,9 +29,14 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okio.BufferedSink
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Repositories below take a [ServicesProvider] so they always dispatch through the latest
@@ -216,8 +221,12 @@ class ApiPoseAnalysisRepository(
     private val services: ServicesProvider,
     private val records: TrainingRecordRepository,
     private val notifications: NotificationScheduler,
+    private val applicationScope: CoroutineScope = CoroutineScope(SupervisorJob()),
     private val polling: ApiAnalysisPollingConfig = ApiAnalysisPollingConfig()
 ) : AnalysisRepository {
+    /** Active poll jobs keyed by recordId — allows cancellation & reconnection. */
+    private val pollJobs = ConcurrentHashMap<String, Job>()
+
     override suspend fun startAnalysis(recordId: String): Result<Unit> {
         return apiResult {
             val record = records.getRecord(recordId) ?: throw ApiRequestException(
@@ -234,16 +243,63 @@ class ApiPoseAnalysisRepository(
                 kind = ApiErrorKind.Validation,
                 message = "后端记录 ID 无效"
             )
-            records.updateRecord(record.copy(analysisResult = AnalysisResult(AnalysisStatus.Queued))).getOrThrow()
-            val job = services.poseAnalysis().createPoseAnalysisJob(backendRecordId, PoseAnalysisTriggerDto())
+            // Mark local state as Queued synchronously
+            records.updateRecord(record.copy(analysisResult = AnalysisResult(AnalysisStatus.Queued)))
+                .getOrThrow()
+
+            // Create backend job
+            val job = services.poseAnalysis().createPoseAnalysisJob(
+                backendRecordId, PoseAnalysisTriggerDto()
+            )
+            // Mark local state as Running
             records.getRecord(recordId)?.let {
-                records.updateRecord(it.copy(analysisResult = AnalysisResult(AnalysisStatus.Running))).getOrThrow()
+                records.updateRecord(it.copy(analysisResult = AnalysisResult(AnalysisStatus.Running)))
+                    .getOrThrow()
             }
-            val terminal = pollJob(job.id)
+
+            // Cancel any previous poll for this record
+            pollJobs.remove(recordId)?.cancel()
+
+            // Launch polling in background scope (survives caller cancellation)
+            val pollJob = applicationScope.launch {
+                pollAndFetchResult(recordId, backendRecordId, job.id)
+            }
+            pollJobs[recordId] = pollJob
+        }
+    }
+
+    /** Check status of an already-created job — for reconnection after navigation. */
+    suspend fun reconnectAnalysis(recordId: String, jobId: Int): Result<Unit> {
+        return apiResult {
+            val backendRecordId = recordId.toIntOrNull() ?: throw ApiRequestException(
+                kind = ApiErrorKind.Validation,
+                message = "后端记录 ID 无效"
+            )
+            pollAndFetchResult(recordId, backendRecordId, jobId)
+        }
+    }
+
+    /** Cancel a running analysis for the given record. */
+    fun cancelAnalysis(recordId: String) {
+        pollJobs.remove(recordId)?.cancel()
+    }
+
+    override fun clearAnalysis(recordId: String) {
+        cancelAnalysis(recordId)
+        records.getRecord(recordId)?.let {
+            records.replaceRecord(it.copy(analysisResult = AnalysisResult(AnalysisStatus.Idle)))
+        }
+    }
+
+    private suspend fun pollAndFetchResult(recordId: String, backendRecordId: Int, jobId: Int) {
+        try {
+            val terminal = pollJob(jobId)
             when (terminal.status.normalizedJobStatus()) {
                 AnalysisStatus.Completed -> {
-                    val result = services.poseAnalysis().getPoseAnalysis(backendRecordId).toAnalysisResult()
-                    val completed = requireNotNull(records.getRecord(recordId)).copy(analysisResult = result)
+                    val result = services.poseAnalysis().getPoseAnalysis(backendRecordId)
+                        .toAnalysisResult()
+                    val completed = requireNotNull(records.getRecord(recordId))
+                        .copy(analysisResult = result)
                     records.updateRecord(completed).getOrThrow()
                     if (result.status == AnalysisStatus.Completed) {
                         runCatching { notifications.notifyAnalysisComplete(completed) }
@@ -260,19 +316,24 @@ class ApiPoseAnalysisRepository(
                             )
                         ).getOrThrow()
                     }
-                    throw ApiRequestException(
-                        kind = ApiErrorKind.Unexpected,
-                        message = terminal.error ?: "分析失败"
-                    )
                 }
                 else -> Unit
             }
-        }
-    }
-
-    override fun clearAnalysis(recordId: String) {
-        records.getRecord(recordId)?.let {
-            records.replaceRecord(it.copy(analysisResult = AnalysisResult(AnalysisStatus.Idle)))
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            // Swallow cancellation — the UI will reconnect via reconnectAnalysis
+        } catch (e: Exception) {
+            records.getRecord(recordId)?.let {
+                records.replaceRecord(
+                    it.copy(
+                        analysisResult = AnalysisResult(
+                            status = AnalysisStatus.Failed,
+                            message = e.message ?: "分析失败"
+                        )
+                    )
+                )
+            }
+        } finally {
+            pollJobs.remove(recordId)
         }
     }
 

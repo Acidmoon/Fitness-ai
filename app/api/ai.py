@@ -1,7 +1,7 @@
 import os
 from typing import Any, Dict
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,11 @@ from app.models.pose_analysis_job import (
     PoseAnalysisJob,
 )
 from app.models.user import User
+from app.repositories import (
+    ExerciseRecordRepository,
+    get_exercise_record_repo,
+    get_owned_record_or_404,
+)
 from app.schemas.pose_analysis import (
     PoseAnalysisJobResponse,
     PoseAnalysisResponse,
@@ -42,17 +47,8 @@ from app.utils.video_files import resolve_video_path_from_url
 router = APIRouter()
 
 
-@router.post(
-    "/records/{record_id}/pose-analysis",
-    response_model=PoseAnalysisResponse,
-)
-def trigger_pose_analysis(
-    record_id: int,
-    request_data: PoseAnalysisTriggerRequest | None = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    record = _get_owned_record(db, record_id, current_user)
+def _check_video_ready(record: ExerciseRecord) -> str:
+    """Validate that the record has a video and the file exists on disk."""
     if not record.video_url:
         raise HTTPException(status_code=400, detail="记录没有关联视频")
 
@@ -63,29 +59,60 @@ def trigger_pose_analysis(
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="视频文件不存在")
 
-    try:
-        analysis_result = analyze_video_file(
-            video_path,
-            sample_fps=request_data.sample_fps if request_data else None,
-        )
-    except PoseAnalysisDisabledError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        )
-    except PoseAnalysisUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        )
-    except PoseAnalysisInferenceError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    return video_path
 
-    record.keypoints_data = analysis_result
+
+def _create_job(
+    db: Session,
+    record_id: int,
+    user_id: int,
+    sample_fps: int | None,
+    background_tasks: BackgroundTasks,
+) -> PoseAnalysisJob:
+    """Create a PoseAnalysisJob and schedule it via BackgroundTasks."""
+    now = utc_now()
+    job = PoseAnalysisJob(
+        record_id=record_id,
+        user_id=user_id,
+        status=POSE_ANALYSIS_JOB_STATUS_QUEUED,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(job)
     db.commit()
-    db.refresh(record)
+    db.refresh(job)
 
-    return _build_pose_analysis_response(record.id, record.keypoints_data)
+    background_tasks.add_task(
+        process_pose_analysis_job,
+        job.id,
+        sample_fps,
+    )
+    return job
+
+
+@router.post(
+    "/records/{record_id}/pose-analysis",
+    response_model=PoseAnalysisJobResponse,
+)
+def trigger_pose_analysis(
+    record_id: int,
+    background_tasks: BackgroundTasks,
+    request_data: PoseAnalysisTriggerRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
+):
+    """提交姿态分析任务（异步，立即返回 Job 状态）。"""
+    record = get_owned_record_or_404(repo, record_id, current_user.id)
+    _check_video_ready(record)
+
+    return _create_job(
+        db=db,
+        record_id=record.id,
+        user_id=current_user.id,
+        sample_fps=request_data.sample_fps if request_data else None,
+        background_tasks=background_tasks,
+    )
 
 
 @router.post(
@@ -98,37 +125,19 @@ def create_pose_analysis_job(
     request_data: PoseAnalysisTriggerRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
-    record = _get_owned_record(db, record_id, current_user)
-    if not record.video_url:
-        raise HTTPException(status_code=400, detail="记录没有关联视频")
+    """创建姿态分析异步任务（推荐方式）。"""
+    record = get_owned_record_or_404(repo, record_id, current_user.id)
+    _check_video_ready(record)
 
-    video_path = resolve_video_path_from_url(record.video_url)
-    if not video_path:
-        raise HTTPException(status_code=403, detail="视频路径无效")
-
-    if not os.path.exists(video_path):
-        raise HTTPException(status_code=404, detail="视频文件不存在")
-
-    now = utc_now()
-    job = PoseAnalysisJob(
+    return _create_job(
+        db=db,
         record_id=record.id,
         user_id=current_user.id,
-        status=POSE_ANALYSIS_JOB_STATUS_QUEUED,
-        created_at=now,
-        updated_at=now,
+        sample_fps=request_data.sample_fps if request_data else None,
+        background_tasks=background_tasks,
     )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
-
-    background_tasks.add_task(
-        process_pose_analysis_job,
-        job.id,
-        request_data.sample_fps if request_data else None,
-    )
-
-    return job
 
 
 @router.get(
@@ -142,7 +151,10 @@ def get_pose_analysis_job(
 ):
     job = (
         db.query(PoseAnalysisJob)
-        .filter(PoseAnalysisJob.id == job_id, PoseAnalysisJob.user_id == current_user.id)
+        .filter(
+            PoseAnalysisJob.id == job_id,
+            PoseAnalysisJob.user_id == current_user.id,
+        )
         .first()
     )
     if not job:
@@ -157,10 +169,10 @@ def get_pose_analysis_job(
 )
 def get_pose_analysis(
     record_id: int,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
-    record = _get_owned_record(db, record_id, current_user)
+    record = get_owned_record_or_404(repo, record_id, current_user.id)
     return _build_pose_analysis_response(record.id, record.keypoints_data)
 
 
@@ -173,8 +185,9 @@ def score_pose_analysis(
     request_data: PoseScoringRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
-    record = _get_owned_record(db, record_id, current_user)
+    record = get_owned_record_or_404(repo, record_id, current_user.id)
 
     try:
         scoring_result = score_record_pose(record)
@@ -188,22 +201,6 @@ def score_pose_analysis(
         raise HTTPException(status_code=400, detail=str(exc))
 
     return {"record_id": record.id, **scoring_result}
-
-
-def _get_owned_record(
-    db: Session, record_id: int, current_user: User
-) -> ExerciseRecord:
-    record = (
-        db.query(ExerciseRecord)
-        .filter(
-            ExerciseRecord.id == record_id,
-            ExerciseRecord.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not record:
-        raise HTTPException(status_code=404, detail="记录不存在")
-    return record
 
 
 def _build_pose_analysis_response(

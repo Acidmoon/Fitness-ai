@@ -7,6 +7,7 @@ import com.fitnessai.android.core.config.ApiClientHolder
 import com.fitnessai.android.data.api.ApiServices
 import com.fitnessai.android.data.api.PreferencesTokenStore
 import com.fitnessai.android.data.api.TokenStore
+import kotlinx.coroutines.CoroutineScope
 
 data class AppRepositories(
     val authRepository: AuthRepository,
@@ -21,19 +22,22 @@ object AppRepositoryContainer {
     fun create(
         application: Application,
         apiClientHolder: ApiClientHolder,
+        applicationScope: CoroutineScope,
         tokenStore: TokenStore = PreferencesTokenStore(application)
     ): AppRepositories {
         return createForTest(
             apiClientHolder = apiClientHolder,
             tokenStore = tokenStore,
-            notificationScheduler = AndroidNotificationScheduler(application)
+            notificationScheduler = AndroidNotificationScheduler(application),
+            applicationScope = applicationScope,
         )
     }
 
     fun createForTest(
         apiClientHolder: ApiClientHolder,
         tokenStore: TokenStore,
-        notificationScheduler: NotificationScheduler
+        notificationScheduler: NotificationScheduler,
+        applicationScope: CoroutineScope,
     ): AppRepositories {
         val services: () -> ApiServices = { apiClientHolder.services.value }
         val recordRepository = ApiTrainingRecordRepository(
@@ -44,7 +48,8 @@ object AppRepositoryContainer {
         val baseAnalysisRepository = ApiPoseAnalysisRepository(
             services = services,
             records = recordRepository,
-            notifications = notificationScheduler
+            notifications = notificationScheduler,
+            applicationScope = applicationScope,
         )
         val analysisRepository = ApiScoringAnalysisRepository(
             services = services,

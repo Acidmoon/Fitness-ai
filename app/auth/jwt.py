@@ -9,15 +9,28 @@ from app.config import settings
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
 JWT_SUB_TYPE_USER_ID = "user_id"
+JWT_SUB_TYPE_REFRESH = "refresh"
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """生成 JWT 令牌。"""
+    """生成 JWT 访问令牌。"""
     to_encode = data.copy()
+    to_encode.setdefault("sub_type", JWT_SUB_TYPE_USER_ID)
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+def create_refresh_token(data: dict) -> str:
+    """生成 JWT 刷新令牌（长有效期）。"""
+    to_encode = data.copy()
+    to_encode["sub_type"] = JWT_SUB_TYPE_REFRESH
+    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -30,7 +43,9 @@ def decode_access_token(token: str) -> dict:
 
 __all__ = [
     "JWT_SUB_TYPE_USER_ID",
+    "JWT_SUB_TYPE_REFRESH",
     "JWTError",
     "create_access_token",
+    "create_refresh_token",
     "decode_access_token",
 ]
