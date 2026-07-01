@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Protocol, runtime_checkable
+from typing import Any, Dict, Protocol, runtime_checkable
+
+from app.services.pose_keypoint_result import (
+    POSE_KEYPOINT_COORDINATE_SPACE,
+    POSE_KEYPOINT_SCHEMA_VERSION,
+    STANDARD_KEYPOINT_NAMES,
+    normalize_keypoint_result,
+)
 
 
 @runtime_checkable
@@ -12,7 +19,19 @@ class PoseAnalysisBackend(Protocol):
 
     KeypointResult format:
         {
-            "model": {"name": str, "input_size": int | None, ...},
+            "schema_version": 1,
+            "model": {
+                "backend": str,
+                "name": str,
+                "input_size": int | None,
+                ...
+            },
+            "frame": {
+                "width": int | None,
+                "height": int | None,
+                "timestamp_ms": int | None,
+            },
+            "coordinate_space": "image_pixels",
             "keypoints": [
                 {"name": str, "x": float, "y": float, "score": float},
                 ...  # 17 standard keypoints
@@ -55,3 +74,12 @@ class PoseAnalysisBackend(Protocol):
             PoseAnalysisInferenceError: If inference fails.
         """
         ...
+
+
+__all__ = [
+    "POSE_KEYPOINT_COORDINATE_SPACE",
+    "POSE_KEYPOINT_SCHEMA_VERSION",
+    "STANDARD_KEYPOINT_NAMES",
+    "PoseAnalysisBackend",
+    "normalize_keypoint_result",
+]

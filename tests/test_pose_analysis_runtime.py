@@ -78,6 +78,79 @@ def test_normalize_keypoints_rejects_invalid_keypoint_count():
         normalize_keypoints([[[[0, 0, 1]]]], frame_width=640, frame_height=480)
 
 
+def test_runtime_analyze_frame_returns_canonical_keypoint_result(tmp_path):
+    model_path = tmp_path / "model.tflite"
+    model_path.write_bytes(b"fake")
+
+    class FakeInterpreter:
+        def allocate_tensors(self):
+            return None
+
+        def get_input_details(self):
+            return [{"shape": [1, 192, 192, 3], "index": 0, "dtype": object}]
+
+        def get_output_details(self):
+            return [{"index": 1}]
+
+        def set_tensor(self, _index, _value):
+            return None
+
+        def invoke(self):
+            return None
+
+        def get_tensor(self, _index):
+            return [[[[0.1, 0.2, 0.9] for _ in range(17)]]]
+
+    class FakeCv2:
+        COLOR_BGR2RGB = 1
+
+        def cvtColor(self, frame, _mode):
+            return frame
+
+        def resize(self, frame, _size):
+            return frame
+
+    class FakeNp:
+        uint8 = "uint8"
+        float32 = "float32"
+
+        def zeros(self, shape, dtype=None):
+            return FakeFrame(shape, dtype=dtype)
+
+        def expand_dims(self, value, axis=0):
+            return value
+
+        def clip(self, value, _min, _max):
+            return value
+
+    class FakeFrame:
+        def __init__(self, shape=(480, 640, 3), dtype="uint8"):
+            self.shape = shape
+            self.dtype = dtype
+
+        def astype(self, _dtype):
+            return self
+
+        def __setitem__(self, _key, _value):
+            return None
+
+    pose_runtime = MoveNetRuntime(
+        config=enabled_config(str(model_path)),
+        interpreter_factory=lambda _model_path: FakeInterpreter(),
+        cv2_module=FakeCv2(),
+        numpy_module=FakeNp(),
+    )
+
+    result = pose_runtime.analyze_frame(FakeFrame())
+
+    assert result["schema_version"] == 1
+    assert result["coordinate_space"] == "image_pixels"
+    assert result["model"]["backend"] == "movenet"
+    assert result["model"]["name"] == "thunder"
+    assert result["frame"] == {"width": 640, "height": 480}
+    assert len(result["keypoints"]) == 17
+
+
 def test_runtime_reports_dependency_unavailable(tmp_path, monkeypatch):
     model_path = tmp_path / "model.tflite"
     model_path.write_bytes(b"fake")

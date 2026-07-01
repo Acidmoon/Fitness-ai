@@ -18,7 +18,12 @@ import numpy as np
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from app.services.pose_backends.protocol import PoseAnalysisBackend
+from app.services.pose_backends.protocol import (
+    POSE_KEYPOINT_COORDINATE_SPACE,
+    POSE_KEYPOINT_SCHEMA_VERSION,
+    PoseAnalysisBackend,
+    normalize_keypoint_result,
+)
 
 # Standard keypoint names from the protocol documentation
 STANDARD_KEYPOINT_NAMES = [
@@ -57,9 +62,23 @@ def keypoint_entry_strategy(draw: st.DrawFn) -> Dict[str, Any]:
 
 @st.composite
 def keypoints_list_strategy(draw: st.DrawFn) -> List[Dict[str, Any]]:
-    """Generate a list of keypoint entries (1 to 17 keypoints)."""
+    """Generate a list of keypoint entries with unique standard names."""
     count = draw(st.integers(min_value=1, max_value=17))
-    keypoints = [draw(keypoint_entry_strategy()) for _ in range(count)]
+    names = draw(
+        st.lists(
+            st.sampled_from(STANDARD_KEYPOINT_NAMES),
+            min_size=count,
+            max_size=count,
+            unique=True,
+        )
+    )
+    keypoints = [
+        {
+            **draw(keypoint_entry_strategy()),
+            "name": name,
+        }
+        for name in names
+    ]
     return keypoints
 
 
@@ -73,7 +92,7 @@ def model_metadata_strategy(draw: st.DrawFn) -> Dict[str, Any]:
             max_size=30,
         )
     )
-    model = {"name": name}
+    model = {"backend": "mock", "name": name}
     # Optionally add extra fields like input_size
     if draw(st.booleans()):
         model["input_size"] = draw(st.integers(min_value=64, max_value=512))
@@ -85,7 +104,12 @@ def keypoint_result_strategy(draw: st.DrawFn) -> Dict[str, Any]:
     """Generate a valid KeypointResult dictionary."""
     model = draw(model_metadata_strategy())
     keypoints = draw(keypoints_list_strategy())
-    return {"model": model, "keypoints": keypoints}
+    return {
+        "schema_version": POSE_KEYPOINT_SCHEMA_VERSION,
+        "model": model,
+        "coordinate_space": POSE_KEYPOINT_COORDINATE_SPACE,
+        "keypoints": keypoints,
+    }
 
 
 @st.composite
@@ -121,7 +145,12 @@ class MockPoseAnalysisBackend:
         return True
 
     def analyze_frame(self, frame_bgr: Any) -> Dict[str, Any]:
-        return self._result_data
+        return normalize_keypoint_result(
+            self._result_data,
+            backend_name=self.backend_name,
+            frame_width=frame_bgr.shape[1],
+            frame_height=frame_bgr.shape[0],
+        )
 
 
 # --- Property Test ---
@@ -162,11 +191,14 @@ def test_keypoint_result_structure_invariant(
 
     # Result must be a dictionary
     assert isinstance(result, dict), "Result must be a dictionary"
+    assert result["schema_version"] == POSE_KEYPOINT_SCHEMA_VERSION
+    assert result["coordinate_space"] == POSE_KEYPOINT_COORDINATE_SPACE
 
     # Must have 'model' key with a dict value
     assert "model" in result, "Result must contain 'model' key"
     model = result["model"]
     assert isinstance(model, dict), "'model' must be a dictionary"
+    assert model["backend"] == "mock"
 
     # Model must have 'name' field of type str
     assert "name" in model, "'model' must contain 'name' key"
@@ -176,6 +208,7 @@ def test_keypoint_result_structure_invariant(
     assert "keypoints" in result, "Result must contain 'keypoints' key"
     keypoints = result["keypoints"]
     assert isinstance(keypoints, list), "'keypoints' must be a list"
+    assert result["frame"] == {"width": width, "height": height}
 
     # Each keypoint entry must have name (str), x (float), y (float), score (float)
     for i, kp in enumerate(keypoints):

@@ -11,6 +11,7 @@ from app.services.pose_analysis_runtime import (
 )
 from app.services.pose_backends import registry
 from app.services.pose_backends.protocol import PoseAnalysisBackend
+from app.services.pose_keypoint_result import normalize_keypoint_result
 
 POSE_ANALYSIS_SCHEMA_VERSION = 1
 MAX_STORED_SAMPLE_FRAMES = 120
@@ -55,7 +56,17 @@ def analyze_video_file(
                 break
 
             if frame_index % sample_interval == 0:
-                frame_result = pose_backend.analyze_frame(frame)
+                timestamp_ms = int((frame_index / source_fps) * 1000)
+                try:
+                    frame_result = normalize_keypoint_result(
+                        pose_backend.analyze_frame(frame),
+                        backend_name=pose_backend.backend_name,
+                        timestamp_ms=timestamp_ms,
+                    )
+                except ValueError as exc:
+                    raise PoseAnalysisInferenceError(
+                        "Pose backend returned invalid keypoint result"
+                    ) from exc
                 model_metadata = frame_result.get("model") or model_metadata
                 keypoints = frame_result.get("keypoints", [])
                 confidence_values.extend(
@@ -64,7 +75,9 @@ def analyze_video_file(
                 frames.append(
                     {
                         "frame_index": frame_index,
-                        "timestamp_ms": int((frame_index / source_fps) * 1000),
+                        "timestamp_ms": timestamp_ms,
+                        "coordinate_space": frame_result["coordinate_space"],
+                        "frame": frame_result["frame"],
                         "keypoints": keypoints,
                     }
                 )

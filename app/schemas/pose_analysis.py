@@ -9,6 +9,7 @@ class PoseAnalysisTriggerRequest(BaseModel):
 
 
 class PoseAnalysisModelMetadata(BaseModel):
+    backend: Optional[str] = None
     name: Optional[str] = None
     input_size: Optional[int] = None
 
@@ -26,6 +27,8 @@ class PoseAnalysisSummary(BaseModel):
 class PoseAnalysisFrame(BaseModel):
     frame_index: int
     timestamp_ms: int
+    coordinate_space: Optional[str] = None
+    frame: Optional[Dict[str, Any]] = None
     keypoints: List[Dict[str, Any]]
 
 

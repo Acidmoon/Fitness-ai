@@ -6,26 +6,12 @@ from threading import RLock
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.config import settings
+from app.services.pose_keypoint_result import (
+    STANDARD_KEYPOINT_NAMES,
+    normalize_keypoint_result,
+)
 
-KEYPOINT_NAMES = [
-    "nose",
-    "left_eye",
-    "right_eye",
-    "left_ear",
-    "right_ear",
-    "left_shoulder",
-    "right_shoulder",
-    "left_elbow",
-    "right_elbow",
-    "left_wrist",
-    "right_wrist",
-    "left_hip",
-    "right_hip",
-    "left_knee",
-    "right_knee",
-    "left_ankle",
-    "right_ankle",
-]
+KEYPOINT_NAMES = list(STANDARD_KEYPOINT_NAMES)
 
 
 class PoseAnalysisRuntimeError(Exception):
@@ -178,8 +164,9 @@ class MoveNetRuntime:
                     self._output_details[0]["index"]
                 )
 
-            return {
+            raw_result = {
                 "model": {
+                    "backend": "movenet",
                     "name": self.config.model_variant,
                     "input_size": self._input_size,
                 },
@@ -194,6 +181,14 @@ class MoveNetRuntime:
                     frame_height=frame_height,
                 ),
             }
+            normalized_result = normalize_keypoint_result(
+                raw_result,
+                backend_name="movenet",
+                frame_width=frame_width,
+                frame_height=frame_height,
+            )
+            normalized_result["confidence_threshold"] = self.config.min_confidence
+            return normalized_result
         except PoseAnalysisRuntimeError:
             raise
         except Exception as exc:
