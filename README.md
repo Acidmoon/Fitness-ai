@@ -1,44 +1,49 @@
- # Fitness AI
+# Fitness AI
 
-校园健康体适能检测与管理系统。项目包含 FastAPI 后端、React Web 前端和 Android 客户端，围绕训练记录、数据统计、视频上传、姿态分析和动作评分构建一套体适能 AI 服务平台。
+“体适能 AI 管家”是一个面向大学生创新训练项目的校园健康体适能检测与管理原型系统。
 
-## 功能概览
+项目围绕手机视频、训练记录和 AI 姿态分析，提供训练记录、视频管理、动作评分和数据统计能力。
 
-- **后端**：用户认证、用户资料、运动记录 CRUD、统计分析、视频管理、MoveNet 姿态分析、规则化动作评分
-- **Web 前端**：登录注册、仪表盘、训练记录、记录详情、统计、视频中心、个人资料
-- **Android 客户端**：完整 MVVM 架构，AppContainer 单例 DI，运行时 BaseUrl 热切换、401 自动跳登录、全局 Snackbar、Material3 下拉刷新、NavHost 转场动画、Light/Dark 主题持久化、训练列表筛选排序、统计周期切换、姿态分析面板、设置/关于/个人中心
+## 项目目标
+
+- 用普通手机完成基础体适能动作采集。
+- 用计算机视觉提取姿态关键点。
+- 用规则化算法评估动作质量并生成反馈。
+- 用训练记录和统计数据辅助学生了解长期变化。
+- 后续逐步接入可穿戴数据和个性化建议。
+
+## 当前功能
+
+- 用户注册、登录和个人资料管理。
+- 训练动作目录和训练记录管理。
+- 训练统计、周报和个人最佳记录。
+- 视频上传、删除和认证访问。
+- MoveNet 姿态分析。
+- 动作评分与反馈。
+- React Web 前端和 Android 客户端原型。
 
 ## 技术栈
 
-| 模块 | 技术 |
-|------|------|
-| 后端 | Python 3.13、FastAPI、Uvicorn、Pydantic v2、SQLAlchemy 2、PostgreSQL |
-| 认证 | bcrypt 密码哈希、JWT Bearer Token |
-| AI/视频 | MoveNet 姿态运行时、OpenCV/TFLite（可选） |
-| Web | React 19、TypeScript、Vite、React Router、TanStack Query |
-| Android | Kotlin、Jetpack Compose (BOM 2024.12)、Material3、Retrofit/OkHttp、CameraX、Media3、DataStore |
-| 测试 | pytest、Vitest、JUnit 4、MockWebServer |
+- 后端：FastAPI、SQLAlchemy、PostgreSQL。
+- AI/视频：MoveNet、OpenCV/TFLite。
+- Web：React、TypeScript、Vite。
+- Android：Kotlin、Jetpack Compose、CameraX。
+- 测试：pytest、Vitest、JUnit。
 
 ## 项目结构
 
 ```text
 .
-├── app/                         # FastAPI 后端
-│   ├── api/                     # 路由模块
-│   ├── middleware/              # 请求日志中间件
-│   ├── models/                  # SQLAlchemy 模型
-│   ├── schemas/                 # Pydantic 模式
-│   ├── services/                # 姿态分析与评分服务
-│   └── utils/                   # 安全、清洗、视频存储工具
-├── tests/                       # 后端 pytest 测试
-├── scripts/                     # 数据库初始化、种子数据、OpenAPI 导出
-├── Fitness-ai-frontend/         # Vite + React Web 应用
-├── Fitness-ai-android/          # Android Kotlin + Compose 应用
-├── requirements.txt             # 后端依赖
-└── pytest.ini
+├── app/                  # FastAPI 后端
+├── tests/                # 后端测试
+├── scripts/              # 初始化和辅助脚本
+├── Fitness-ai-frontend/  # React Web 前端
+├── Fitness-ai-android/   # Android 客户端
+├── DEV/                  # 本地开发文档
+└── requirements.txt      # 后端依赖
 ```
 
-## 快速开始
+## 快速启动
 
 ### 后端
 
@@ -47,17 +52,12 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 copy .env.example .env
-# 编辑 .env 填入数据库连接和 SECRET_KEY
 python -m scripts.init_db
 python -m scripts.seed_data
 uvicorn app.main:app --reload
 ```
 
-常用地址：
-
-- API：`http://127.0.0.1:8000`
-- Swagger UI：`http://127.0.0.1:8000/docs`
-- ReDoc：`http://127.0.0.1:8000/redoc`
+接口文档地址：`http://127.0.0.1:8000/docs`
 
 ### Web 前端
 
@@ -75,135 +75,35 @@ cd Fitness-ai-android
 .\gradlew.bat assembleDebug
 ```
 
-默认连接 `http://10.0.2.2:8000/`（模拟器 → 宿主机）。物理设备使用局域网 IP：
+Android 模拟器默认连接：`http://10.0.2.2:8000/`。
 
-```powershell
-.\gradlew.bat assembleDebug -PFITNESS_AI_BACKEND_BASE_URL=http://192.168.x.x:8000/
-```
-
-生产 APK 连接 `https://api-fitness.waterhill.cyou/`（已在 `gradle.properties` 配置）：
-
-```powershell
-.\gradlew.bat clean assembleRelease
-```
-
-## 环境变量
-
-### 后端 `.env`
-
-```env
-ENVIRONMENT=development
-DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<database>
-SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
-VIDEO_STORAGE_BACKEND=local
-VIDEO_UPLOAD_DIR=uploads/videos
-MOVENET_ENABLED=false
-```
-
-### Web `.env`
-
-```env
-VITE_API_BASE_URL=http://localhost:8000
-```
-
-## API 概览
-
-所有受保护端点使用 `Authorization: Bearer <access_token>`。
-
-| 模块 | 前缀 | 功能 |
-|------|------|------|
-| Auth | `/api/auth` | 注册、登录 |
-| User | `/api/user` | 资料、密码修改、账号删除 |
-| Exercise | `/api/exercise` | 动作目录、训练记录 CRUD |
-| Stats | `/api/stats` | 汇总统计、周报、个人最佳 |
-| Video | `/api/video` | 视频上传、删除、流式获取 |
-| AI | `/api/ai` | 姿态分析、动作评分 |
-
-## 视频与姿态分析
-
-视频通过后端 API 访问，不直接暴露 `uploads/videos` 目录。后端验证 Bearer Token 和记录归属后返回视频内容。
-
-MoveNet 默认关闭，核心 API 可在无 ML 依赖的情况下运行：
-
-```env
-MOVENET_ENABLED=false
-MOVENET_MODEL_PATH=
-MOVENET_MODEL_VARIANT=thunder
-```
-
-可选运行时依赖见 `requirements-movenet.example.txt`。
-
-## 运行测试
+## 常用测试
 
 ```powershell
 # 后端
 .\venv\Scripts\python.exe -m pytest -q
 
 # Web
-cd Fitness-ai-frontend && npm run test
+cd Fitness-ai-frontend
+npm run test
 
 # Android
-cd Fitness-ai-android && .\gradlew.bat testDebugUnitTest
+cd Fitness-ai-android
+.\gradlew.bat testDebugUnitTest
 ```
 
-## 开发规范
+## 开发说明
 
-- 不提交 `.env`、`venv/`、`logs/`、`uploads/`、`node_modules/`、`build/` 等本地产物
-- 后端 Schema 变更需同步更新 Web OpenAPI 类型（`npm run generate:api`）
-- 新增受保护端点必须使用现有 Bearer Token 依赖和归属检查
-- 视频存储行为必须保持认证访问，不绕过 `/api/video`
-- Android Mock 模式已移除，所有 API 调用通过 ApiClientHolder
-- 新增页面使用全局 SnackbarController 派发消息
+- 不提交 `.env`、`venv/`、`logs/`、`uploads/`、`node_modules/`、`build/` 等本地产物。
+- 受保护接口使用 Bearer Token。
+- 训练记录、视频和 AI 分析接口需要校验用户归属。
+- 视频文件通过 `/api/video` 认证访问。
+- `DEV/` 下的长期规划和本地开发文档默认不跟踪。
 
-## 部署说明
+## 下一阶段
 
-详细部署流程见 [DEPLOY.md](./DEPLOY.md)。
-
-### 线上环境
-
-| 服务 | 地址 |
-|------|------|
-| 前端 | https://fitness.waterhill.cyou |
-| 后端 API | https://api-fitness.waterhill.cyou |
-| 健康检查 | https://api-fitness.waterhill.cyou/health |
-
-### 一键更新（SSH 到服务器后）
-
-```bash
-cd /path/to/Fitness-ai
-./deploy.sh
-```
-
-### 本地开发环境
-
-```env
-# 后端 .env
-ENVIRONMENT=development
-DATABASE_URL=postgresql://<user>:<password>@localhost:5432/fitness_ai
-SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
-
-# Web .env
-VITE_API_BASE_URL=http://localhost:8000
-```
-
-### 生产环境
-
-使用 `.env.production`（基于 `.env.production.example` 创建）：
-
-```env
-ENVIRONMENT=production
-DATABASE_URL=postgresql://fitness:<password>@db:5432/fitness_ai
-SECRET_KEY=<随机生成>
-ALLOWED_ORIGINS=https://fitness.waterhill.cyou
-```
-
-生产要求：
-
-- 使用随机 `SECRET_KEY`
-- `ALLOWED_ORIGINS` 设为精确前端域名
-- 公网使用 HTTPS（已配置，证书到期 2026-08-18）
-- Docker Compose 编排三个服务（db + backend + frontend）
+- 完成俯卧撑 AI 检测闭环。
+- 扩展深蹲动作评分。
+- 增加个性化训练建议。
+- 接入 Health Connect 或其他可穿戴健康数据。
+- 建立样本视频、人工标注和算法评估材料。
