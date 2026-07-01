@@ -3,7 +3,7 @@
 import os
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from app.utils.video_files import (
 
 ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+DeleteVideoFile = Callable[[Optional[str]], str]
 
 
 class VideoUploadError(Exception):
@@ -65,6 +66,9 @@ def upload_record_video(
     upload_file,
     keep_video: bool,
     db: Session,
+    *,
+    max_file_size: int = MAX_FILE_SIZE,
+    delete_file: DeleteVideoFile = delete_video_file,
 ) -> VideoUploadResult:
     """Handle video upload for an exercise record.
 
@@ -90,13 +94,13 @@ def upload_record_video(
     file_size = 0
 
     try:
-        file_size = stream_upload_to_path(upload_file, file_path, MAX_FILE_SIZE)
+        file_size = stream_upload_to_path(upload_file, file_path, max_file_size)
 
         if keep_video:
             record.video_url = build_video_url(unique_filename)
         else:
             video_deleted = True
-            delete_video_file(build_video_url(unique_filename))
+            delete_file(build_video_url(unique_filename))
             record.video_url = previous_video_url
 
         db.commit()
@@ -109,12 +113,12 @@ def upload_record_video(
         raise
     except Exception:
         db.rollback()
-        delete_video_file(build_video_url(unique_filename))
+        delete_file(build_video_url(unique_filename))
         raise
 
     if should_replace_previous_video and previous_video_url != record.video_url:
         try:
-            delete_video_file(previous_video_url)
+            delete_file(previous_video_url)
         except OSError as exc:
             logger.warning(
                 "Failed to delete replaced video file for record {}: {}",
@@ -131,13 +135,18 @@ def upload_record_video(
     )
 
 
-def delete_record_video(record: ExerciseRecord, db: Session) -> None:
+def delete_record_video(
+    record: ExerciseRecord,
+    db: Session,
+    *,
+    delete_file: DeleteVideoFile = delete_video_file,
+) -> None:
     """Delete the video associated with an exercise record."""
     if not record.video_url:
         raise VideoNotFoundError("该记录没有关联视频")
 
     try:
-        delete_video_file(record.video_url)
+        delete_file(record.video_url)
     except OSError:
         raise VideoUploadError("视频文件删除失败", status_code=500)
 

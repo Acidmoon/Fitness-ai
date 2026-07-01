@@ -10,6 +10,7 @@ from app.repositories import (
     get_owned_record_or_404,
 )
 from app.services.video_service import (
+    MAX_FILE_SIZE,
     VideoAccessDeniedError,
     VideoNotFoundError,
     VideoUploadError,
@@ -18,11 +19,26 @@ from app.services.video_service import (
     upload_record_video,
 )
 from app.utils.security import get_current_user
-from app.utils.video_files import ensure_upload_dir
+from app.utils.video_files import delete_video_file, ensure_upload_dir
 
 router = APIRouter()
 
 ensure_upload_dir()
+
+
+def _get_video_record_or_404(
+    record_id: int,
+    current_user: User,
+    repo: ExerciseRecordRepository,
+    db: Session,
+):
+    if not hasattr(repo, "get_owned_record"):
+        repo = ExerciseRecordRepository(db)
+
+    record = repo.get_owned_record(record_id, current_user.id)
+    if not record:
+        raise HTTPException(status_code=404, detail="运动记录不存在")
+    return record
 
 
 @router.post("/records/{record_id}/video")
@@ -35,10 +51,17 @@ def upload_video(
     repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
     """上传运动记录视频"""
-    record = get_owned_record_or_404(repo, record_id, current_user.id)
+    record = _get_video_record_or_404(record_id, current_user, repo, db)
 
     try:
-        result = upload_record_video(record, video, keep_video, db)
+        result = upload_record_video(
+            record,
+            video,
+            keep_video,
+            db,
+            max_file_size=MAX_FILE_SIZE,
+            delete_file=delete_video_file,
+        )
     except VideoUploadError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
@@ -59,10 +82,10 @@ def delete_video(
     repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
     """删除运动记录关联视频"""
-    record = get_owned_record_or_404(repo, record_id, current_user.id)
+    record = _get_video_record_or_404(record_id, current_user, repo, db)
 
     try:
-        delete_record_video(record, db)
+        delete_record_video(record, db, delete_file=delete_video_file)
     except VideoNotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message)
     except VideoUploadError as exc:
