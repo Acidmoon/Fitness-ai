@@ -9,6 +9,8 @@ from app.services.exercise_pose_scoring import (
     PoseScoringUnavailableError,
     calculate_joint_angle,
     extract_movement_phases,
+    extract_phase_summary,
+    find_scoring_rule,
     keypoints_have_confidence,
     score_record_pose,
 )
@@ -168,6 +170,30 @@ class TestPoseMetricHelpers:
         assert summary.min_angle == 100
         assert summary.max_angle == 168
 
+    def test_extract_pushup_phase_summary_returns_full_phase_cycle(self):
+        exercise = Exercise(name="标准俯卧撑", category="上肢")
+        rule = find_scoring_rule(exercise)
+        samples = [
+            AngleSample(0, 0, 162, 0.9),
+            AngleSample(1, 200, 132, 0.9),
+            AngleSample(2, 400, 86, 0.9),
+            AngleSample(3, 600, 118, 0.9),
+            AngleSample(4, 800, 164, 0.9),
+        ]
+
+        assert rule is not None
+        summary = extract_phase_summary(samples, rule)
+
+        assert summary.repetitions == 1
+        assert [phase["phase"] for phase in summary.phases] == [
+            "ready",
+            "down",
+            "bottom",
+            "up",
+            "complete",
+        ]
+        assert summary.repetition_details[0]["bottom_frame_index"] == 2
+
 
 class TestPoseScoringRules:
     def test_scores_supported_lower_body_exercise(self, db_session, test_user):
@@ -198,6 +224,14 @@ class TestPoseScoringRules:
         assert result["status"] == "scored"
         assert result["exercise_type"] == "push_up"
         assert result["count"] == 1
+        assert [phase["phase"] for phase in result["metrics"]["phases"]] == [
+            "ready",
+            "down",
+            "bottom",
+            "up",
+            "complete",
+        ]
+        assert result["metrics"]["repetitions"][0]["bottom_angle"] == 85.0
 
     def test_unsupported_exercise_returns_status(self, db_session, test_user):
         record = create_record(
@@ -271,6 +305,41 @@ class TestPoseScoringApi:
         db_session.refresh(record)
         assert record.score == 100
         assert record.count == 2
+        assert "动作轨迹完整" in record.feedback
+
+    def test_apply_pushup_phase_scoring_updates_record(
+        self, client, db_session, test_user
+    ):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="标准俯卧撑",
+            keypoints_data=make_pose_analysis(
+                [162, 132, 86, 118, 164], exercise_type="push_up"
+            ),
+        )
+
+        response = client.post(
+            f"/api/ai/records/{record.id}/pose-scoring",
+            headers=auth_headers(test_user),
+            json={"apply": True},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["applied"] is True
+        assert data["count"] == 1
+        assert [phase["phase"] for phase in data["metrics"]["phases"]] == [
+            "ready",
+            "down",
+            "bottom",
+            "up",
+            "complete",
+        ]
+
+        db_session.refresh(record)
+        assert record.count == 1
+        assert record.score == 100
         assert "动作轨迹完整" in record.feedback
 
     def test_scoring_requires_pose_analysis(self, client, db_session, test_user):

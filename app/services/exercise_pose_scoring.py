@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from app.models.exercise import Exercise, ExerciseRecord
+from app.services.pushup_phase_detection import detect_pushup_phases
 from app.services.video_pose_analysis import POSE_ANALYSIS_SCHEMA_VERSION
 
 
@@ -60,6 +61,7 @@ class PhaseSummary:
     max_angle: float
     angle_range: float
     average_confidence: float
+    repetition_details: List[Dict[str, Any]] = field(default_factory=list)
 
 
 DEFAULT_RULES = [
@@ -134,11 +136,7 @@ def score_record_pose(record: ExerciseRecord) -> Dict[str, Any]:
     if len(angle_samples) < rule.min_valid_frames:
         raise PoseScoringUnavailableError("关键点置信度不足，无法生成可靠评分")
 
-    phase_summary = extract_movement_phases(
-        angle_samples,
-        down_angle=rule.down_angle,
-        up_angle=rule.up_angle,
-    )
+    phase_summary = extract_phase_summary(angle_samples, rule)
     score, feedback = score_phase_summary(phase_summary, rule)
 
     return {
@@ -155,6 +153,7 @@ def score_record_pose(record: ExerciseRecord) -> Dict[str, Any]:
             "max_angle": round(phase_summary.max_angle, 2),
             "angle_range": round(phase_summary.angle_range, 2),
             "phases": phase_summary.phases,
+            "repetitions": phase_summary.repetition_details or [],
         },
     }
 
@@ -301,6 +300,37 @@ def extract_movement_phases(
         max_angle=max_angle,
         angle_range=max_angle - min_angle,
         average_confidence=sum(confidences) / len(confidences),
+        repetition_details=[],
+    )
+
+
+def extract_phase_summary(
+    angle_samples: Sequence[AngleSample], rule: ScoringRule
+) -> PhaseSummary:
+    if rule.exercise_type != "push_up":
+        return extract_movement_phases(
+            angle_samples,
+            down_angle=rule.down_angle,
+            up_angle=rule.up_angle,
+        )
+
+    try:
+        pushup_summary = detect_pushup_phases(
+            angle_samples,
+            down_angle=rule.down_angle,
+            up_angle=rule.up_angle,
+        )
+    except ValueError as exc:
+        raise PoseScoringUnavailableError("没有可用的关节角序列") from exc
+
+    return PhaseSummary(
+        repetitions=pushup_summary.repetitions,
+        phases=pushup_summary.phases,
+        min_angle=pushup_summary.min_angle,
+        max_angle=pushup_summary.max_angle,
+        angle_range=pushup_summary.angle_range,
+        average_confidence=pushup_summary.average_confidence,
+        repetition_details=pushup_summary.repetition_details,
     )
 
 
