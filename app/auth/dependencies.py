@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
 
-from app.auth.jwt import JWT_SUB_TYPE_USER_ID, decode_access_token
+from app.auth.jwt import JWT_SUB_TYPE_REFRESH, JWT_SUB_TYPE_USER_ID, decode_access_token
 from app.database import get_db
 from app.models.user import User
 
@@ -29,6 +29,9 @@ def get_current_user(
         if sub is None:
             raise credentials_exception
     except JWTError:
+        raise credentials_exception
+
+    if sub_type == JWT_SUB_TYPE_REFRESH:
         raise credentials_exception
 
     if sub_type == JWT_SUB_TYPE_USER_ID:

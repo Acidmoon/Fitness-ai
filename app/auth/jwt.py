@@ -17,7 +17,6 @@ JWT_SUB_TYPE_REFRESH = "refresh"
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """生成 JWT 访问令牌。"""
     to_encode = data.copy()
-    to_encode.setdefault("sub_type", JWT_SUB_TYPE_USER_ID)
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
