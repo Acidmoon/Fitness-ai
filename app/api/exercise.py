@@ -57,7 +57,7 @@ def create_record(
     return db_record
 
 
-@router.get("/records", response_model=ExerciseRecordPage)
+@router.get("/records", response_model=List[ExerciseRecordResponse])
 def get_user_records(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
@@ -69,7 +69,31 @@ def get_user_records(
     current_user: User = Depends(get_current_user),
     repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
-    """获取用户运动记录（支持日期范围、动作 ID 过滤，带分页信息）。"""
+    """获取用户运动记录（支持日期范围、动作 ID 过滤）。"""
+    records = repo.get_user_records(
+        user_id=current_user.id,
+        start_date=start_date,
+        end_date=end_date,
+        exercise_id=exercise_id,
+        skip=skip,
+        limit=limit,
+    )
+    return records
+
+
+@router.get("/records/page", response_model=ExerciseRecordPage)
+def get_user_records_page(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    exercise_id: Optional[int] = None,
+    skip: int = Query(default=0, ge=0, description="跳过的记录数"),
+    limit: int = Query(
+        default=20, ge=1, le=100, description="返回的记录数，范围 1-100"
+    ),
+    current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
+):
+    """获取用户运动记录分页响应（含总数和分页元数据）。"""
     records = repo.get_user_records(
         user_id=current_user.id,
         start_date=start_date,
