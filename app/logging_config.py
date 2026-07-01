@@ -18,12 +18,8 @@ def setup_logging():
     # 根据环境选择日志格式
     if settings.LOG_FORMAT == "json":
         # 生产环境：JSON 格式
-        log_format = (
-            '{"timestamp": "{time:YYYY-MM-DDTHH:mm:ss.SSSZ}", '
-            '"level": "{level}", "module": "{module}", '
-            '"function": "{function}", "line": "{line}", '
-            '"message": "{message}"}'
-        )
+        log_format = "{message}"
+        serialize_logs = True
     else:
         # 开发环境：文本格式
         log_format = (
@@ -32,6 +28,7 @@ def setup_logging():
             "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
             "<level>{message}</level>"
         )
+        serialize_logs = False
 
     # 添加控制台处理器
     logger.add(
@@ -39,6 +36,7 @@ def setup_logging():
         format=log_format,
         level=settings.LOG_LEVEL,
         colorize=(settings.LOG_FORMAT != "json"),
+        serialize=serialize_logs,
     )
 
     # 添加文件处理器（带轮转）
@@ -50,6 +48,7 @@ def setup_logging():
         retention=settings.LOG_RETENTION,
         compression="zip",
         encoding="utf-8",
+        serialize=serialize_logs,
     )
 
     logger.info("📝 日志系统初始化完成")
