@@ -86,32 +86,48 @@ def _create_job(
         process_pose_analysis_job,
         job.id,
         sample_fps,
+        db,
     )
     return job
 
 
+def _run_pose_analysis_sync(
+    record: ExerciseRecord,
+    sample_fps: int | None,
+    db: Session,
+) -> Dict[str, Any]:
+    """Run pose analysis immediately and persist the result on the record."""
+    video_path = _check_video_ready(record)
+    try:
+        analysis_result = analyze_video_file(video_path, sample_fps=sample_fps)
+    except (PoseAnalysisDisabledError, PoseAnalysisUnavailableError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except PoseAnalysisInferenceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    record.keypoints_data = analysis_result
+    db.commit()
+    db.refresh(record)
+    return _build_pose_analysis_response(record.id, record.keypoints_data)
+
+
 @router.post(
     "/records/{record_id}/pose-analysis",
-    response_model=PoseAnalysisJobResponse,
+    response_model=PoseAnalysisResponse,
 )
 def trigger_pose_analysis(
     record_id: int,
-    background_tasks: BackgroundTasks,
     request_data: PoseAnalysisTriggerRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
-    """提交姿态分析任务（异步，立即返回 Job 状态）。"""
+    """同步执行姿态分析，并返回分析结果。"""
     record = get_owned_record_or_404(repo, record_id, current_user.id)
-    _check_video_ready(record)
-
-    return _create_job(
-        db=db,
-        record_id=record.id,
-        user_id=current_user.id,
+    return _run_pose_analysis_sync(
+        record=record,
         sample_fps=request_data.sample_fps if request_data else None,
-        background_tasks=background_tasks,
+        db=db,
     )
 
 
@@ -228,10 +244,12 @@ def _build_pose_analysis_response(
 
 
 def process_pose_analysis_job(
-    job_id: int, sample_fps: int | None = None
+    job_id: int, sample_fps: int | None = None, db: Session | None = None
 ) -> None:
     """后台任务：使用独立的数据库会话执行姿态分析。"""
-    db = SessionLocal()
+    owns_session = db is None
+    if db is None:
+        db = SessionLocal()
     try:
         job = db.query(PoseAnalysisJob).filter(PoseAnalysisJob.id == job_id).first()
         if not job:
@@ -282,4 +300,5 @@ def process_pose_analysis_job(
         logger.error(f"Pose analysis job {job_id} session error: {exc}")
         db.rollback()
     finally:
-        db.close()
+        if owns_session:
+            db.close()
