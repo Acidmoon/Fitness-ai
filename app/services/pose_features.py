@@ -28,6 +28,26 @@ class AngleSample:
     confidence: float
 
 
+@dataclass(frozen=True)
+class BodyLineSample:
+    """One frame's body-line deviation from a straight shoulder-hip-ankle chain."""
+
+    frame_index: int
+    timestamp_ms: int
+    deviation: float
+    confidence: float
+
+
+@dataclass(frozen=True)
+class SymmetrySample:
+    """One frame's left-right joint-angle difference for a mirrored movement."""
+
+    frame_index: int
+    timestamp_ms: int
+    difference: float
+    confidence: float
+
+
 def calculate_joint_angle(
     keypoints_by_name: Dict[str, Dict[str, Any]], start: str, middle: str, end: str
 ) -> float:
@@ -52,6 +72,20 @@ def calculate_joint_angle(
         magnitude_a * magnitude_b
     )
     return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+
+
+def average_keypoint_confidence(
+    keypoints_by_name: Dict[str, Dict[str, Any]], keypoint_names: Iterable[str]
+) -> float:
+    scores = [
+        float(keypoints_by_name[name].get("score", 0))
+        for name in keypoint_names
+        if name in keypoints_by_name
+    ]
+    if not scores:
+        raise PoseFeatureError("缺少可用于置信度计算的关键点")
+
+    return sum(scores) / len(scores)
 
 
 def extract_angle_samples(
@@ -90,6 +124,84 @@ def extract_angle_samples(
                     confidence=sum(triplet_confidences) / len(triplet_confidences),
                 )
             )
+
+    return samples
+
+
+def extract_body_line_samples(
+    frames: Sequence[Dict[str, Any]], min_confidence: float
+) -> List[BodyLineSample]:
+    samples: List[BodyLineSample] = []
+    left_chain = ("left_shoulder", "left_hip", "left_ankle")
+    right_chain = ("right_shoulder", "right_hip", "right_ankle")
+
+    for frame in frames:
+        keypoints_by_name = index_keypoints(frame.get("keypoints") or [])
+        deviations: List[float] = []
+        confidences: List[float] = []
+
+        for chain in (left_chain, right_chain):
+            if not keypoints_have_confidence(keypoints_by_name, chain, min_confidence):
+                continue
+
+            angle = calculate_joint_angle(
+                keypoints_by_name, chain[0], chain[1], chain[2]
+            )
+            deviations.append(abs(180.0 - angle))
+            confidences.append(average_keypoint_confidence(keypoints_by_name, chain))
+
+        if deviations:
+            samples.append(
+                BodyLineSample(
+                    frame_index=int(frame.get("frame_index", len(samples))),
+                    timestamp_ms=int(frame.get("timestamp_ms", 0)),
+                    deviation=sum(deviations) / len(deviations),
+                    confidence=sum(confidences) / len(confidences),
+                )
+            )
+
+    return samples
+
+
+def extract_symmetry_samples(
+    frames: Sequence[Dict[str, Any]],
+    left_triplet: JointTriplet,
+    right_triplet: JointTriplet,
+    min_confidence: float,
+) -> List[SymmetrySample]:
+    samples: List[SymmetrySample] = []
+
+    for frame in frames:
+        keypoints_by_name = index_keypoints(frame.get("keypoints") or [])
+        left_names = (left_triplet.start, left_triplet.middle, left_triplet.end)
+        right_names = (right_triplet.start, right_triplet.middle, right_triplet.end)
+        if not keypoints_have_confidence(keypoints_by_name, left_names, min_confidence):
+            continue
+        if not keypoints_have_confidence(keypoints_by_name, right_names, min_confidence):
+            continue
+
+        left_angle = calculate_joint_angle(
+            keypoints_by_name,
+            left_triplet.start,
+            left_triplet.middle,
+            left_triplet.end,
+        )
+        right_angle = calculate_joint_angle(
+            keypoints_by_name,
+            right_triplet.start,
+            right_triplet.middle,
+            right_triplet.end,
+        )
+        samples.append(
+            SymmetrySample(
+                frame_index=int(frame.get("frame_index", len(samples))),
+                timestamp_ms=int(frame.get("timestamp_ms", 0)),
+                difference=abs(left_angle - right_angle),
+                confidence=average_keypoint_confidence(
+                    keypoints_by_name, (*left_names, *right_names)
+                ),
+            )
+        )
 
     return samples
 

@@ -14,12 +14,24 @@ from app.services.exercise_rules.base import extract_threshold_phases
 from app.services import pose_features
 from app.services.pose_features import (
     PoseFeatureError,
+    extract_body_line_samples,
     extract_angle_samples as extract_pose_angle_samples,
+    extract_symmetry_samples,
 )
 from app.services.video_pose_analysis import POSE_ANALYSIS_SCHEMA_VERSION
 
 calculate_joint_angle = pose_features.calculate_joint_angle
 keypoints_have_confidence = pose_features.keypoints_have_confidence
+
+QUALITY_SCORE_VERSION = "standard_quality_v1"
+QUALITY_WEIGHTS = {
+    "joint_angle": 0.25,
+    "body_alignment": 0.20,
+    "movement_range": 0.20,
+    "rhythm_stability": 0.15,
+    "left_right_symmetry": 0.10,
+    "keyframe_confidence": 0.10,
+}
 
 
 class PoseScoringError(Exception):
@@ -55,7 +67,9 @@ def score_pose_data(exercise: Exercise, keypoints_data: Any) -> Dict[str, Any]:
         raise PoseScoringUnavailableError("关键点置信度不足，无法生成可靠评分")
 
     phase_summary = extract_phase_summary(angle_samples, rule)
-    score, feedback = score_phase_summary(phase_summary, rule)
+    quality = build_standard_quality_score(frames, angle_samples, phase_summary, rule)
+    score = quality["score"]
+    feedback = build_standard_quality_feedback(quality)
 
     return {
         "status": "scored",
@@ -77,6 +91,7 @@ def score_pose_data(exercise: Exercise, keypoints_data: Any) -> Dict[str, Any]:
             "invalid_reps": phase_summary.invalid_repetition_details or [],
             "repetitions": phase_summary.repetition_details or [],
             "count_source": phase_summary.count_source,
+            "quality": quality,
         },
     }
 
@@ -124,6 +139,57 @@ def extract_phase_summary(
 def score_phase_summary(
     phase_summary: PhaseSummary, rule: ExerciseRule
 ) -> tuple[float, List[str]]:
+    quality = build_standard_quality_score([], [], phase_summary, rule)
+    return quality["score"], build_standard_quality_feedback(quality)
+
+
+def build_standard_quality_score(
+    frames: Sequence[Dict[str, Any]],
+    angle_samples: Sequence[AngleSample],
+    phase_summary: PhaseSummary,
+    rule: ExerciseRule,
+) -> Dict[str, Any]:
+    """Build the explainable six-dimension standard-quality score."""
+    dimensions = {
+        "joint_angle": _score_joint_angle_dimension(phase_summary, rule),
+        "body_alignment": _score_body_alignment_dimension(frames, rule),
+        "movement_range": _score_movement_range_dimension(phase_summary, rule),
+        "rhythm_stability": _score_rhythm_dimension(phase_summary),
+        "left_right_symmetry": _score_symmetry_dimension(frames, rule),
+        "keyframe_confidence": _score_keyframe_confidence_dimension(phase_summary),
+    }
+    weighted_score = sum(
+        dimensions[name]["score"] * QUALITY_WEIGHTS[name] for name in QUALITY_WEIGHTS
+    )
+
+    if phase_summary.repetitions == 0:
+        weighted_score = min(weighted_score, 70.0)
+
+    return {
+        "version": QUALITY_SCORE_VERSION,
+        "score": round(_clamp_score(weighted_score), 2),
+        "weights": QUALITY_WEIGHTS,
+        "dimensions": dimensions,
+    }
+
+
+def build_standard_quality_feedback(quality: Dict[str, Any]) -> List[str]:
+    feedback: List[str] = []
+    dimensions = quality.get("dimensions") or {}
+    for name in QUALITY_WEIGHTS:
+        dimension = dimensions.get(name) or {}
+        if float(dimension.get("score", 100.0)) < 85.0:
+            feedback.extend(dimension.get("feedback") or [])
+
+    if not feedback:
+        feedback.append("动作轨迹完整，主要关节角度达到当前规则要求")
+
+    return feedback
+
+
+def _score_joint_angle_dimension(
+    phase_summary: PhaseSummary, rule: ExerciseRule
+) -> Dict[str, Any]:
     score = 100.0
     feedback: List[str] = []
 
@@ -141,6 +207,29 @@ def score_phase_summary(
         score -= deduction
         feedback.append("复位不充分，最高点未达到伸展阈值")
 
+    if phase_summary.repetitions == 0:
+        score = min(score, 70.0)
+        feedback.append("未检测到完整的下放-复位动作周期")
+
+    return {
+        "score": round(_clamp_score(score), 2),
+        "metrics": {
+            "min_angle": round(phase_summary.min_angle, 2),
+            "max_angle": round(phase_summary.max_angle, 2),
+            "target_angle": rule.target_angle,
+            "up_angle": rule.up_angle,
+            "valid_repetitions": phase_summary.repetitions,
+        },
+        "feedback": feedback,
+    }
+
+
+def _score_movement_range_dimension(
+    phase_summary: PhaseSummary, rule: ExerciseRule
+) -> Dict[str, Any]:
+    score = 100.0
+    feedback: List[str] = []
+
     if phase_summary.angle_range < rule.min_range:
         deduction = min(
             25.0, (rule.min_range - phase_summary.angle_range) * rule.range_penalty_rate
@@ -148,18 +237,147 @@ def score_phase_summary(
         score -= deduction
         feedback.append("动作行程不足，建议扩大上下阶段差异")
 
+    return {
+        "score": round(_clamp_score(score), 2),
+        "metrics": {
+            "angle_range": round(phase_summary.angle_range, 2),
+            "min_required_range": rule.min_range,
+        },
+        "feedback": feedback,
+    }
+
+
+def _score_body_alignment_dimension(
+    frames: Sequence[Dict[str, Any]], rule: ExerciseRule
+) -> Dict[str, Any]:
+    samples = extract_body_line_samples(frames, min_confidence=rule.min_confidence)
+    if not samples:
+        return _neutral_dimension("缺少肩-髋-踝完整链路，身体直线度暂按中性处理")
+
+    average_deviation = sum(sample.deviation for sample in samples) / len(samples)
+    max_deviation = max(sample.deviation for sample in samples)
+    score = 100.0 - min(45.0, max(0.0, average_deviation - 8.0) * 2.8)
+    feedback = []
+    if score < 85.0:
+        feedback.append("身体直线度不足，肩、髋、踝没有保持稳定直线")
+
+    return {
+        "score": round(_clamp_score(score), 2),
+        "metrics": {
+            "sample_count": len(samples),
+            "average_deviation": round(average_deviation, 2),
+            "max_deviation": round(max_deviation, 2),
+        },
+        "feedback": feedback,
+    }
+
+
+def _score_rhythm_dimension(phase_summary: PhaseSummary) -> Dict[str, Any]:
+    durations = [
+        int(rep["duration_ms"])
+        for rep in phase_summary.repetition_details
+        if rep.get("duration_ms") is not None
+    ]
     if phase_summary.repetitions == 0:
-        score -= rule.no_repetition_penalty
-        feedback.append("未检测到完整的下放-复位动作周期")
+        return {
+            "score": 0.0,
+            "metrics": {"valid_repetitions": 0, "duration_ms": []},
+            "feedback": ["未形成完整动作周期，无法判断节奏稳定性"],
+        }
+    if len(durations) < 2:
+        return _neutral_dimension("有效动作次数不足 2 次，节奏稳定性暂按中性处理")
 
-    if phase_summary.average_confidence < rule.low_confidence_threshold:
-        score -= rule.low_confidence_penalty
-        feedback.append("关键点平均置信度偏低，建议调整拍摄角度和光照")
+    average_duration = sum(durations) / len(durations)
+    variance = sum((duration - average_duration) ** 2 for duration in durations) / len(
+        durations
+    )
+    coefficient_of_variation = (variance**0.5) / average_duration
+    score = 100.0 - min(45.0, coefficient_of_variation * 220.0)
+    feedback = []
+    if score < 85.0:
+        feedback.append("动作节奏波动较大，建议保持每次下放和复位速度一致")
 
-    if not feedback:
-        feedback.append("动作轨迹完整，主要关节角度达到当前规则要求")
+    return {
+        "score": round(_clamp_score(score), 2),
+        "metrics": {
+            "duration_ms": durations,
+            "average_duration_ms": round(average_duration, 2),
+            "coefficient_of_variation": round(coefficient_of_variation, 4),
+        },
+        "feedback": feedback,
+    }
 
-    return round(max(0.0, min(100.0, score)), 2), feedback
+
+def _score_symmetry_dimension(
+    frames: Sequence[Dict[str, Any]], rule: ExerciseRule
+) -> Dict[str, Any]:
+    left_triplet = next(
+        (triplet for triplet in rule.joint_triplets if triplet.middle.startswith("left_")),
+        None,
+    )
+    right_triplet = next(
+        (triplet for triplet in rule.joint_triplets if triplet.middle.startswith("right_")),
+        None,
+    )
+    if left_triplet is None or right_triplet is None:
+        return _neutral_dimension("当前动作缺少可比较的左右关节组合")
+
+    samples = extract_symmetry_samples(
+        frames, left_triplet, right_triplet, min_confidence=rule.min_confidence
+    )
+    if not samples:
+        return _neutral_dimension("缺少左右侧完整关键点，左右对称性暂按中性处理")
+
+    average_difference = sum(sample.difference for sample in samples) / len(samples)
+    max_difference = max(sample.difference for sample in samples)
+    score = 100.0 - min(45.0, max(0.0, average_difference - 6.0) * 2.2)
+    feedback = []
+    if score < 85.0:
+        feedback.append("左右关节角度差异偏大，建议保持两侧发力和动作幅度一致")
+
+    return {
+        "score": round(_clamp_score(score), 2),
+        "metrics": {
+            "sample_count": len(samples),
+            "average_angle_difference": round(average_difference, 2),
+            "max_angle_difference": round(max_difference, 2),
+        },
+        "feedback": feedback,
+    }
+
+
+def _score_keyframe_confidence_dimension(phase_summary: PhaseSummary) -> Dict[str, Any]:
+    keyframe_confidences = [
+        float(rep["average_confidence"])
+        for rep in phase_summary.repetition_details
+        if rep.get("average_confidence") is not None
+    ]
+    confidence = (
+        sum(keyframe_confidences) / len(keyframe_confidences)
+        if keyframe_confidences
+        else phase_summary.average_confidence
+    )
+    score = min(100.0, max(0.0, confidence / 0.85 * 100.0))
+    feedback = []
+    if score < 85.0:
+        feedback.append("关键帧置信度偏低，建议调整拍摄角度、距离和光照")
+
+    return {
+        "score": round(_clamp_score(score), 2),
+        "metrics": {
+            "average_keyframe_confidence": round(confidence, 4),
+            "source": "repetition_keyframes" if keyframe_confidences else "all_valid_frames",
+        },
+        "feedback": feedback,
+    }
+
+
+def _neutral_dimension(reason: str) -> Dict[str, Any]:
+    return {"score": 100.0, "metrics": {"neutral_reason": reason}, "feedback": []}
+
+
+def _clamp_score(value: float) -> float:
+    return max(0.0, min(100.0, value))
 
 
 def _validated_pose_data(keypoints_data: Any) -> Dict[str, Any]:

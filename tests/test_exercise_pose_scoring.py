@@ -80,6 +80,77 @@ def make_frame(index, angle, exercise_type="squat", confidence=0.9):
     }
 
 
+def make_full_body_pushup_frame(
+    index,
+    angle,
+    confidence=0.9,
+    right_angle=None,
+    hip_offset_x=0,
+    timestamp_ms=None,
+):
+    left = make_triplet(
+        "left_shoulder",
+        "left_elbow",
+        "left_wrist",
+        angle,
+        origin_x=100,
+        confidence=confidence,
+    )
+    right = make_triplet(
+        "right_shoulder",
+        "right_elbow",
+        "right_wrist",
+        right_angle if right_angle is not None else angle,
+        origin_x=180,
+        confidence=confidence,
+    )
+    left.extend(
+        [
+            {
+                "name": "left_hip",
+                "x": 100 + hip_offset_x,
+                "y": 100,
+                "score": confidence,
+            },
+            {"name": "left_ankle", "x": 100, "y": 180, "score": confidence},
+        ]
+    )
+    right.extend(
+        [
+            {
+                "name": "right_hip",
+                "x": 180 + hip_offset_x,
+                "y": 100,
+                "score": confidence,
+            },
+            {"name": "right_ankle", "x": 180, "y": 180, "score": confidence},
+        ]
+    )
+    return {
+        "frame_index": index,
+        "timestamp_ms": index * 200 if timestamp_ms is None else timestamp_ms,
+        "keypoints": left + right,
+    }
+
+
+def make_full_body_pushup_analysis(frames):
+    return {
+        "schema_version": 1,
+        "status": "done",
+        "model": {"name": "thunder", "input_size": 256},
+        "summary": {
+            "total_frames": len(frames),
+            "processed_frames": len(frames),
+            "sampled_frames": len(frames),
+            "valid_frame_count": len(frames),
+            "average_confidence": 0.9,
+            "source_fps": 30.0,
+            "sample_fps": 5,
+        },
+        "frames": frames,
+    }
+
+
 def make_triplet(start, middle, end, angle, origin_x=100, confidence=0.9):
     length = 80
     radians = math.radians(angle)
@@ -235,6 +306,59 @@ class TestPoseScoringRules:
         ]
         assert result["metrics"]["valid_reps"][0]["bottom_angle"] == 85.0
         assert result["metrics"]["invalid_reps"] == []
+        assert result["metrics"]["quality"]["version"] == "standard_quality_v1"
+        assert "joint_angle" in result["metrics"]["quality"]["dimensions"]
+
+    def test_standard_quality_penalizes_body_line_and_symmetry(
+        self, db_session, test_user
+    ):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="标准俯卧撑",
+            keypoints_data=make_full_body_pushup_analysis(
+                [
+                    make_full_body_pushup_frame(0, 162, right_angle=135, hip_offset_x=45),
+                    make_full_body_pushup_frame(1, 85, right_angle=120, hip_offset_x=45),
+                    make_full_body_pushup_frame(2, 164, right_angle=138, hip_offset_x=45),
+                ]
+            ),
+        )
+
+        result = score_record_pose(record)
+        quality = result["metrics"]["quality"]
+
+        assert result["score"] < 100
+        assert quality["dimensions"]["body_alignment"]["score"] < 85
+        assert quality["dimensions"]["left_right_symmetry"]["score"] < 85
+        assert "身体直线度不足" in "\n".join(result["feedback"])
+        assert "左右关节角度差异偏大" in "\n".join(result["feedback"])
+
+    def test_standard_quality_penalizes_unstable_rhythm(
+        self, db_session, test_user
+    ):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="标准俯卧撑",
+            keypoints_data=make_full_body_pushup_analysis(
+                [
+                    make_full_body_pushup_frame(0, 162, timestamp_ms=0),
+                    make_full_body_pushup_frame(1, 85, timestamp_ms=200),
+                    make_full_body_pushup_frame(2, 164, timestamp_ms=400),
+                    make_full_body_pushup_frame(3, 84, timestamp_ms=2200),
+                    make_full_body_pushup_frame(4, 166, timestamp_ms=4200),
+                ]
+            ),
+        )
+
+        result = score_record_pose(record)
+
+        assert result["count"] == 2
+        assert result["metrics"]["quality"]["dimensions"]["rhythm_stability"][
+            "score"
+        ] < 85
+        assert "动作节奏波动较大" in "\n".join(result["feedback"])
 
     def test_unsupported_exercise_returns_status(self, db_session, test_user):
         record = create_record(
