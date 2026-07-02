@@ -1,26 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
+
+from app.services.pose_features import AngleSample, JointTriplet
 
 
 class PoseScoringUnavailableError(Exception):
     """Raised when pose data cannot support deterministic scoring."""
-
-
-@dataclass(frozen=True)
-class JointTriplet:
-    start: str
-    middle: str
-    end: str
-
-
-@dataclass(frozen=True)
-class AngleSample:
-    frame_index: int
-    timestamp_ms: int
-    angle: float
-    confidence: float
 
 
 @dataclass(frozen=True)
@@ -171,16 +158,4 @@ def extract_threshold_phases(
         repetition_details=[],
         invalid_repetition_details=[],
         count_source="angle_threshold",
-    )
-
-
-def keypoints_have_confidence(
-    keypoints_by_name: Dict[str, Dict[str, Any]],
-    required_keypoints: Iterable[str],
-    min_confidence: float,
-) -> bool:
-    return all(
-        keypoint_name in keypoints_by_name
-        and float(keypoints_by_name[keypoint_name].get("score", 0)) >= min_confidence
-        for keypoint_name in required_keypoints
     )

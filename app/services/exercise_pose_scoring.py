@@ -1,22 +1,25 @@
 from __future__ import annotations
 
-import math
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.models.exercise import Exercise, ExerciseRecord
 from app.services.exercise_rules import (
     AngleSample,
     ExerciseRule,
-    JointTriplet,
     PhaseSummary,
     PoseScoringUnavailableError,
     find_rule_for_exercise,
 )
-from app.services.exercise_rules.base import (
-    extract_threshold_phases,
-    keypoints_have_confidence,
+from app.services.exercise_rules.base import extract_threshold_phases
+from app.services import pose_features
+from app.services.pose_features import (
+    PoseFeatureError,
+    extract_angle_samples as extract_pose_angle_samples,
 )
 from app.services.video_pose_analysis import POSE_ANALYSIS_SCHEMA_VERSION
+
+calculate_joint_angle = pose_features.calculate_joint_angle
+keypoints_have_confidence = pose_features.keypoints_have_confidence
 
 
 class PoseScoringError(Exception):
@@ -28,6 +31,10 @@ def score_record_pose(record: ExerciseRecord) -> Dict[str, Any]:
     if exercise is None:
         raise PoseScoringUnavailableError("记录缺少动作信息")
 
+    return score_pose_data(exercise, record.keypoints_data)
+
+
+def score_pose_data(exercise: Exercise, keypoints_data: Any) -> Dict[str, Any]:
     rule = find_scoring_rule(exercise)
     if rule is None:
         return {
@@ -41,7 +48,7 @@ def score_record_pose(record: ExerciseRecord) -> Dict[str, Any]:
             "metrics": {},
         }
 
-    pose_data = _validated_pose_data(record.keypoints_data)
+    pose_data = _validated_pose_data(keypoints_data)
     frames = pose_data.get("frames") or []
     angle_samples = extract_angle_samples(frames, rule)
     if len(angle_samples) < rule.min_valid_frames:
@@ -89,68 +96,17 @@ def find_scoring_rule(exercise: Exercise) -> Optional[ScoringRule]:
     return find_rule_for_exercise(exercise)
 
 
-def calculate_joint_angle(
-    keypoints_by_name: Dict[str, Dict[str, Any]], start: str, middle: str, end: str
-) -> float:
-    start_point = keypoints_by_name[start]
-    middle_point = keypoints_by_name[middle]
-    end_point = keypoints_by_name[end]
-
-    vector_a = (
-        float(start_point["x"]) - float(middle_point["x"]),
-        float(start_point["y"]) - float(middle_point["y"]),
-    )
-    vector_b = (
-        float(end_point["x"]) - float(middle_point["x"]),
-        float(end_point["y"]) - float(middle_point["y"]),
-    )
-    magnitude_a = math.hypot(*vector_a)
-    magnitude_b = math.hypot(*vector_b)
-    if magnitude_a == 0 or magnitude_b == 0:
-        raise PoseScoringUnavailableError("关键点坐标重合，无法计算关节角")
-
-    cosine = (vector_a[0] * vector_b[0] + vector_a[1] * vector_b[1]) / (
-        magnitude_a * magnitude_b
-    )
-    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
-
-
 def extract_angle_samples(
     frames: Sequence[Dict[str, Any]], rule: ExerciseRule
 ) -> List[AngleSample]:
-    samples: List[AngleSample] = []
-    for frame in frames:
-        keypoints_by_name = _index_keypoints(frame.get("keypoints") or [])
-        triplet_angles: List[float] = []
-        triplet_confidences: List[float] = []
-
-        for triplet in rule.joint_triplets:
-            triplet_names = (triplet.start, triplet.middle, triplet.end)
-            if not keypoints_have_confidence(
-                keypoints_by_name, triplet_names, rule.min_confidence
-            ):
-                continue
-
-            triplet_angles.append(
-                calculate_joint_angle(
-                    keypoints_by_name, triplet.start, triplet.middle, triplet.end
-                )
-            )
-            triplet_confidences.extend(
-                float(keypoints_by_name[name].get("score", 0)) for name in triplet_names
-            )
-
-        if triplet_angles:
-            samples.append(
-                AngleSample(
-                    frame_index=int(frame.get("frame_index", len(samples))),
-                    timestamp_ms=int(frame.get("timestamp_ms", 0)),
-                    angle=sum(triplet_angles) / len(triplet_angles),
-                    confidence=sum(triplet_confidences) / len(triplet_confidences),
-                )
-            )
-
-    return samples
+    try:
+        return extract_pose_angle_samples(
+            frames,
+            joint_triplets=rule.joint_triplets,
+            min_confidence=rule.min_confidence,
+        )
+    except PoseFeatureError as exc:
+        raise PoseScoringUnavailableError(str(exc)) from exc
 
 
 def extract_movement_phases(
@@ -220,14 +176,6 @@ def _validated_pose_data(keypoints_data: Any) -> Dict[str, Any]:
         raise PoseScoringUnavailableError("姿态分析结果缺少采样帧")
 
     return keypoints_data
-
-
-def _index_keypoints(keypoints: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    return {
-        str(keypoint.get("name")): keypoint
-        for keypoint in keypoints
-        if keypoint.get("name")
-    }
 
 
 ScoringRule = ExerciseRule

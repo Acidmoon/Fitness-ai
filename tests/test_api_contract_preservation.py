@@ -84,9 +84,11 @@ class TestPostPoseAnalysisResponseSchema:
         )
 
         with patch(
-            "app.api.ai.resolve_video_path_from_url", return_value="/fake/test.mp4"
+            "app.services.pose_analysis_service.resolve_video_path_from_url",
+            return_value="/fake/test.mp4",
         ), patch("os.path.exists", return_value=True), patch(
-            "app.api.ai.analyze_video_file", return_value=_sample_analysis_result()
+            "app.services.pose_analysis_service.analyze_video_file",
+            return_value=_sample_analysis_result(),
         ):
             response = client.post(
                 f"/api/ai/records/{record.id}/pose-analysis",
@@ -131,9 +133,10 @@ class TestPostPoseAnalysisResponseSchema:
         result["status"] = "done"
 
         with patch(
-            "app.api.ai.resolve_video_path_from_url", return_value="/fake/test.mp4"
+            "app.services.pose_analysis_service.resolve_video_path_from_url",
+            return_value="/fake/test.mp4",
         ), patch("os.path.exists", return_value=True), patch(
-            "app.api.ai.analyze_video_file", return_value=result
+            "app.services.pose_analysis_service.analyze_video_file", return_value=result
         ):
             response = client.post(
                 f"/api/ai/records/{record.id}/pose-analysis",
@@ -158,9 +161,11 @@ class TestPostPoseAnalysisJobResponseSchema:
         )
 
         with patch(
-            "app.api.ai.resolve_video_path_from_url", return_value="/fake/job.mp4"
+            "app.services.pose_analysis_service.resolve_video_path_from_url",
+            return_value="/fake/job.mp4",
         ), patch("os.path.exists", return_value=True), patch(
-            "app.api.ai.analyze_video_file", return_value=_sample_analysis_result()
+            "app.services.pose_analysis_service.analyze_video_file",
+            return_value=_sample_analysis_result(),
         ):
             response = client.post(
                 f"/api/ai/records/{record.id}/pose-analysis/jobs",
@@ -194,9 +199,11 @@ class TestPostPoseAnalysisJobResponseSchema:
         )
 
         with patch(
-            "app.api.ai.resolve_video_path_from_url", return_value="/fake/job.mp4"
+            "app.services.pose_analysis_service.resolve_video_path_from_url",
+            return_value="/fake/job.mp4",
         ), patch("os.path.exists", return_value=True), patch(
-            "app.api.ai.analyze_video_file", return_value=_sample_analysis_result()
+            "app.services.pose_analysis_service.analyze_video_file",
+            return_value=_sample_analysis_result(),
         ):
             response = client.post(
                 f"/api/ai/records/{record.id}/pose-analysis/jobs",
@@ -409,9 +416,10 @@ class TestHttp503WhenBackendUnavailable:
         )
 
         with patch(
-            "app.api.ai.resolve_video_path_from_url", return_value="/fake/test.mp4"
+            "app.services.pose_analysis_service.resolve_video_path_from_url",
+            return_value="/fake/test.mp4",
         ), patch("os.path.exists", return_value=True), patch(
-            "app.api.ai.analyze_video_file",
+            "app.services.pose_analysis_service.analyze_video_file",
             side_effect=PoseAnalysisDisabledError(
                 "MoveNet pose analysis is disabled"
             ),
@@ -435,9 +443,10 @@ class TestHttp503WhenBackendUnavailable:
         )
 
         with patch(
-            "app.api.ai.resolve_video_path_from_url", return_value="/fake/test.mp4"
+            "app.services.pose_analysis_service.resolve_video_path_from_url",
+            return_value="/fake/test.mp4",
         ), patch("os.path.exists", return_value=True), patch(
-            "app.api.ai.analyze_video_file",
+            "app.services.pose_analysis_service.analyze_video_file",
             side_effect=PoseAnalysisUnavailableError(
                 "Pose analysis backend 'movenet' is not available"
             ),
@@ -462,9 +471,10 @@ class TestHttp503WhenBackendUnavailable:
 
         error_message = "Backend 'custom-backend' is not registered"
         with patch(
-            "app.api.ai.resolve_video_path_from_url", return_value="/fake/test.mp4"
+            "app.services.pose_analysis_service.resolve_video_path_from_url",
+            return_value="/fake/test.mp4",
         ), patch("os.path.exists", return_value=True), patch(
-            "app.api.ai.analyze_video_file",
+            "app.services.pose_analysis_service.analyze_video_file",
             side_effect=PoseAnalysisUnavailableError(error_message),
         ):
             response = client.post(
@@ -491,9 +501,10 @@ class TestHttp503WhenBackendUnavailable:
         )
 
         with patch(
-            "app.api.ai.resolve_video_path_from_url", return_value="/fake/job.mp4"
+            "app.services.pose_analysis_service.resolve_video_path_from_url",
+            return_value="/fake/job.mp4",
         ), patch("os.path.exists", return_value=True), patch(
-            "app.api.ai.analyze_video_file",
+            "app.services.pose_analysis_service.analyze_video_file",
             side_effect=PoseAnalysisUnavailableError("backend unavailable"),
         ):
             response = client.post(

@@ -19,7 +19,7 @@
 - 训练统计、周报和个人最佳记录。
 - 视频上传、删除和认证访问。
 - MoveNet 姿态分析。
-- 动作评分与反馈。
+- 动作阶段识别、自动次数统计、动作评分与反馈。
 - React Web 前端和 Android 客户端原型。
 
 ## 技术栈
@@ -101,10 +101,28 @@ cd Fitness-ai-android
 - `DEV/` 下的长期规划和本地开发文档默认不跟踪。
 - 后续新功能不再使用 OpenSpec；计划和设计说明直接维护在 `README.md`、`AGENTS.md` 或 `DEV/` 下的普通 Markdown 文档中。
 
+## 动作分析模块化架构
+
+后端动作分析按“视频推理、姿态特征、动作规则、次数统计、评分编排”分层，避免新增动作时继续堆叠到单个评分函数中。
+
+```text
+app/api/ai.py
+  -> app/services/pose_analysis_service.py
+  -> app/services/video_pose_analysis.py
+  -> app/services/pose_features.py
+  -> app/services/exercise_rules/<action>.py
+  -> app/services/exercise_rules/repetition_counter.py
+  -> app/services/exercise_pose_scoring.py
+```
+
+新增周期型动作时，优先在 `app/services/exercise_rules/` 下新增独立规则模块，声明动作别名、所需关键点、关节角组合和阈值，再在 `registry.py` 注册规则。可复用 `pose_features.py` 的角度序列抽取和 `repetition_counter.py` 的 `peak -> valley -> peak` 峰谷次数统计；非周期型动作应在规则模块中输出持续时间、稳定性、漂移和失败原因等证据。
+
+评分响应应持续保留 `auto_count`、`count_source`、`metrics.valid_reps`、`metrics.invalid_reps` 和失败原因，确保自动次数、动作阶段和评分反馈都可解释、可测试、可用于后续评估材料。
+
 ## 下一阶段
 
-- 完成俯卧撑 AI 检测闭环。
-- 扩展深蹲动作评分。
+- 完善俯卧撑错误动作识别。
+- 扩展深蹲动作质量检查。
 - 增加个性化训练建议。
 - 接入 Health Connect 或其他可穿戴健康数据。
 - 建立样本视频、人工标注和算法评估材料。

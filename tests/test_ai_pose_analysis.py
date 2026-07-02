@@ -119,7 +119,8 @@ class TestPoseAnalysisApi:
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
-            "app.api.ai.analyze_video_file", return_value=sample_pose_analysis_result()
+            "app.services.pose_analysis_service.analyze_video_file",
+            return_value=sample_pose_analysis_result(),
         ) as analyze_mock:
             response = client.post(
                 f"/api/ai/records/{record.id}/pose-analysis",
@@ -199,7 +200,7 @@ class TestPoseAnalysisApi:
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
-            "app.api.ai.analyze_video_file",
+            "app.services.pose_analysis_service.analyze_video_file",
             side_effect=PoseAnalysisUnavailableError("runtime unavailable"),
         ):
             response = client.post(
@@ -223,7 +224,7 @@ class TestPoseAnalysisApi:
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
-            "app.api.ai.analyze_video_file",
+            "app.services.pose_analysis_service.analyze_video_file",
             side_effect=PoseAnalysisInferenceError("analysis failed"),
         ):
             response = client.post(
@@ -247,7 +248,8 @@ class TestPoseAnalysisApi:
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
-            "app.api.ai.analyze_video_file", return_value=sample_pose_analysis_result()
+            "app.services.pose_analysis_service.analyze_video_file",
+            return_value=sample_pose_analysis_result(),
         ) as analyze_mock:
             response = client.post(
                 f"/api/ai/records/{record.id}/pose-analysis/jobs",
@@ -297,7 +299,7 @@ class TestPoseAnalysisApi:
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
-            "app.api.ai.analyze_video_file",
+            "app.services.pose_analysis_service.analyze_video_file",
             side_effect=PoseAnalysisInferenceError("analysis failed"),
         ):
             response = client.post(
