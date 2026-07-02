@@ -99,6 +99,7 @@ cd Fitness-ai-android
 - 训练记录、视频和 AI 分析接口需要校验用户归属。
 - 视频文件通过 `/api/video` 认证访问。
 - `DEV/` 下的长期规划和本地开发文档默认不跟踪。
+- 后续新功能不再使用 OpenSpec；计划和设计说明直接维护在 `README.md`、`AGENTS.md` 或 `DEV/` 下的普通 Markdown 文档中。
 
 ## 下一阶段
 
