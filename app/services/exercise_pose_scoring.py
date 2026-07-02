@@ -18,6 +18,7 @@ from app.services.pose_features import (
     extract_angle_samples as extract_pose_angle_samples,
     extract_symmetry_samples,
 )
+from app.services.pose_error_detection import detect_pose_errors
 from app.services.video_pose_analysis import POSE_ANALYSIS_SCHEMA_VERSION
 
 calculate_joint_angle = pose_features.calculate_joint_angle
@@ -68,8 +69,12 @@ def score_pose_data(exercise: Exercise, keypoints_data: Any) -> Dict[str, Any]:
 
     phase_summary = extract_phase_summary(angle_samples, rule)
     quality = build_standard_quality_score(frames, angle_samples, phase_summary, rule)
+    errors = detect_pose_errors(frames, angle_samples, phase_summary, rule)
     score = quality["score"]
-    feedback = build_standard_quality_feedback(quality)
+    feedback = _merge_feedback(
+        build_standard_quality_feedback(quality),
+        [error["feedback"] for error in errors],
+    )
 
     return {
         "status": "scored",
@@ -92,6 +97,7 @@ def score_pose_data(exercise: Exercise, keypoints_data: Any) -> Dict[str, Any]:
             "repetitions": phase_summary.repetition_details or [],
             "count_source": phase_summary.count_source,
             "quality": quality,
+            "errors": errors,
         },
     }
 
@@ -185,6 +191,17 @@ def build_standard_quality_feedback(quality: Dict[str, Any]) -> List[str]:
         feedback.append("动作轨迹完整，主要关节角度达到当前规则要求")
 
     return feedback
+
+
+def _merge_feedback(*feedback_groups: Sequence[str]) -> List[str]:
+    merged: List[str] = []
+    seen = set()
+    for group in feedback_groups:
+        for item in group:
+            if item not in seen:
+                merged.append(item)
+                seen.add(item)
+    return merged
 
 
 def _score_joint_angle_dimension(

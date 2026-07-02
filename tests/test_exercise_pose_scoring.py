@@ -86,6 +86,7 @@ def make_full_body_pushup_frame(
     confidence=0.9,
     right_angle=None,
     hip_offset_x=0,
+    elbow_flare=False,
     timestamp_ms=None,
 ):
     left = make_triplet(
@@ -126,6 +127,12 @@ def make_full_body_pushup_frame(
             {"name": "right_ankle", "x": 180, "y": 180, "score": confidence},
         ]
     )
+    if elbow_flare:
+        for keypoint in left + right:
+            if keypoint["name"] == "left_elbow":
+                keypoint["x"] = 40
+            elif keypoint["name"] == "right_elbow":
+                keypoint["x"] = 240
     return {
         "frame_index": index,
         "timestamp_ms": index * 200 if timestamp_ms is None else timestamp_ms,
@@ -134,6 +141,81 @@ def make_full_body_pushup_frame(
 
 
 def make_full_body_pushup_analysis(frames):
+    return {
+        "schema_version": 1,
+        "status": "done",
+        "model": {"name": "thunder", "input_size": 256},
+        "summary": {
+            "total_frames": len(frames),
+            "processed_frames": len(frames),
+            "sampled_frames": len(frames),
+            "valid_frame_count": len(frames),
+            "average_confidence": 0.9,
+            "source_fps": 30.0,
+            "sample_fps": 5,
+        },
+        "frames": frames,
+    }
+
+
+def make_full_body_squat_frame(
+    index,
+    angle,
+    confidence=0.9,
+    knee_valgus=False,
+    forward_lean=False,
+    timestamp_ms=None,
+):
+    left = make_triplet(
+        "left_hip",
+        "left_knee",
+        "left_ankle",
+        angle,
+        origin_x=100,
+        confidence=confidence,
+    )
+    right = make_triplet(
+        "right_hip",
+        "right_knee",
+        "right_ankle",
+        angle,
+        origin_x=180,
+        confidence=confidence,
+    )
+    for keypoint in left + right:
+        if keypoint["name"] == "left_knee" and knee_valgus:
+            keypoint["x"] = 130
+        elif keypoint["name"] == "right_knee" and knee_valgus:
+            keypoint["x"] = 150
+
+    left.extend(
+        [
+            {
+                "name": "left_shoulder",
+                "x": 145 if forward_lean else 100,
+                "y": 20,
+                "score": confidence,
+            },
+        ]
+    )
+    right.extend(
+        [
+            {
+                "name": "right_shoulder",
+                "x": 225 if forward_lean else 180,
+                "y": 20,
+                "score": confidence,
+            },
+        ]
+    )
+    return {
+        "frame_index": index,
+        "timestamp_ms": index * 200 if timestamp_ms is None else timestamp_ms,
+        "keypoints": left + right,
+    }
+
+
+def make_full_body_squat_analysis(frames):
     return {
         "schema_version": 1,
         "status": "done",
@@ -281,6 +363,7 @@ class TestPoseScoringRules:
         assert result["exercise_type"] == "squat"
         assert result["count"] == 2
         assert result["score"] == 100
+        assert result["metrics"]["errors"] == []
 
     def test_scores_supported_upper_body_exercise(self, db_session, test_user):
         record = create_record(
@@ -308,6 +391,7 @@ class TestPoseScoringRules:
         assert result["metrics"]["invalid_reps"] == []
         assert result["metrics"]["quality"]["version"] == "standard_quality_v1"
         assert "joint_angle" in result["metrics"]["quality"]["dimensions"]
+        assert result["metrics"]["errors"] == []
 
     def test_standard_quality_penalizes_body_line_and_symmetry(
         self, db_session, test_user
@@ -359,6 +443,78 @@ class TestPoseScoringRules:
             "score"
         ] < 85
         assert "动作节奏波动较大" in "\n".join(result["feedback"])
+
+    def test_detects_pushup_error_codes(self, db_session, test_user):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="标准俯卧撑",
+            keypoints_data=make_full_body_pushup_analysis(
+                [
+                    make_full_body_pushup_frame(
+                        0,
+                        145,
+                        right_angle=145,
+                        hip_offset_x=45,
+                        elbow_flare=True,
+                    ),
+                    make_full_body_pushup_frame(
+                        1,
+                        118,
+                        right_angle=118,
+                        hip_offset_x=45,
+                        elbow_flare=True,
+                    ),
+                    make_full_body_pushup_frame(
+                        2,
+                        146,
+                        right_angle=146,
+                        hip_offset_x=45,
+                        elbow_flare=True,
+                    ),
+                ]
+            ),
+        )
+
+        result = score_record_pose(record)
+        errors = result["metrics"]["errors"]
+        error_codes = {error["code"] for error in errors}
+
+        assert "push_up_sagging_waist" in error_codes
+        assert "push_up_insufficient_range" in error_codes
+        assert "push_up_elbow_flare" in error_codes
+        assert all(error["evidence"] for error in errors)
+        assert "俯卧撑手肘外展过大" in "\n".join(result["feedback"])
+
+    def test_detects_squat_error_codes(self, db_session, test_user):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="标准深蹲",
+            keypoints_data=make_full_body_squat_analysis(
+                [
+                    make_full_body_squat_frame(
+                        0, 150, knee_valgus=True, forward_lean=True
+                    ),
+                    make_full_body_squat_frame(
+                        1, 130, knee_valgus=True, forward_lean=True
+                    ),
+                    make_full_body_squat_frame(
+                        2, 152, knee_valgus=True, forward_lean=True
+                    ),
+                ]
+            ),
+        )
+
+        result = score_record_pose(record)
+        errors = result["metrics"]["errors"]
+        error_codes = {error["code"] for error in errors}
+
+        assert "squat_knee_valgus" in error_codes
+        assert "squat_insufficient_depth" in error_codes
+        assert "squat_forward_lean" in error_codes
+        assert all(error["evidence"] for error in errors)
+        assert "深蹲膝盖内扣" in "\n".join(result["feedback"])
 
     def test_unsupported_exercise_returns_status(self, db_session, test_user):
         record = create_record(

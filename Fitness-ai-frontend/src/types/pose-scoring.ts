@@ -7,12 +7,23 @@ export interface PoseScoringPhase {
   angle: number;
 }
 
+export type PoseErrorSeverity = "none" | "minor" | "major";
+
+export interface PoseScoringError {
+  code: string;
+  label: string;
+  severity: PoseErrorSeverity;
+  feedback: string;
+  evidence: Record<string, unknown>;
+}
+
 export interface PoseScoringMetrics {
   valid_frames?: number;
   min_angle?: number;
   max_angle?: number;
   angle_range?: number;
   phases?: PoseScoringPhase[];
+  errors?: PoseScoringError[];
   [key: string]: unknown;
 }
 
