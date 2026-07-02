@@ -14,6 +14,8 @@ class PoseScoringResponse(BaseModel):
     exercise_type: Optional[str] = None
     score: Optional[float] = None
     count: Optional[int] = None
+    auto_count: Optional[int] = None
+    count_source: Optional[str] = None
     confidence: Optional[float] = None
     feedback: List[str] = Field(default_factory=list)
     metrics: Dict[str, Any] = Field(default_factory=dict)

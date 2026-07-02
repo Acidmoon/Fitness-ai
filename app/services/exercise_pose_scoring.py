@@ -43,6 +43,8 @@ class ScoringRule:
     no_repetition_penalty: float = 15.0
     low_confidence_penalty: float = 10.0
     low_confidence_threshold: float = 0.55
+    min_rep_duration_ms: int = 250
+    max_rep_duration_ms: int = 8000
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,8 @@ class PhaseSummary:
     angle_range: float
     average_confidence: float
     repetition_details: List[Dict[str, Any]] = field(default_factory=list)
+    invalid_repetition_details: List[Dict[str, Any]] = field(default_factory=list)
+    count_source: str = "angle_threshold"
 
 
 DEFAULT_RULES = [
@@ -145,6 +149,8 @@ def score_record_pose(record: ExerciseRecord) -> Dict[str, Any]:
         "exercise_type": rule.exercise_type,
         "score": score,
         "count": phase_summary.repetitions,
+        "auto_count": phase_summary.repetitions,
+        "count_source": phase_summary.count_source,
         "confidence": round(phase_summary.average_confidence, 4),
         "feedback": feedback,
         "metrics": {
@@ -153,7 +159,10 @@ def score_record_pose(record: ExerciseRecord) -> Dict[str, Any]:
             "max_angle": round(phase_summary.max_angle, 2),
             "angle_range": round(phase_summary.angle_range, 2),
             "phases": phase_summary.phases,
+            "valid_reps": phase_summary.repetition_details or [],
+            "invalid_reps": phase_summary.invalid_repetition_details or [],
             "repetitions": phase_summary.repetition_details or [],
+            "count_source": phase_summary.count_source,
         },
     }
 
@@ -301,6 +310,8 @@ def extract_movement_phases(
         angle_range=max_angle - min_angle,
         average_confidence=sum(confidences) / len(confidences),
         repetition_details=[],
+        invalid_repetition_details=[],
+        count_source="angle_threshold",
     )
 
 
@@ -331,6 +342,8 @@ def extract_phase_summary(
         angle_range=pushup_summary.angle_range,
         average_confidence=pushup_summary.average_confidence,
         repetition_details=pushup_summary.repetition_details,
+        invalid_repetition_details=pushup_summary.invalid_repetition_details,
+        count_source=pushup_summary.count_source,
     )
 
 
@@ -438,5 +451,11 @@ def _rule_with_standard_overrides(
         ),
         low_confidence_threshold=float(
             pose_standard.get("low_confidence_threshold", rule.low_confidence_threshold)
+        ),
+        min_rep_duration_ms=int(
+            pose_standard.get("min_rep_duration_ms", rule.min_rep_duration_ms)
+        ),
+        max_rep_duration_ms=int(
+            pose_standard.get("max_rep_duration_ms", rule.max_rep_duration_ms)
         ),
     )

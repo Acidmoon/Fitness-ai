@@ -224,6 +224,8 @@ class TestPoseScoringRules:
         assert result["status"] == "scored"
         assert result["exercise_type"] == "push_up"
         assert result["count"] == 1
+        assert result["auto_count"] == 1
+        assert result["count_source"] == "angle_peak_valley"
         assert [phase["phase"] for phase in result["metrics"]["phases"]] == [
             "ready",
             "down",
@@ -231,7 +233,8 @@ class TestPoseScoringRules:
             "up",
             "complete",
         ]
-        assert result["metrics"]["repetitions"][0]["bottom_angle"] == 85.0
+        assert result["metrics"]["valid_reps"][0]["bottom_angle"] == 85.0
+        assert result["metrics"]["invalid_reps"] == []
 
     def test_unsupported_exercise_returns_status(self, db_session, test_user):
         record = create_record(
@@ -329,6 +332,8 @@ class TestPoseScoringApi:
         data = response.json()
         assert data["applied"] is True
         assert data["count"] == 1
+        assert data["auto_count"] == 1
+        assert data["count_source"] == "angle_peak_valley"
         assert [phase["phase"] for phase in data["metrics"]["phases"]] == [
             "ready",
             "down",
