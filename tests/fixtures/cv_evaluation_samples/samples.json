@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "fixture_type": "cv_evaluation_samples",
+  "source": "synthetic_keypoints_only",
+  "samples": [
+    {
+      "id": "pushup_standard_1rep",
+      "title": "标准俯卧撑 1 次",
+      "exercise_name": "标准俯卧撑",
+      "synthetic": {
+        "kind": "pushup",
+        "angles": [162, 132, 86, 118, 164],
+        "confidence": 0.9
+      },
+      "expected": {
+        "status": "scored",
+        "exercise_type": "push_up",
+        "count": 1,
+        "invalid_reasons": [],
+        "quality_status": "ok",
+        "representative_errors": []
+      }
+    },
+    {
+      "id": "pushup_insufficient_depth",
+      "title": "深度不足俯卧撑",
+      "exercise_name": "标准俯卧撑",
+      "synthetic": {
+        "kind": "pushup",
+        "angles": [150, 122, 151],
+        "confidence": 0.9,
+        "hip_offset_x": 45,
+        "elbow_flare": true
+      },
+      "expected": {
+        "status": "scored",
+        "exercise_type": "push_up",
+        "count": 0,
+        "invalid_reasons": [],
+        "quality_status": "ok",
+        "representative_errors": [
+          "push_up_insufficient_range",
+          "push_up_sagging_waist",
+          "push_up_elbow_flare"
+        ]
+      }
+    },
+    {
+      "id": "squat_standard_2reps",
+      "title": "标准深蹲 2 次",
+      "exercise_name": "标准深蹲",
+      "synthetic": {
+        "kind": "squat",
+        "angles": [165, 100, 166, 102, 168],
+        "confidence": 0.9
+      },
+      "expected": {
+        "status": "scored",
+        "exercise_type": "squat",
+        "count": 2,
+        "invalid_reasons": [],
+        "quality_status": "ok",
+        "representative_errors": []
+      }
+    },
+    {
+      "id": "squat_insufficient_depth",
+      "title": "深度不足深蹲",
+      "exercise_name": "标准深蹲",
+      "synthetic": {
+        "kind": "squat",
+        "angles": [150, 130, 152],
+        "confidence": 0.9,
+        "knee_valgus": true,
+        "forward_lean": true
+      },
+      "expected": {
+        "status": "scored",
+        "exercise_type": "squat",
+        "count": 0,
+        "invalid_reasons": [],
+        "quality_status": "ok",
+        "representative_errors": [
+          "squat_insufficient_depth",
+          "squat_knee_valgus",
+          "squat_forward_lean"
+        ]
+      }
+    }
+  ]
+}
