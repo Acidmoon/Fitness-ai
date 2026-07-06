@@ -25,6 +25,7 @@ calculate_joint_angle = pose_features.calculate_joint_angle
 keypoints_have_confidence = pose_features.keypoints_have_confidence
 
 QUALITY_SCORE_VERSION = "standard_quality_v1"
+VIDEO_QUALITY_VERSION = "video_quality_v1"
 QUALITY_WEIGHTS = {
     "joint_angle": 0.25,
     "body_alignment": 0.20,
@@ -64,15 +65,19 @@ def score_pose_data(exercise: Exercise, keypoints_data: Any) -> Dict[str, Any]:
     pose_data = _validated_pose_data(keypoints_data)
     frames = pose_data.get("frames") or []
     angle_samples = extract_angle_samples(frames, rule)
+    video_quality = build_video_quality_score(frames, angle_samples, rule)
     if len(angle_samples) < rule.min_valid_frames:
-        raise PoseScoringUnavailableError("关键点置信度不足，无法生成可靠评分")
+        feedback = video_quality.get("feedback") or ["关键点置信度不足，无法生成可靠评分"]
+        raise PoseScoringUnavailableError(feedback[0])
 
     phase_summary = extract_phase_summary(angle_samples, rule)
     quality = build_standard_quality_score(frames, angle_samples, phase_summary, rule)
+    quality["video"] = video_quality
     errors = detect_pose_errors(frames, angle_samples, phase_summary, rule)
     score = quality["score"]
     feedback = _merge_feedback(
         build_standard_quality_feedback(quality),
+        video_quality.get("feedback") or [],
         [error["feedback"] for error in errors],
     )
 
@@ -191,6 +196,72 @@ def build_standard_quality_feedback(quality: Dict[str, Any]) -> List[str]:
         feedback.append("动作轨迹完整，主要关节角度达到当前规则要求")
 
     return feedback
+
+
+def build_video_quality_score(
+    frames: Sequence[Dict[str, Any]],
+    angle_samples: Sequence[AngleSample],
+    rule: ExerciseRule,
+) -> Dict[str, Any]:
+    """Summarize whether sampled video frames can support reliable pose scoring."""
+    total_frames = len(frames)
+    required_keypoints = tuple(rule.required_keypoints)
+    valid_frame_count = len(angle_samples)
+    valid_frame_ratio = (valid_frame_count / total_frames) if total_frames else 0.0
+    average_confidence = (
+        sum(sample.confidence for sample in angle_samples) / valid_frame_count
+        if valid_frame_count
+        else 0.0
+    )
+
+    missing_counts = {name: 0 for name in required_keypoints}
+    for frame in frames:
+        keypoints_by_name = pose_features.index_keypoints(frame.get("keypoints") or [])
+        for name in required_keypoints:
+            if name not in keypoints_by_name:
+                missing_counts[name] += 1
+
+    missing_required_keypoints = [
+        {
+            "name": name,
+            "missing_frames": count,
+            "missing_ratio": round(count / total_frames, 4) if total_frames else 1.0,
+        }
+        for name, count in missing_counts.items()
+        if count > 0
+    ]
+
+    feedback: List[str] = []
+    status = "ok"
+    if total_frames == 0:
+        status = "invalid"
+        feedback.append("视频没有可用的姿态采样帧，请重新上传清晰完整的视频")
+    elif valid_frame_count < rule.min_valid_frames:
+        status = "invalid"
+        feedback.append("有效姿态帧不足，建议保持全身入镜并重新拍摄")
+    else:
+        if valid_frame_ratio < 0.6:
+            status = "warning"
+            feedback.append("部分采样帧无法识别关键点，评分可信度可能下降")
+        if average_confidence < rule.low_confidence_threshold:
+            status = "warning"
+            feedback.append("关键点平均置信度偏低，建议改善光照、距离和拍摄角度")
+        if missing_required_keypoints:
+            status = "warning"
+            feedback.append("部分必需关键点缺失，建议保持目标关节完整入镜")
+
+    return {
+        "version": VIDEO_QUALITY_VERSION,
+        "status": status,
+        "average_keypoint_confidence": round(average_confidence, 4),
+        "valid_frame_ratio": round(valid_frame_ratio, 4),
+        "total_frames": total_frames,
+        "valid_frames": valid_frame_count,
+        "min_required_valid_frames": rule.min_valid_frames,
+        "min_required_confidence": rule.min_confidence,
+        "missing_required_keypoints": missing_required_keypoints,
+        "feedback": feedback,
+    }
 
 
 def _merge_feedback(*feedback_groups: Sequence[str]) -> List[str]:

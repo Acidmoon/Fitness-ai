@@ -363,6 +363,12 @@ class TestPostPoseScoringWithAbstractedBackend:
         assert isinstance(data["feedback"], list)
         assert "metrics" in data
         assert isinstance(data["metrics"], dict)
+        quality = data["metrics"]["quality"]
+        assert "video" in quality
+        assert quality["video"]["status"] in ("ok", "warning", "invalid")
+        assert "average_keypoint_confidence" in quality["video"]
+        assert "valid_frame_ratio" in quality["video"]
+        assert "missing_required_keypoints" in quality["video"]
 
     def test_scoring_response_conforms_to_schema_for_unsupported_exercise(
         self, client, db_session, test_user

@@ -390,8 +390,77 @@ class TestPoseScoringRules:
         assert result["metrics"]["valid_reps"][0]["bottom_angle"] == 85.0
         assert result["metrics"]["invalid_reps"] == []
         assert result["metrics"]["quality"]["version"] == "standard_quality_v1"
+        assert result["metrics"]["quality"]["video"]["status"] == "ok"
+        assert (
+            result["metrics"]["quality"]["video"]["average_keypoint_confidence"]
+            == 0.9
+        )
+        assert result["metrics"]["quality"]["video"]["valid_frame_ratio"] == 1.0
+        assert result["metrics"]["quality"]["video"]["missing_required_keypoints"] == []
         assert "joint_angle" in result["metrics"]["quality"]["dimensions"]
         assert result["metrics"]["errors"] == []
+
+    def test_video_quality_warns_on_low_confidence_frames(
+        self, db_session, test_user
+    ):
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="标准俯卧撑",
+            keypoints_data=make_pose_analysis(
+                [160, 85, 162], "push_up", confidence=0.4
+            ),
+        )
+
+        result = score_record_pose(record)
+        video_quality = result["metrics"]["quality"]["video"]
+
+        assert result["status"] == "scored"
+        assert video_quality["status"] == "warning"
+        assert video_quality["average_keypoint_confidence"] == 0.4
+        assert video_quality["valid_frame_ratio"] == 1.0
+        assert "关键点平均置信度偏低" in "\n".join(result["feedback"])
+
+    def test_video_quality_warns_on_missing_required_keypoints(
+        self, db_session, test_user
+    ):
+        pose_analysis = make_pose_analysis([160, 85, 162], "push_up")
+        del pose_analysis["frames"][1]["keypoints"][0]
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="标准俯卧撑",
+            keypoints_data=pose_analysis,
+        )
+
+        result = score_record_pose(record)
+        video_quality = result["metrics"]["quality"]["video"]
+        missing_names = {
+            keypoint["name"]
+            for keypoint in video_quality["missing_required_keypoints"]
+        }
+
+        assert result["status"] == "scored"
+        assert video_quality["status"] == "warning"
+        assert video_quality["valid_frame_ratio"] == 1.0
+        assert "left_shoulder" in missing_names
+        assert "部分必需关键点缺失" in "\n".join(result["feedback"])
+
+    def test_video_quality_invalid_when_valid_frames_are_insufficient(
+        self, db_session, test_user
+    ):
+        pose_analysis = make_pose_analysis([160, 85, 162], "push_up")
+        for frame in pose_analysis["frames"][1:]:
+            frame["keypoints"] = []
+        record = create_record(
+            db_session,
+            test_user["user"].id,
+            exercise_name="标准俯卧撑",
+            keypoints_data=pose_analysis,
+        )
+
+        with pytest.raises(PoseScoringUnavailableError, match="有效姿态帧不足"):
+            score_record_pose(record)
 
     def test_standard_quality_penalizes_body_line_and_symmetry(
         self, db_session, test_user
