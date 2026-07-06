@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Sequence
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from app.services.exercise_rules import AngleSample, ExerciseRule, PhaseSummary
 from app.services.pose_features import (
@@ -12,6 +13,19 @@ from app.services.pose_features import (
 )
 
 PoseError = Dict[str, Any]
+ErrorDetector = Callable[
+    [Sequence[Dict[str, Any]], PhaseSummary, ExerciseRule], Optional[PoseError]
+]
+
+
+@dataclass(frozen=True)
+class ErrorRuleDefinition:
+    """Discoverable metadata for one deterministic movement-error rule."""
+
+    exercise_type: str
+    code: str
+    label: str
+    detector: ErrorDetector
 
 
 def detect_pose_errors(
@@ -21,68 +35,90 @@ def detect_pose_errors(
     rule: ExerciseRule,
 ) -> List[PoseError]:
     """Return rule-specific movement errors with stable codes and evidence."""
-    if rule.exercise_type == "push_up":
-        return _detect_pushup_errors(frames, phase_summary, rule)
-    if rule.exercise_type == "squat":
-        return _detect_squat_errors(frames, phase_summary, rule)
+    del angle_samples
 
-    return []
+    errors: List[PoseError] = []
+    for error_rule in get_error_rule_definitions(rule.exercise_type):
+        detected = error_rule.detector(frames, phase_summary, rule)
+        if detected:
+            errors.append(detected)
+    return errors
 
 
-def _detect_pushup_errors(
+def get_error_rule_definitions(exercise_type: str) -> List[ErrorRuleDefinition]:
+    """Return registered movement-error rules for an exercise key."""
+    return list(ERROR_RULES_BY_EXERCISE.get(exercise_type, ()))
+
+
+def get_registered_error_codes(exercise_type: str) -> List[str]:
+    """Return stable movement-error codes registered for an exercise key."""
+    return [error_rule.code for error_rule in get_error_rule_definitions(exercise_type)]
+
+
+def _detect_pushup_insufficient_range(
     frames: Sequence[Dict[str, Any]],
     phase_summary: PhaseSummary,
     rule: ExerciseRule,
-) -> List[PoseError]:
-    errors: List[PoseError] = []
-
-    insufficient_range = _build_insufficient_range_error(
+) -> Optional[PoseError]:
+    del frames
+    return _build_insufficient_range_error(
         code="push_up_insufficient_range",
         label="俯卧撑幅度不足",
         feedback="俯卧撑幅度不足，建议下放到更低位置并完成顶部伸展",
         phase_summary=phase_summary,
         rule=rule,
     )
-    if insufficient_range:
-        errors.append(insufficient_range)
-
-    body_line_error = _build_pushup_body_line_error(frames, rule)
-    if body_line_error:
-        errors.append(body_line_error)
-
-    elbow_flare_error = _build_pushup_elbow_flare_error(frames, rule)
-    if elbow_flare_error:
-        errors.append(elbow_flare_error)
-
-    return errors
 
 
-def _detect_squat_errors(
+def _detect_squat_insufficient_depth(
     frames: Sequence[Dict[str, Any]],
     phase_summary: PhaseSummary,
     rule: ExerciseRule,
-) -> List[PoseError]:
-    errors: List[PoseError] = []
-
-    insufficient_depth = _build_insufficient_range_error(
+) -> Optional[PoseError]:
+    del frames
+    return _build_insufficient_range_error(
         code="squat_insufficient_depth",
         label="深蹲蹲深不足",
         feedback="深蹲蹲深不足，建议继续下蹲到目标膝关节角度",
         phase_summary=phase_summary,
         rule=rule,
     )
-    if insufficient_depth:
-        errors.append(insufficient_depth)
 
-    knee_valgus_error = _build_squat_knee_valgus_error(frames, rule)
-    if knee_valgus_error:
-        errors.append(knee_valgus_error)
 
-    forward_lean_error = _build_squat_forward_lean_error(frames, rule)
-    if forward_lean_error:
-        errors.append(forward_lean_error)
+def _detect_pushup_body_line(
+    frames: Sequence[Dict[str, Any]],
+    phase_summary: PhaseSummary,
+    rule: ExerciseRule,
+) -> Optional[PoseError]:
+    del phase_summary
+    return _build_pushup_body_line_error(frames, rule)
 
-    return errors
+
+def _detect_pushup_elbow_flare(
+    frames: Sequence[Dict[str, Any]],
+    phase_summary: PhaseSummary,
+    rule: ExerciseRule,
+) -> Optional[PoseError]:
+    del phase_summary
+    return _build_pushup_elbow_flare_error(frames, rule)
+
+
+def _detect_squat_knee_valgus(
+    frames: Sequence[Dict[str, Any]],
+    phase_summary: PhaseSummary,
+    rule: ExerciseRule,
+) -> Optional[PoseError]:
+    del phase_summary
+    return _build_squat_knee_valgus_error(frames, rule)
+
+
+def _detect_squat_forward_lean(
+    frames: Sequence[Dict[str, Any]],
+    phase_summary: PhaseSummary,
+    rule: ExerciseRule,
+) -> Optional[PoseError]:
+    del phase_summary
+    return _build_squat_forward_lean_error(frames, rule)
 
 
 def _build_insufficient_range_error(
@@ -349,3 +385,51 @@ def _angle_from_vertical(start: Dict[str, float], end: Dict[str, float]) -> floa
     if dx == 0 and dy == 0:
         return 0.0
     return math.degrees(math.atan2(dx, dy))
+
+
+ERROR_RULE_DEFINITIONS: Sequence[ErrorRuleDefinition] = (
+    ErrorRuleDefinition(
+        exercise_type="push_up",
+        code="push_up_insufficient_range",
+        label="俯卧撑幅度不足",
+        detector=_detect_pushup_insufficient_range,
+    ),
+    ErrorRuleDefinition(
+        exercise_type="push_up",
+        code="push_up_sagging_waist",
+        label="俯卧撑塌腰或撅臀",
+        detector=_detect_pushup_body_line,
+    ),
+    ErrorRuleDefinition(
+        exercise_type="push_up",
+        code="push_up_elbow_flare",
+        label="俯卧撑手肘外展过大",
+        detector=_detect_pushup_elbow_flare,
+    ),
+    ErrorRuleDefinition(
+        exercise_type="squat",
+        code="squat_insufficient_depth",
+        label="深蹲蹲深不足",
+        detector=_detect_squat_insufficient_depth,
+    ),
+    ErrorRuleDefinition(
+        exercise_type="squat",
+        code="squat_knee_valgus",
+        label="深蹲膝盖内扣",
+        detector=_detect_squat_knee_valgus,
+    ),
+    ErrorRuleDefinition(
+        exercise_type="squat",
+        code="squat_forward_lean",
+        label="深蹲身体前倾过大",
+        detector=_detect_squat_forward_lean,
+    ),
+)
+
+ERROR_RULES_BY_EXERCISE: Dict[str, Sequence[ErrorRuleDefinition]] = {}
+for definition in ERROR_RULE_DEFINITIONS:
+    ERROR_RULES_BY_EXERCISE.setdefault(definition.exercise_type, tuple())
+    ERROR_RULES_BY_EXERCISE[definition.exercise_type] = (
+        *ERROR_RULES_BY_EXERCISE[definition.exercise_type],
+        definition,
+    )

@@ -22,7 +22,7 @@ Schema 版本：1
 | status | ready |
 | active_task | none |
 | max_tasks_per_run | 1 |
-| latest_run_log | `DEV/loop-runs/2026-07-06-cv-evaluation-fixtures.md` |
+| latest_run_log | `DEV/loop-runs/2026-07-06-cv-error-rule-registry.md` |
 | queue_file | `DEV/LOOP_QUEUE.md` |
 | policy_file | `DEV/CV_LOOP_POLICY.md` |
 
@@ -77,9 +77,9 @@ Schema 版本：1
 
 ## 执行游标
 
-已完成任务：`cv-quality-mvp`、`cv-evaluation-fixtures`。
+已完成任务：`cv-quality-mvp`、`cv-evaluation-fixtures`、`cv-error-rule-registry`。
 
-本次运行完成 CV 评分样例评估 fixtures，并保持每轮最多一个任务。
+本次运行完成错误动作规则注册表，并保持每轮最多一个任务。
 
 ## 状态日志
 
@@ -88,3 +88,4 @@ Schema 版本：1
 | 2026-07-06 | Loop 框架初始化 | 创建持久状态、任务队列、风险策略和运行记录格式。 |
 | 2026-07-06 | 完成 `cv-quality-mvp` | Pose scoring response 新增 `metrics.quality.video` 质量证据和聚焦测试。 |
 | 2026-07-06 | 完成 `cv-evaluation-fixtures` | 新增 synthetic keypoint fixtures、消费测试和 fixture 文档。 |
+| 2026-07-06 | 完成 `cv-error-rule-registry` | 错误动作检测改为显式 registry，新增发现测试和新增规则文档。 |

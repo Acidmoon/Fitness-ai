@@ -149,7 +149,7 @@ notes:
 ```yaml
 id: cv-error-rule-registry
 title: 错误动作规则注册表
-status: pending
+status: done
 risk: low
 priority: P1
 depends_on:
