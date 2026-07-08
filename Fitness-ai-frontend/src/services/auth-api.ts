@@ -3,7 +3,7 @@ import type { components } from "@/api/types";
 import type { LoginFormValues, RegisterFormValues } from "@/types/auth";
 import { setAccessToken, setRefreshToken } from "@/services/auth-storage";
 
-type LoginTokenResponse = components["schemas"]["Token"] & {
+type LoginTokenResponse = components["schemas"]["TokenWithRefresh"] & {
   refresh_token?: string;
 };
 

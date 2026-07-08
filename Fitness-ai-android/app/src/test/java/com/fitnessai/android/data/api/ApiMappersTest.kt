@@ -139,4 +139,50 @@ class ApiMappersTest {
         assertEquals(null, personalBest[1].bestScore)
         assertEquals(0, emptyPersonalBest.size)
     }
+
+    @Test
+    fun mapsExpandedExerciseCatalogFieldsToDomainModel() {
+        val exercise = json.decodeFromString<ExerciseDto>(
+            """
+            {
+              "id": 66,
+              "name": "俯卧撑",
+              "category": "胸部",
+              "description": "保持身体直线完成推起。",
+              "aliases": ["push-up", "push up", "俯卧撑"],
+              "body_part": "chest",
+              "equipment": "body weight",
+              "target": "pectorals",
+              "muscle_group": "chest",
+              "secondary_muscles": ["triceps", "shoulders"],
+              "instructions": { "zh": "保持身体直线完成推起。", "en": "Keep a straight body line." },
+              "instruction_steps": { "zh": ["撑地", "下降", "推起"] },
+              "analysis_supported": true,
+              "canonical_action_key": "push_up",
+              "analysis_rule_version": "push_up-v1",
+              "analysis_status_reason": "已接入本项目姿态评分规则",
+              "is_bodyweight": true,
+              "is_low_equipment_candidate": true,
+              "campus_candidate_reason": "无器械动作，适合普通手机视频采集",
+              "target_muscles": ["pectorals", "triceps"],
+              "media_attribution": "© Gym visual — https://gymvisual.com/",
+              "source": "hasaneyldrm/exercises-dataset",
+              "external_id": "0662"
+            }
+            """.trimIndent()
+        )
+
+        val item = exercise.toExerciseCatalogItem()
+
+        assertEquals("66", item.id)
+        assertEquals("俯卧撑", item.name)
+        assertEquals("胸部", item.category)
+        assertEquals("body weight", item.equipment)
+        assertEquals("push_up", item.canonicalActionKey)
+        assertEquals(true, item.analysisSupported)
+        assertEquals(true, item.isLowEquipmentCandidate)
+        assertEquals("0662", item.externalId)
+        assertEquals("保持身体直线完成推起。", item.instructions["zh"])
+        assertEquals(listOf("撑地", "下降", "推起"), item.instructionSteps["zh"])
+    }
 }

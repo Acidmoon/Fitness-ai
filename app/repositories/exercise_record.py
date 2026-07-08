@@ -6,6 +6,7 @@ from typing import List, Optional, Sequence
 from sqlalchemy.orm import Session
 
 from app.models.exercise import Exercise, ExerciseRecord
+from app.services.exercise_catalog import exercise_matches_catalog_filters
 from app.utils.datetime import utc_day_bounds
 
 
@@ -139,6 +140,25 @@ class ExerciseRepository:
             self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
         )
 
-    def get_all(self) -> List[Exercise]:
-        """Get all exercises in the catalog."""
-        return self.db.query(Exercise).all()
+    def get_all(
+        self,
+        query: Optional[str] = None,
+        equipment: Optional[str] = None,
+        body_part: Optional[str] = None,
+        analysis_supported: Optional[bool] = None,
+        campus_candidate: Optional[bool] = None,
+    ) -> List[Exercise]:
+        """Get catalog exercises, applying JSON-backed filters in memory."""
+        exercises = self.db.query(Exercise).order_by(Exercise.id.asc()).all()
+        return [
+            exercise
+            for exercise in exercises
+            if exercise_matches_catalog_filters(
+                exercise,
+                query=query,
+                equipment=equipment,
+                body_part=body_part,
+                analysis_supported=analysis_supported,
+                campus_candidate=campus_candidate,
+            )
+        ]

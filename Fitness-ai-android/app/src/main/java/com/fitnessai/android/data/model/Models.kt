@@ -68,7 +68,27 @@ data class RecordDraft(
 data class ExerciseCatalogItem(
     val id: String,
     val name: String,
-    val category: String
+    val category: String,
+    val description: String? = null,
+    val aliases: List<String> = emptyList(),
+    val bodyPart: String? = null,
+    val equipment: String? = null,
+    val target: String? = null,
+    val muscleGroup: String? = null,
+    val secondaryMuscles: List<String> = emptyList(),
+    val instructions: Map<String, String> = emptyMap(),
+    val instructionSteps: Map<String, List<String>> = emptyMap(),
+    val analysisSupported: Boolean = false,
+    val canonicalActionKey: String? = null,
+    val analysisRuleVersion: String? = null,
+    val analysisStatusReason: String? = null,
+    val isBodyweight: Boolean = false,
+    val isLowEquipmentCandidate: Boolean = false,
+    val campusCandidateReason: String? = null,
+    val targetMuscles: List<String> = emptyList(),
+    val mediaAttribution: String? = null,
+    val source: String? = null,
+    val externalId: String? = null
 )
 
 data class StatsSummary(

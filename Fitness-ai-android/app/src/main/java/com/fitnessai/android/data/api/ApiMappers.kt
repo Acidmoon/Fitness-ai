@@ -41,7 +41,27 @@ fun ExerciseDto.toExerciseCatalogItem(): ExerciseCatalogItem {
     return ExerciseCatalogItem(
         id = id.toString(),
         name = name,
-        category = category ?: "未分类"
+        category = category ?: "未分类",
+        description = description,
+        aliases = aliases,
+        bodyPart = bodyPart,
+        equipment = equipment,
+        target = target,
+        muscleGroup = muscleGroup,
+        secondaryMuscles = secondaryMuscles,
+        instructions = instructions,
+        instructionSteps = instructionSteps,
+        analysisSupported = analysisSupported,
+        canonicalActionKey = canonicalActionKey,
+        analysisRuleVersion = analysisRuleVersion,
+        analysisStatusReason = analysisStatusReason,
+        isBodyweight = isBodyweight,
+        isLowEquipmentCandidate = isLowEquipmentCandidate,
+        campusCandidateReason = campusCandidateReason,
+        targetMuscles = targetMuscles,
+        mediaAttribution = mediaAttribution,
+        source = source,
+        externalId = externalId
     )
 }
 

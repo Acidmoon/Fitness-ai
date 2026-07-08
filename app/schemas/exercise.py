@@ -59,6 +59,25 @@ class ExerciseResponse(BaseModel):
     name: str
     category: Optional[str]
     description: Optional[str]
+    aliases: PyList[str] = Field(default_factory=list)
+    body_part: Optional[str] = None
+    equipment: Optional[str] = None
+    target: Optional[str] = None
+    muscle_group: Optional[str] = None
+    secondary_muscles: PyList[str] = Field(default_factory=list)
+    instructions: Dict[str, Any] = Field(default_factory=dict)
+    instruction_steps: Dict[str, Any] = Field(default_factory=dict)
+    analysis_supported: bool = False
+    canonical_action_key: Optional[str] = None
+    analysis_rule_version: Optional[str] = None
+    analysis_status_reason: Optional[str] = None
+    is_bodyweight: bool = False
+    is_low_equipment_candidate: bool = False
+    campus_candidate_reason: Optional[str] = None
+    target_muscles: PyList[str] = Field(default_factory=list)
+    media_attribution: Optional[str] = None
+    source: Optional[str] = None
+    external_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -195,6 +195,38 @@
         "title": "ExerciseRecordCreate",
         "type": "object"
       },
+      "ExerciseRecordPage": {
+        "description": "分页运动记录响应。",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExerciseRecordResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "ExerciseRecordPage",
+        "type": "object"
+      },
       "ExerciseRecordResponse": {
         "properties": {
           "count": {
@@ -368,6 +400,73 @@
       },
       "ExerciseResponse": {
         "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
+          "analysis_rule_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Rule Version"
+          },
+          "analysis_status_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Status Reason"
+          },
+          "analysis_supported": {
+            "default": false,
+            "title": "Analysis Supported",
+            "type": "boolean"
+          },
+          "body_part": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Part"
+          },
+          "campus_candidate_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campus Candidate Reason"
+          },
+          "canonical_action_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Action Key"
+          },
           "category": {
             "anyOf": [
               {
@@ -390,13 +489,113 @@
             ],
             "title": "Description"
           },
+          "equipment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equipment"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
           },
+          "instruction_steps": {
+            "additionalProperties": true,
+            "title": "Instruction Steps",
+            "type": "object"
+          },
+          "instructions": {
+            "additionalProperties": true,
+            "title": "Instructions",
+            "type": "object"
+          },
+          "is_bodyweight": {
+            "default": false,
+            "title": "Is Bodyweight",
+            "type": "boolean"
+          },
+          "is_low_equipment_candidate": {
+            "default": false,
+            "title": "Is Low Equipment Candidate",
+            "type": "boolean"
+          },
+          "media_attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Attribution"
+          },
+          "muscle_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Muscle Group"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "secondary_muscles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secondary Muscles",
+            "type": "array"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "target_muscles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Target Muscles",
+            "type": "array"
           }
         },
         "required": [
@@ -474,6 +673,29 @@
       },
       "PoseAnalysisFrame": {
         "properties": {
+          "coordinate_space": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coordinate Space"
+          },
+          "frame": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame"
+          },
           "frame_index": {
             "title": "Frame Index",
             "type": "integer"
@@ -577,6 +799,17 @@
       },
       "PoseAnalysisModelMetadata": {
         "properties": {
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
           "input_size": {
             "anyOf": [
               {
@@ -756,6 +989,17 @@
             "title": "Applied",
             "type": "boolean"
           },
+          "auto_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Count"
+          },
           "confidence": {
             "anyOf": [
               {
@@ -777,6 +1021,17 @@
               }
             ],
             "title": "Count"
+          },
+          "count_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count Source"
           },
           "exercise_type": {
             "anyOf": [
@@ -866,6 +1121,19 @@
         "title": "RecentRecord",
         "type": "object"
       },
+      "RefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
       "StatsSummary": {
         "properties": {
           "category_stats": {
@@ -894,10 +1162,14 @@
         "title": "StatsSummary",
         "type": "object"
       },
-      "Token": {
+      "TokenWithRefresh": {
         "properties": {
           "access_token": {
             "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
             "type": "string"
           },
           "token_type": {
@@ -907,9 +1179,10 @@
         },
         "required": [
           "access_token",
-          "token_type"
+          "token_type",
+          "refresh_token"
         ],
-        "title": "Token",
+        "title": "TokenWithRefresh",
         "type": "object"
       },
       "UserCreate": {
@@ -1173,6 +1446,7 @@
         ]
       },
       "post": {
+        "description": "同步执行姿态分析，并返回分析结果。",
         "operationId": "trigger_pose_analysis_api_ai_records__record_id__pose_analysis_post",
         "parameters": [
           {
@@ -1237,6 +1511,7 @@
     },
     "/api/ai/records/{record_id}/pose-analysis/jobs": {
       "post": {
+        "description": "创建姿态分析异步任务（推荐方式）。",
         "operationId": "create_pose_analysis_job_api_ai_records__record_id__pose_analysis_jobs_post",
         "parameters": [
           {
@@ -1382,7 +1657,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Token"
+                  "$ref": "#/components/schemas/TokenWithRefresh"
                 }
               }
             },
@@ -1400,6 +1675,48 @@
           }
         },
         "summary": "Login",
+        "tags": [
+          "认证"
+        ]
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "description": "刷新访问令牌。\n\n使用有效的 refresh_token 换取新的 access_token + refresh_token（轮换）。",
+        "operationId": "refresh_token_api_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenWithRefresh"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Token",
         "tags": [
           "认证"
         ]
@@ -1451,6 +1768,98 @@
       "get": {
         "description": "获取标准动作列表",
         "operationId": "get_exercises_api_exercise_exercises_get",
+        "parameters": [
+          {
+            "description": "按名称、别名、部位、器械或肌群搜索",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按名称、别名、部位、器械或肌群搜索",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "按外部动作目录 equipment 过滤",
+            "in": "query",
+            "name": "equipment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按外部动作目录 equipment 过滤",
+              "title": "Equipment"
+            }
+          },
+          {
+            "description": "按外部动作目录 body_part 过滤",
+            "in": "query",
+            "name": "body_part",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按外部动作目录 body_part 过滤",
+              "title": "Body Part"
+            }
+          },
+          {
+            "description": "仅返回已接入 AI 评分规则的动作",
+            "in": "query",
+            "name": "analysis_supported",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "仅返回已接入 AI 评分规则的动作",
+              "title": "Analysis Supported"
+            }
+          },
+          {
+            "description": "仅返回校园低器械候选动作",
+            "in": "query",
+            "name": "campus_candidate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "仅返回校园低器械候选动作",
+              "title": "Campus Candidate"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1465,6 +1874,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Get Exercises",
@@ -1524,7 +1943,7 @@
         ]
       },
       "get": {
-        "description": "获取用户运动记录（支持日期范围、动作 ID 过滤）",
+        "description": "获取用户运动记录（支持日期范围、动作 ID 过滤）。",
         "operationId": "get_user_records_api_exercise_records_get",
         "parameters": [
           {
@@ -1682,6 +2101,122 @@
           }
         ],
         "summary": "Create Record",
+        "tags": [
+          "运动"
+        ]
+      }
+    },
+    "/api/exercise/records/page": {
+      "get": {
+        "description": "获取用户运动记录分页响应（含总数和分页元数据）。",
+        "operationId": "get_user_records_page_api_exercise_records_page_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exercise_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exercise Id"
+            }
+          },
+          {
+            "description": "跳过的记录数",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "跳过的记录数",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "返回的记录数，范围 1-100",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "返回的记录数，范围 1-100",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExerciseRecordPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get User Records Page",
         "tags": [
           "运动"
         ]
@@ -2083,6 +2618,7 @@
     },
     "/api/video/records/{record_id}/video": {
       "delete": {
+        "description": "删除运动记录关联视频",
         "operationId": "delete_video_api_video_records__record_id__video_delete",
         "parameters": [
           {
@@ -2126,6 +2662,7 @@
         ]
       },
       "post": {
+        "description": "上传运动记录视频",
         "operationId": "upload_video_api_video_records__record_id__video_post",
         "parameters": [
           {
@@ -2191,6 +2728,7 @@
     },
     "/api/video/videos/{filename}": {
       "get": {
+        "description": "获取已上传的视频文件（需认证 + 归属校验）",
         "operationId": "get_video_api_video_videos__filename__get",
         "parameters": [
           {

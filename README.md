@@ -119,6 +119,27 @@ app/api/ai.py
 
 评分响应应持续保留 `auto_count`、`count_source`、`metrics.valid_reps`、`metrics.invalid_reps` 和失败原因，确保自动次数、动作阶段和评分反馈都可解释、可测试、可用于后续评估材料。
 
+## 动作目录扩充
+
+项目默认动作目录接入 `hasaneyldrm/exercises-dataset` 的文本数据部分，当前来源 commit 为 `fdb2d48eb7e26f02afbabceea205b114a13e0414`。本仓库只保存 `data/external/exercises-dataset/exercises.json` 和来源说明，不复制上游图片或 GIF 媒体。
+
+Seed 入口仍是：
+
+```powershell
+python -m scripts.seed_data
+```
+
+该脚本会增量同步 1,324 条外部动作，并保留项目内置的“标准俯卧撑”“标准深蹲”等 AI 展示动作。外部字段会映射到 `Exercise.standard`，用于：
+
+- 动作命名和别名搜索，例如 `push up`、`push-up`、`俯卧撑`。
+- 分类、部位、器械、目标肌群和辅助肌群筛选。
+- Web 和 Android 可消费的多语言动作说明与步骤。
+- 校园低器械候选池，例如 `equipment=body weight` 可筛出 325 条外部无器械动作。
+- 个性化推荐候选字段，例如 `target_muscles`、`equipment` 和 `body_part`。
+- AI 支持路线标记，例如 `analysis_supported`、`canonical_action_key` 和 `analysis_rule_version`。
+
+注意：外部动作说明不是姿态评分标准。AI 评分是否可用仍以 `app/services/exercise_rules/` 注册的规则为准，新增动作必须先补齐阶段、计数、错误动作、阈值和 fixtures 后，才能把 `analysis_supported` 标记为 true。
+
 ## 下一阶段
 
 - 完善俯卧撑错误动作识别。

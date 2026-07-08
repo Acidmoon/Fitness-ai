@@ -22,6 +22,7 @@ from app.schemas.exercise import (
     ExerciseResponse,
     ExerciseRecordUpdate,
 )
+from app.services.exercise_catalog import exercise_to_catalog_response
 from app.utils.security import get_current_user
 from app.utils.video_files import delete_record_videos
 
@@ -123,10 +124,22 @@ def get_record_detail(
 
 @router.get("/exercises", response_model=List[ExerciseResponse])
 def get_exercises(
+    q: Optional[str] = Query(default=None, description="按名称、别名、部位、器械或肌群搜索"),
+    equipment: Optional[str] = Query(default=None, description="按外部动作目录 equipment 过滤"),
+    body_part: Optional[str] = Query(default=None, description="按外部动作目录 body_part 过滤"),
+    analysis_supported: Optional[bool] = Query(default=None, description="仅返回已接入 AI 评分规则的动作"),
+    campus_candidate: Optional[bool] = Query(default=None, description="仅返回校园低器械候选动作"),
     exercise_repo: ExerciseRepository = Depends(get_exercise_repo),
 ):
     """获取标准动作列表"""
-    return exercise_repo.get_all()
+    exercises = exercise_repo.get_all(
+        query=q,
+        equipment=equipment,
+        body_part=body_part,
+        analysis_supported=analysis_supported,
+        campus_candidate=campus_candidate,
+    )
+    return [exercise_to_catalog_response(exercise) for exercise in exercises]
 
 
 @router.put("/records/{record_id}", response_model=ExerciseRecordResponse)

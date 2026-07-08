@@ -48,7 +48,10 @@ export interface paths {
         /** Get Pose Analysis */
         get: operations["get_pose_analysis_api_ai_records__record_id__pose_analysis_get"];
         put?: never;
-        /** Trigger Pose Analysis */
+        /**
+         * Trigger Pose Analysis
+         * @description 同步执行姿态分析，并返回分析结果。
+         */
         post: operations["trigger_pose_analysis_api_ai_records__record_id__pose_analysis_post"];
         delete?: never;
         options?: never;
@@ -65,7 +68,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Pose Analysis Job */
+        /**
+         * Create Pose Analysis Job
+         * @description 创建姿态分析异步任务（推荐方式）。
+         */
         post: operations["create_pose_analysis_job_api_ai_records__record_id__pose_analysis_jobs_post"];
         delete?: never;
         options?: never;
@@ -104,6 +110,28 @@ export interface paths {
          * @description 用户登录
          */
         post: operations["login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Token
+         * @description 刷新访问令牌。
+         *
+         *     使用有效的 refresh_token 换取新的 access_token + refresh_token（轮换）。
+         */
+        post: operations["refresh_token_api_auth_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -159,7 +187,7 @@ export interface paths {
         };
         /**
          * Get User Records
-         * @description 获取用户运动记录（支持日期范围、动作 ID 过滤）
+         * @description 获取用户运动记录（支持日期范围、动作 ID 过滤）。
          */
         get: operations["get_user_records_api_exercise_records_get"];
         put?: never;
@@ -173,6 +201,26 @@ export interface paths {
          * @description 批量删除运动记录
          */
         delete: operations["batch_delete_records_api_exercise_records_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exercise/records/page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get User Records Page
+         * @description 获取用户运动记录分页响应（含总数和分页元数据）。
+         */
+        get: operations["get_user_records_page_api_exercise_records_page_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -339,9 +387,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Upload Video */
+        /**
+         * Upload Video
+         * @description 上传运动记录视频
+         */
         post: operations["upload_video_api_video_records__record_id__video_post"];
-        /** Delete Video */
+        /**
+         * Delete Video
+         * @description 删除运动记录关联视频
+         */
         delete: operations["delete_video_api_video_records__record_id__video_delete"];
         options?: never;
         head?: never;
@@ -355,7 +409,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Video */
+        /**
+         * Get Video
+         * @description 获取已上传的视频文件（需认证 + 归属校验）
+         */
         get: operations["get_video_api_video_videos__filename__get"];
         put?: never;
         post?: never;
@@ -462,6 +519,20 @@ export interface components {
              */
             score: number;
         };
+        /**
+         * ExerciseRecordPage
+         * @description 分页运动记录响应。
+         */
+        ExerciseRecordPage: {
+            /** Items */
+            items: components["schemas"]["ExerciseRecordResponse"][];
+            /** Limit */
+            limit: number;
+            /** Skip */
+            skip: number;
+            /** Total */
+            total: number;
+        };
         /** ExerciseRecordResponse */
         ExerciseRecordResponse: {
             /** Count */
@@ -516,14 +587,65 @@ export interface components {
         };
         /** ExerciseResponse */
         ExerciseResponse: {
+            /** Aliases */
+            aliases?: string[];
+            /** Analysis Rule Version */
+            analysis_rule_version?: string | null;
+            /** Analysis Status Reason */
+            analysis_status_reason?: string | null;
+            /**
+             * Analysis Supported
+             * @default false
+             */
+            analysis_supported: boolean;
+            /** Body Part */
+            body_part?: string | null;
+            /** Campus Candidate Reason */
+            campus_candidate_reason?: string | null;
+            /** Canonical Action Key */
+            canonical_action_key?: string | null;
             /** Category */
             category: string | null;
             /** Description */
             description: string | null;
+            /** Equipment */
+            equipment?: string | null;
+            /** External Id */
+            external_id?: string | null;
             /** Id */
             id: number;
+            /** Instruction Steps */
+            instruction_steps?: {
+                [key: string]: unknown;
+            };
+            /** Instructions */
+            instructions?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Is Bodyweight
+             * @default false
+             */
+            is_bodyweight: boolean;
+            /**
+             * Is Low Equipment Candidate
+             * @default false
+             */
+            is_low_equipment_candidate: boolean;
+            /** Media Attribution */
+            media_attribution?: string | null;
+            /** Muscle Group */
+            muscle_group?: string | null;
             /** Name */
             name: string;
+            /** Secondary Muscles */
+            secondary_muscles?: string[];
+            /** Source */
+            source?: string | null;
+            /** Target */
+            target?: string | null;
+            /** Target Muscles */
+            target_muscles?: string[];
         };
         /** ExerciseStats */
         ExerciseStats: {
@@ -552,6 +674,12 @@ export interface components {
         };
         /** PoseAnalysisFrame */
         PoseAnalysisFrame: {
+            /** Coordinate Space */
+            coordinate_space?: string | null;
+            /** Frame */
+            frame?: {
+                [key: string]: unknown;
+            } | null;
             /** Frame Index */
             frame_index: number;
             /** Keypoints */
@@ -593,6 +721,8 @@ export interface components {
         };
         /** PoseAnalysisModelMetadata */
         PoseAnalysisModelMetadata: {
+            /** Backend */
+            backend?: string | null;
             /** Input Size */
             input_size?: number | null;
             /** Name */
@@ -674,10 +804,14 @@ export interface components {
              * @default false
              */
             applied: boolean;
+            /** Auto Count */
+            auto_count?: number | null;
             /** Confidence */
             confidence?: number | null;
             /** Count */
             count?: number | null;
+            /** Count Source */
+            count_source?: string | null;
             /** Exercise Type */
             exercise_type?: string | null;
             /** Feedback */
@@ -712,6 +846,11 @@ export interface components {
             /** Score */
             score: number;
         };
+        /** RefreshRequest */
+        RefreshRequest: {
+            /** Refresh Token */
+            refresh_token: string;
+        };
         /** StatsSummary */
         StatsSummary: {
             /** Category Stats */
@@ -720,10 +859,12 @@ export interface components {
             /** Recent Records */
             recent_records: components["schemas"]["RecentRecord"][];
         };
-        /** Token */
-        Token: {
+        /** TokenWithRefresh */
+        TokenWithRefresh: {
             /** Access Token */
             access_token: string;
+            /** Refresh Token */
+            refresh_token: string;
             /** Token Type */
             token_type: string;
         };
@@ -992,7 +1133,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Token"];
+                    "application/json": components["schemas"]["TokenWithRefresh"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_token_api_auth_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenWithRefresh"];
                 };
             };
             /** @description Validation Error */
@@ -1041,7 +1215,18 @@ export interface operations {
     };
     get_exercises_api_exercise_exercises_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 按名称、别名、部位、器械或肌群搜索 */
+                q?: string | null;
+                /** @description 按外部动作目录 equipment 过滤 */
+                equipment?: string | null;
+                /** @description 按外部动作目录 body_part 过滤 */
+                body_part?: string | null;
+                /** @description 仅返回已接入 AI 评分规则的动作 */
+                analysis_supported?: boolean | null;
+                /** @description 仅返回校园低器械候选动作 */
+                campus_candidate?: boolean | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1055,6 +1240,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExerciseResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1148,6 +1342,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_records_page_api_exercise_records_page_get: {
+        parameters: {
+            query?: {
+                start_date?: string | null;
+                end_date?: string | null;
+                exercise_id?: number | null;
+                /** @description 跳过的记录数 */
+                skip?: number;
+                /** @description 返回的记录数，范围 1-100 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExerciseRecordPage"];
                 };
             };
             /** @description Validation Error */

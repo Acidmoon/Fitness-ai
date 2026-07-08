@@ -35,7 +35,12 @@ class ApiCoreTest {
         server.start()
         try {
             val client = OkHttpClient.Builder()
-                .addInterceptor(AuthorizationInterceptor(InMemoryTokenStore("token-1")))
+                .addInterceptor(
+                    AuthorizationInterceptor(
+                        tokenStore = InMemoryTokenStore("token-1"),
+                        baseUrlProvider = { server.url("/").toString() }
+                    )
+                )
                 .build()
             val request = Request.Builder()
                 .url(server.url("/api/user/profile"))

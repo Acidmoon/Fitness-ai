@@ -25,6 +25,14 @@ export function attachBearerToken(config: InternalAxiosRequestConfig) {
   return config;
 }
 
+export function handleAuthError(error: AxiosError) {
+  if (error.response?.status === 401) {
+    clearAuth();
+  }
+
+  return Promise.reject(error);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Refresh-token interceptor                                         */
 /*  On 401: try POST /auth/refresh → retry original request once.     */

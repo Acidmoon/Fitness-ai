@@ -33,7 +33,26 @@ data class ExerciseDto(
     val id: Int,
     val name: String,
     val category: String? = null,
-    val description: String? = null
+    val description: String? = null,
+    val aliases: List<String> = emptyList(),
+    @SerialName("body_part") val bodyPart: String? = null,
+    val equipment: String? = null,
+    val target: String? = null,
+    @SerialName("muscle_group") val muscleGroup: String? = null,
+    @SerialName("secondary_muscles") val secondaryMuscles: List<String> = emptyList(),
+    val instructions: Map<String, String> = emptyMap(),
+    @SerialName("instruction_steps") val instructionSteps: Map<String, List<String>> = emptyMap(),
+    @SerialName("analysis_supported") val analysisSupported: Boolean = false,
+    @SerialName("canonical_action_key") val canonicalActionKey: String? = null,
+    @SerialName("analysis_rule_version") val analysisRuleVersion: String? = null,
+    @SerialName("analysis_status_reason") val analysisStatusReason: String? = null,
+    @SerialName("is_bodyweight") val isBodyweight: Boolean = false,
+    @SerialName("is_low_equipment_candidate") val isLowEquipmentCandidate: Boolean = false,
+    @SerialName("campus_candidate_reason") val campusCandidateReason: String? = null,
+    @SerialName("target_muscles") val targetMuscles: List<String> = emptyList(),
+    @SerialName("media_attribution") val mediaAttribution: String? = null,
+    val source: String? = null,
+    @SerialName("external_id") val externalId: String? = null
 )
 
 @Serializable
