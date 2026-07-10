@@ -36,7 +36,6 @@ const recordSchema = z.object({
   duration: z.coerce.number().int().min(0, "时长不能小于 0"),
   heart_rate_avg: z.union([z.coerce.number().min(0), z.nan()]).optional(),
   heart_rate_max: z.union([z.coerce.number().min(0), z.nan()]).optional(),
-  feedback: z.string().optional(),
 });
 
 function toOptionalNumber(value: number | null | undefined) {
@@ -94,7 +93,6 @@ export function RecordsPage() {
       duration: 60,
       heart_rate_avg: null,
       heart_rate_max: null,
-      feedback: "",
     },
   });
 
@@ -133,7 +131,6 @@ export function RecordsPage() {
       duration: 60,
       heart_rate_avg: null,
       heart_rate_max: null,
-      feedback: "",
     });
     setDrawerOpen(true);
   }
@@ -150,7 +147,6 @@ export function RecordsPage() {
       duration: record.duration,
       heart_rate_avg: record.heart_rate_avg,
       heart_rate_max: null,
-      feedback: record.feedback ?? "",
     });
     setDrawerOpen(true);
   }
@@ -469,7 +465,6 @@ export function RecordsPage() {
                   duration: values.duration,
                   heart_rate_avg: toOptionalNumber(values.heart_rate_avg),
                   heart_rate_max: toOptionalNumber(values.heart_rate_max),
-                  feedback: values.feedback?.trim() ?? "",
                 };
 
                 if (editingRecord) {
@@ -536,10 +531,9 @@ export function RecordsPage() {
                 <input type="number" {...recordForm.register("heart_rate_max")} />
                 <small className="field-hint">可选字段，无数据时可留空。</small>
               </label>
-              <label className="field">
-                <span>反馈</span>
-                <textarea rows={4} {...recordForm.register("feedback")} />
-              </label>
+              <p className="field-hint">
+                AI 反馈由视频姿态分析生成，不能在训练记录表单中手工修改。
+              </p>
               {drawerError ? <p className="form-error">{drawerError}</p> : null}
               <button
                 type="submit"

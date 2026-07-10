@@ -79,6 +79,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/records/{record_id}/pose-analysis/jobs/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Pose Analysis Job
+         * @description Return the latest job for the current video revision so clients can reconnect.
+         */
+        get: operations["get_latest_pose_analysis_job_api_ai_records__record_id__pose_analysis_jobs_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/records/{record_id}/pose-scoring": {
         parameters: {
             query?: never;
@@ -503,16 +523,10 @@ export interface components {
             duration: number;
             /** Exercise Id */
             exercise_id: number;
-            /** Feedback */
-            feedback?: string | null;
             /** Heart Rate Avg */
             heart_rate_avg?: number | null;
             /** Heart Rate Max */
             heart_rate_max?: number | null;
-            /** Keypoints Data */
-            keypoints_data?: {
-                [key: string]: unknown;
-            } | null;
             /**
              * Score
              * @description 动作评分 0-100
@@ -535,8 +549,16 @@ export interface components {
         };
         /** ExerciseRecordResponse */
         ExerciseRecordResponse: {
+            /** Analysis Model */
+            analysis_model: string | null;
+            /** Analysis Revision */
+            analysis_revision: number | null;
+            /** Analysis Rule Version */
+            analysis_rule_version: string | null;
             /** Count */
             count: number;
+            /** Count Source */
+            count_source: string;
             /**
              * Created At
              * Format: date-time
@@ -552,8 +574,16 @@ export interface components {
             heart_rate_avg: number | null;
             /** Id */
             id: number;
+            /** Manual Count */
+            manual_count: number | null;
+            /** Manual Score */
+            manual_score: number | null;
             /** Score */
             score: number;
+            /** Score Source */
+            score_source: string;
+            /** Video Revision */
+            video_revision: number;
             /** Video Url */
             video_url: string | null;
         };
@@ -569,16 +599,10 @@ export interface components {
              * @description 时长 (秒)
              */
             duration?: number | null;
-            /** Feedback */
-            feedback?: string | null;
             /** Heart Rate Avg */
             heart_rate_avg?: number | null;
             /** Heart Rate Max */
             heart_rate_max?: number | null;
-            /** Keypoints Data */
-            keypoints_data?: {
-                [key: string]: unknown;
-            } | null;
             /**
              * Score
              * @description 动作评分 0-100
@@ -708,16 +732,20 @@ export interface components {
             result_summary?: {
                 [key: string]: unknown;
             } | null;
+            /** Sample Fps */
+            sample_fps?: number | null;
             /**
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "succeeded" | "failed";
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
             /**
              * Updated At
              * Format: date-time
              */
             updated_at: string;
+            /** Video Revision */
+            video_revision: number;
         };
         /** PoseAnalysisModelMetadata */
         PoseAnalysisModelMetadata: {
@@ -730,6 +758,8 @@ export interface components {
         };
         /** PoseAnalysisResponse */
         PoseAnalysisResponse: {
+            /** Analysis Revision */
+            analysis_revision?: number | null;
             /** Error */
             error?: string | null;
             /**
@@ -751,6 +781,11 @@ export interface components {
              */
             status: "idle" | "done" | "failed";
             summary?: components["schemas"]["PoseAnalysisSummary"] | null;
+            /**
+             * Video Revision
+             * @default 0
+             */
+            video_revision: number;
         };
         /** PoseAnalysisSummary */
         PoseAnalysisSummary: {
@@ -822,6 +857,8 @@ export interface components {
             };
             /** Record Id */
             record_id: number;
+            /** Rule Version */
+            rule_version?: string | null;
             /** Score */
             score?: number | null;
             /**
@@ -1066,6 +1103,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PoseAnalysisJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_latest_pose_analysis_job_api_ai_records__record_id__pose_analysis_jobs_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PoseAnalysisJobResponse"] | null;
                 };
             };
             /** @description Validation Error */

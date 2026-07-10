@@ -195,6 +195,13 @@ class FitnessAiViewModel(
         }
     }
 
+    fun resumeAnalysis(recordId: String) {
+        viewModelScope.launch {
+            val result = analysisRepository.resumeAnalysis(recordId)
+            result.exceptionOrNull()?.userMessage()?.let { snackbar.error(it) }
+        }
+    }
+
     fun refreshHome() {
         viewModelScope.launch { refreshReadData() }
     }

@@ -256,8 +256,9 @@ class TestDeleteAccount:
     def test_delete_account_removes_video_files(
         self, client, db_session, test_user, tmp_path
     ):
-        """测试注销账户时删除关联视频文件"""
+        """注销账户时级联删除记录、分析任务并清理关联视频文件。"""
         from app.models.exercise import Exercise, ExerciseRecord
+        from app.models.pose_analysis_job import PoseAnalysisJob
         from unittest.mock import patch
 
         exercise = Exercise(name="测试动作", category="上肢")
@@ -279,6 +280,15 @@ class TestDeleteAccount:
         )
         db_session.add(record)
         db_session.commit()
+        job = PoseAnalysisJob(
+            record_id=record.id,
+            user_id=test_user["user"].id,
+            status="succeeded",
+            video_revision=0,
+        )
+        db_session.add(job)
+        db_session.commit()
+        job_id = job.id
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
@@ -290,17 +300,18 @@ class TestDeleteAccount:
             )
 
         assert response.status_code == status.HTTP_200_OK
+        assert db_session.query(PoseAnalysisJob).filter_by(id=job_id).first() is None
         assert not video_path.exists()
 
-    def test_delete_account_failure_keeps_user(
+    def test_delete_account_cleanup_failure_keeps_database_deleted(
         self, client, db_session, test_user
     ):
-        """测试删除账户时视频清理失败不会提交账户删除"""
+        """账户删除已提交后，文件清理失败只能记录为补偿任务。"""
         from app.models.user import User
         from unittest.mock import patch
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
-        with patch("app.api.user.delete_record_videos", side_effect=OSError("disk busy")):
+        with patch("app.api.user.delete_video_urls", side_effect=OSError("disk busy")):
             response = client.request(
                 "DELETE",
                 "/api/user/account",
@@ -308,8 +319,8 @@ class TestDeleteAccount:
                 json={"password": "password123"},
             )
 
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.status_code == status.HTTP_200_OK
         remaining_user = (
             db_session.query(User).filter(User.id == test_user["user"].id).first()
         )
-        assert remaining_user is not None
+        assert remaining_user is None

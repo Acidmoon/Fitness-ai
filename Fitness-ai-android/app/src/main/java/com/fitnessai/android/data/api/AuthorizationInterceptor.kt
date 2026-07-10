@@ -34,7 +34,6 @@ class AuthorizationInterceptor(
             tokenStore.getRefreshToken()
         }
         if (refreshToken.isNullOrBlank()) {
-            response.close()
             onAuthFailure()
             return response
         }
@@ -72,7 +71,6 @@ class AuthorizationInterceptor(
             refreshResponse.close()
         } catch (_: Exception) { }
 
-        response.close()
         onAuthFailure()
         return response
     }

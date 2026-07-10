@@ -27,6 +27,10 @@ class InMemoryTrainingRecordRepository(
         return _records.value.firstOrNull { it.id == id }
     }
 
+    override fun replaceLocal(record: TrainingRecord) {
+        _records.update { records -> records.map { if (it.id == record.id) record else it } }
+    }
+
     override suspend fun createRecord(record: TrainingRecord): Result<TrainingRecord> {
         _records.update { records -> listOf(record) + records }
         return Result.success(record)

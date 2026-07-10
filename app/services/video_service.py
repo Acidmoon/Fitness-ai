@@ -9,6 +9,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.models.exercise import ExerciseRecord
+from app.services.record_analysis_state import invalidate_record_analysis
 from app.utils.video_files import (
     VideoUploadTooLargeError,
     UnsupportedVideoContentError,
@@ -98,6 +99,11 @@ def upload_record_video(
 
         if keep_video:
             record.video_url = build_video_url(unique_filename)
+            invalidate_record_analysis(
+                record,
+                db,
+                reason="视频已更新，旧姿态分析任务已取消",
+            )
         else:
             video_deleted = True
             delete_file(build_video_url(unique_filename))
@@ -145,18 +151,31 @@ def delete_record_video(
     if not record.video_url:
         raise VideoNotFoundError("该记录没有关联视频")
 
-    try:
-        delete_file(record.video_url)
-    except OSError:
-        raise VideoUploadError("视频文件删除失败", status_code=500)
-
+    previous_video_url = record.video_url
     record.video_url = None
-    db.commit()
+    invalidate_record_analysis(
+        record,
+        db,
+        reason="视频已删除，旧姿态分析任务已取消",
+    )
+    try:
+        db.commit()
+        db.refresh(record)
+    except Exception:
+        db.rollback()
+        raise
+
+    try:
+        delete_file(previous_video_url)
+    except OSError as exc:
+        logger.warning(
+            "Video reference removed for record {} but file cleanup failed: {}",
+            record.id,
+            str(exc),
+        )
 
 
-def resolve_video_for_access(
-    filename: str, user_id: int, db: Session
-) -> str:
+def resolve_video_for_access(filename: str, user_id: int, db: Session) -> str:
     """Validate and resolve a video file path for authenticated access.
 
     Returns the resolved file path if access is granted.

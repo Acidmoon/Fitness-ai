@@ -4,6 +4,7 @@ import { http } from "@/services/http";
 import {
   applyPoseScoring,
   createPoseAnalysisJob,
+  getLatestPoseAnalysisJob,
   getPoseAnalysisJob,
   getPoseAnalysis,
   previewPoseScoring,
@@ -61,6 +62,19 @@ describe("pose-analysis-api", () => {
 
     expect(http.get).toHaveBeenCalledWith("/api/ai/pose-analysis/jobs/7");
     expect(result.status).toBe("succeeded");
+  });
+
+  it("fetches the latest job for record reconnection", async () => {
+    vi.mocked(http.get).mockResolvedValue({
+      data: { id: 9, record_id: 11, status: "running" },
+    });
+
+    const result = await getLatestPoseAnalysisJob(11);
+
+    expect(http.get).toHaveBeenCalledWith(
+      "/api/ai/records/11/pose-analysis/jobs/latest"
+    );
+    expect(result?.id).toBe(9);
   });
 
   it("previews pose scoring without applying results", async () => {

@@ -1,5 +1,4 @@
 from fastapi import status
-from app.schemas.exercise import MAX_FEEDBACK_LENGTH, MAX_KEYPOINTS_DATA_BYTES
 
 
 class TestExerciseRecords:
@@ -85,10 +84,10 @@ class TestExerciseRecords:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
-    def test_create_record_rejects_oversized_feedback(
+    def test_create_record_rejects_client_supplied_feedback(
         self, client, db_session, test_user
     ):
-        """测试创建记录时拒绝超长反馈文本"""
+        """AI 反馈是服务端派生字段，客户端创建记录时不可写。"""
         from app.models.exercise import Exercise
 
         exercise = Exercise(name="标准俯卧撑", category="上肢", description="测试动作")
@@ -103,23 +102,22 @@ class TestExerciseRecords:
                 "score": 85.5,
                 "count": 20,
                 "duration": 120,
-                "feedback": "a" * (MAX_FEEDBACK_LENGTH + 1),
+                "feedback": "客户端伪造的 AI 反馈",
             },
             headers=headers,
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
-    def test_create_record_rejects_oversized_keypoints_data(
+    def test_create_record_rejects_client_supplied_keypoints_data(
         self, client, db_session, test_user
     ):
-        """测试创建记录时拒绝超大关键点数据"""
+        """关键点数据只能由服务端分析流程生成。"""
         from app.models.exercise import Exercise
 
         exercise = Exercise(name="标准俯卧撑", category="上肢", description="测试动作")
         db_session.add(exercise)
         db_session.commit()
 
-        oversized_payload = {"points": "a" * MAX_KEYPOINTS_DATA_BYTES}
         headers = {"Authorization": f"Bearer {test_user['token']}"}
         response = client.post(
             "/api/exercise/records",
@@ -128,7 +126,7 @@ class TestExerciseRecords:
                 "score": 85.5,
                 "count": 20,
                 "duration": 120,
-                "keypoints_data": oversized_payload,
+                "keypoints_data": {"frames": []},
             },
             headers=headers,
         )
@@ -468,10 +466,10 @@ class TestExerciseRecords:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
-    def test_update_record_rejects_oversized_keypoints_data(
+    def test_update_record_rejects_client_supplied_keypoints_data(
         self, client, db_session, test_user
     ):
-        """测试更新记录时拒绝超大关键点数据"""
+        """普通记录更新接口不得覆盖服务端生成的关键点数据。"""
         from app.models.exercise import Exercise, ExerciseRecord
 
         exercise = Exercise(name="测试动作", category="上肢")
@@ -488,11 +486,10 @@ class TestExerciseRecords:
         db_session.add(record)
         db_session.commit()
 
-        oversized_payload = {"points": "a" * MAX_KEYPOINTS_DATA_BYTES}
         headers = {"Authorization": f"Bearer {test_user['token']}"}
         response = client.put(
             f"/api/exercise/records/{record.id}",
-            json={"keypoints_data": oversized_payload},
+            json={"keypoints_data": {"frames": []}},
             headers=headers,
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -541,8 +538,9 @@ class TestExerciseRecords:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_delete_record_success(self, client, db_session, test_user):
-        """测试删除记录成功"""
+        """删除记录时级联删除姿态分析任务并清理视频文件。"""
         from app.models.exercise import Exercise, ExerciseRecord
+        from app.models.pose_analysis_job import PoseAnalysisJob
         from unittest.mock import patch
 
         exercise = Exercise(name="测试动作", category="上肢")
@@ -566,6 +564,15 @@ class TestExerciseRecords:
         )
         db_session.add(record)
         db_session.commit()
+        job = PoseAnalysisJob(
+            record_id=record.id,
+            user_id=test_user["user"].id,
+            status="failed",
+            video_revision=0,
+        )
+        db_session.add(job)
+        db_session.commit()
+        job_id = job.id
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)):
@@ -581,6 +588,7 @@ class TestExerciseRecords:
             db_session.query(ExerciseRecord).filter_by(id=record.id).first()
         )
         assert deleted_record is None
+        assert db_session.query(PoseAnalysisJob).filter_by(id=job_id).first() is None
         assert not video_path.exists()
 
     def test_delete_record_not_found(self, client, db_session, test_user):
@@ -758,10 +766,10 @@ class TestExerciseRecords:
         assert not video_one.exists()
         assert not video_two.exists()
 
-    def test_delete_record_failure_keeps_record(
+    def test_delete_record_cleanup_failure_keeps_database_deleted(
         self, client, db_session, test_user
     ):
-        """测试记录清理视频失败时不提交删除"""
+        """文件清理失败不得让数据库继续引用待删除记录。"""
         from app.models.exercise import Exercise, ExerciseRecord
         from unittest.mock import patch
 
@@ -781,19 +789,21 @@ class TestExerciseRecords:
         db_session.commit()
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
-        with patch("app.api.exercise.delete_record_videos", side_effect=OSError("disk busy")):
+        with patch(
+            "app.api.exercise.delete_video_urls", side_effect=OSError("disk busy")
+        ):
             response = client.delete(
                 f"/api/exercise/records/{record.id}",
                 headers=headers,
             )
 
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-        assert db_session.query(ExerciseRecord).filter_by(id=record.id).first() is not None
+        assert response.status_code == status.HTTP_200_OK
+        assert db_session.query(ExerciseRecord).filter_by(id=record.id).first() is None
 
-    def test_batch_delete_records_failure_keeps_records(
+    def test_batch_delete_cleanup_failure_keeps_database_deleted(
         self, client, db_session, test_user
     ):
-        """测试批量清理视频失败时不提交删除"""
+        """批量文件清理失败时，数据库删除仍应保持提交。"""
         from app.models.exercise import Exercise, ExerciseRecord
         from unittest.mock import patch
 
@@ -814,18 +824,21 @@ class TestExerciseRecords:
         ]
         db_session.add_all(records)
         db_session.commit()
+        record_ids = [record.id for record in records]
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
-        with patch("app.api.exercise.delete_record_videos", side_effect=OSError("disk busy")):
+        with patch(
+            "app.api.exercise.delete_video_urls", side_effect=OSError("disk busy")
+        ):
             response = client.delete(
-                f"/api/exercise/records?record_ids={records[0].id}&record_ids={records[1].id}",
+                f"/api/exercise/records?record_ids={record_ids[0]}&record_ids={record_ids[1]}",
                 headers=headers,
             )
 
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.status_code == status.HTTP_200_OK
         remaining = (
             db_session.query(ExerciseRecord)
-            .filter(ExerciseRecord.id.in_([record.id for record in records]))
+            .filter(ExerciseRecord.id.in_(record_ids))
             .all()
         )
-        assert len(remaining) == 2
+        assert remaining == []

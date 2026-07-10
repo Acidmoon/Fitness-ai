@@ -2,6 +2,7 @@
 
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loguru import logger
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -23,8 +24,12 @@ from app.schemas.exercise import (
     ExerciseRecordUpdate,
 )
 from app.services.exercise_catalog import exercise_to_catalog_response
+from app.services.record_analysis_state import (
+    apply_manual_measurement_updates,
+    initialize_manual_measurements,
+)
 from app.utils.security import get_current_user
-from app.utils.video_files import delete_record_videos
+from app.utils.video_files import delete_video_urls
 
 router = APIRouter()
 
@@ -49,9 +54,8 @@ def create_record(
         duration=record_data.duration,
         heart_rate_avg=record_data.heart_rate_avg,
         heart_rate_max=record_data.heart_rate_max,
-        keypoints_data=record_data.keypoints_data,
-        feedback=record_data.feedback,
     )
+    initialize_manual_measurements(db_record)
     db.add(db_record)
     db.commit()
     db.refresh(db_record)
@@ -124,11 +128,21 @@ def get_record_detail(
 
 @router.get("/exercises", response_model=List[ExerciseResponse])
 def get_exercises(
-    q: Optional[str] = Query(default=None, description="按名称、别名、部位、器械或肌群搜索"),
-    equipment: Optional[str] = Query(default=None, description="按外部动作目录 equipment 过滤"),
-    body_part: Optional[str] = Query(default=None, description="按外部动作目录 body_part 过滤"),
-    analysis_supported: Optional[bool] = Query(default=None, description="仅返回已接入 AI 评分规则的动作"),
-    campus_candidate: Optional[bool] = Query(default=None, description="仅返回校园低器械候选动作"),
+    q: Optional[str] = Query(
+        default=None, description="按名称、别名、部位、器械或肌群搜索"
+    ),
+    equipment: Optional[str] = Query(
+        default=None, description="按外部动作目录 equipment 过滤"
+    ),
+    body_part: Optional[str] = Query(
+        default=None, description="按外部动作目录 body_part 过滤"
+    ),
+    analysis_supported: Optional[bool] = Query(
+        default=None, description="仅返回已接入 AI 评分规则的动作"
+    ),
+    campus_candidate: Optional[bool] = Query(
+        default=None, description="仅返回校园低器械候选动作"
+    ),
     exercise_repo: ExerciseRepository = Depends(get_exercise_repo),
 ):
     """获取标准动作列表"""
@@ -154,8 +168,7 @@ def update_record(
     db_record = get_owned_record_or_404(repo, record_id, current_user.id)
 
     update_data = record_data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(db_record, field, value)
+    apply_manual_measurement_updates(db_record, update_data)
 
     db.commit()
     db.refresh(db_record)
@@ -171,13 +184,13 @@ def delete_record(
 ):
     """删除运动记录"""
     db_record = get_owned_record_or_404(repo, record_id, current_user.id)
-
-    try:
-        delete_record_videos([db_record])
-    except OSError:
-        raise HTTPException(status_code=500, detail="记录关联视频清理失败")
+    video_url = db_record.video_url
     db.delete(db_record)
     db.commit()
+    try:
+        delete_video_urls([video_url])
+    except OSError as exc:
+        logger.warning("Record {} deleted but video cleanup failed: {}", record_id, exc)
     return {"message": "删除成功"}
 
 
@@ -190,13 +203,16 @@ def batch_delete_records(
 ):
     """批量删除运动记录"""
     user_records = repo.get_owned_records_by_ids(record_ids, current_user.id)
-    try:
-        delete_record_videos(user_records)
-    except OSError:
-        raise HTTPException(status_code=500, detail="记录关联视频清理失败")
+    video_urls = [record.video_url for record in user_records]
 
     deleted_count = repo.delete_by_ids([r.id for r in user_records])
     db.commit()
+    try:
+        delete_video_urls(video_urls)
+    except OSError as exc:
+        logger.warning(
+            "Batch record deletion completed but video cleanup failed: {}", exc
+        )
 
     return {
         "message": f"成功删除 {deleted_count} 条记录",

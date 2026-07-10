@@ -9,10 +9,6 @@ import androidx.core.app.NotificationManagerCompat
 import com.fitnessai.android.R
 import com.fitnessai.android.data.model.TrainingRecord
 
-internal fun TrainingRecordRepository.replaceRecord(record: TrainingRecord) {
-    kotlinx.coroutines.runBlocking { updateRecord(record) }
-}
-
 class AndroidNotificationScheduler(val application: Application) : NotificationScheduler {
     private val channelId = "analysis-complete"
 

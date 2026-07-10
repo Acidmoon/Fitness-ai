@@ -9,6 +9,7 @@ import { getExercises, getRecordDetail } from "@/services/exercise-api";
 import {
   applyPoseScoring,
   createPoseAnalysisJob,
+  getLatestPoseAnalysisJob,
   getPoseAnalysisJob,
   getPoseAnalysis,
   previewPoseScoring,
@@ -62,7 +63,7 @@ export function RecordDetailPage() {
     number | null
   >(null);
 
-  const poseAnalysisJobId: number | null = (() => {
+  const explicitPoseAnalysisJobId: number | null = (() => {
     const raw = searchParams.get("job");
     if (!raw) return null;
     const parsed = Number(raw);
@@ -95,6 +96,13 @@ export function RecordDetailPage() {
     queryFn: () => getPoseAnalysis(numericRecordId),
     enabled: Number.isFinite(numericRecordId),
   });
+  const latestPoseAnalysisJobQuery = useQuery({
+    queryKey: ["pose-analysis-job", "latest", numericRecordId],
+    queryFn: () => getLatestPoseAnalysisJob(numericRecordId),
+    enabled: Number.isFinite(numericRecordId),
+  });
+  const poseAnalysisJobId =
+    explicitPoseAnalysisJobId ?? latestPoseAnalysisJobQuery.data?.id ?? null;
   const poseAnalysisJobQuery = useQuery({
     queryKey: ["pose-analysis-job", poseAnalysisJobId],
     queryFn: () => getPoseAnalysisJob(poseAnalysisJobId!),
@@ -114,6 +122,12 @@ export function RecordDetailPage() {
         queryKey: ["exercise", "record-detail", numericRecordId],
       });
       await queryClient.invalidateQueries({ queryKey: ["exercise", "records"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["pose-analysis-job", "latest", numericRecordId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["pose-analysis", numericRecordId],
+      });
     },
     onError: (error) => {
       setDetailMessage("");
@@ -130,6 +144,12 @@ export function RecordDetailPage() {
         queryKey: ["exercise", "record-detail", numericRecordId],
       });
       await queryClient.invalidateQueries({ queryKey: ["exercise", "records"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["pose-analysis-job", "latest", numericRecordId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["pose-analysis", numericRecordId],
+      });
     },
     onError: (error) => {
       setDetailMessage("");
@@ -145,6 +165,9 @@ export function RecordDetailPage() {
       setHandledPoseAnalysisJobId(null);
       setPoseAnalysisJobId(job.id);
       setDetailMessage("姿态分析任务已提交。");
+      void queryClient.invalidateQueries({
+        queryKey: ["pose-analysis-job", "latest", numericRecordId],
+      });
     },
     onError: (error) => {
       setDetailMessage("");
@@ -171,7 +194,7 @@ export function RecordDetailPage() {
       });
     }
 
-    if (job.status === "failed") {
+    if (job.status === "failed" || job.status === "cancelled") {
       setHandledPoseAnalysisJobId(job.id);
       setDetailMessage("");
       setDetailError(job.error ?? "姿态分析失败");

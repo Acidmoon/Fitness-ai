@@ -11,7 +11,7 @@ os.environ.setdefault(
     "SECRET_KEY", "test-secret-key-for-pytest-not-for-production-use-123456"
 )
 
-from app.database import Base, get_db  # noqa: E402
+from app.database import Base, enable_sqlite_foreign_keys, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.utils.login_rate_limit import clear_all_login_rate_limits  # noqa: E402
 from app.utils.security import hash_password  # noqa: E402
@@ -24,6 +24,7 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
+enable_sqlite_foreign_keys(engine)
 
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

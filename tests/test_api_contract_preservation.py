@@ -31,6 +31,7 @@ def _create_exercise_record(db_session, user_id, video_url=None, keypoints_data=
         duration=60,
         video_url=video_url,
         keypoints_data=keypoints_data,
+        analysis_revision=0 if keypoints_data else None,
     )
     db_session.add(record)
     db_session.commit()
@@ -76,9 +77,7 @@ class TestPostPoseAnalysisResponseSchema:
     Validates: Requirement 6.1
     """
 
-    def test_returns_pose_analysis_response_schema(
-        self, client, db_session, test_user
-    ):
+    def test_returns_pose_analysis_response_schema(self, client, db_session, test_user):
         record = _create_exercise_record(
             db_session, test_user["user"].id, video_url="/videos/test.mp4"
         )
@@ -121,9 +120,7 @@ class TestPostPoseAnalysisResponseSchema:
         assert "keypoints" in frame
         assert isinstance(frame["keypoints"], list)
 
-    def test_returns_done_status_after_analysis(
-        self, client, db_session, test_user
-    ):
+    def test_returns_done_status_after_analysis(self, client, db_session, test_user):
         """POST with successful analysis returns 'done' status."""
         record = _create_exercise_record(
             db_session, test_user["user"].id, video_url="/videos/test.mp4"
@@ -191,9 +188,7 @@ class TestPostPoseAnalysisJobResponseSchema:
         assert "result_summary" in data
         assert "completed_at" in data
 
-    def test_job_status_is_queued_on_creation(
-        self, client, db_session, test_user
-    ):
+    def test_job_status_is_queued_on_creation(self, client, db_session, test_user):
         record = _create_exercise_record(
             db_session, test_user["user"].id, video_url="/videos/job.mp4"
         )
@@ -330,9 +325,7 @@ class TestPostPoseScoringWithAbstractedBackend:
                 "source_fps": 30.0,
                 "sample_fps": 5,
             },
-            "frames": [
-                _make_squat_frame(i, angle) for i, angle in enumerate(angles)
-            ],
+            "frames": [_make_squat_frame(i, angle) for i, angle in enumerate(angles)],
         }
 
         record = _create_exercise_record(
@@ -386,6 +379,7 @@ class TestPostPoseScoringWithAbstractedBackend:
             count=5,
             duration=30,
             keypoints_data=_sample_analysis_result(),
+            analysis_revision=0,
         )
         db_session.add(record)
         db_session.commit()
@@ -413,9 +407,7 @@ class TestHttp503WhenBackendUnavailable:
     Validates: Requirement 6.4
     """
 
-    def test_503_when_backend_disabled(
-        self, client, db_session, test_user
-    ):
+    def test_503_when_backend_disabled(self, client, db_session, test_user):
         """PoseAnalysisDisabledError results in HTTP 503."""
         record = _create_exercise_record(
             db_session, test_user["user"].id, video_url="/videos/test.mp4"
@@ -426,9 +418,7 @@ class TestHttp503WhenBackendUnavailable:
             return_value="/fake/test.mp4",
         ), patch("os.path.exists", return_value=True), patch(
             "app.services.pose_analysis_service.analyze_video_file",
-            side_effect=PoseAnalysisDisabledError(
-                "MoveNet pose analysis is disabled"
-            ),
+            side_effect=PoseAnalysisDisabledError("MoveNet pose analysis is disabled"),
         ):
             response = client.post(
                 f"/api/ai/records/{record.id}/pose-analysis",
@@ -440,9 +430,7 @@ class TestHttp503WhenBackendUnavailable:
         assert "detail" in data
         assert isinstance(data["detail"], str)
 
-    def test_503_when_backend_unavailable(
-        self, client, db_session, test_user
-    ):
+    def test_503_when_backend_unavailable(self, client, db_session, test_user):
         """PoseAnalysisUnavailableError results in HTTP 503."""
         record = _create_exercise_record(
             db_session, test_user["user"].id, video_url="/videos/test.mp4"
@@ -467,9 +455,7 @@ class TestHttp503WhenBackendUnavailable:
         assert "detail" in data
         assert len(data["detail"]) > 0
 
-    def test_503_error_message_format_preserved(
-        self, client, db_session, test_user
-    ):
+    def test_503_error_message_format_preserved(self, client, db_session, test_user):
         """Error response uses the standard {detail: string} format."""
         record = _create_exercise_record(
             db_session, test_user["user"].id, video_url="/videos/test.mp4"

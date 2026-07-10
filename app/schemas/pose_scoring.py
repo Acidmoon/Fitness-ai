@@ -12,6 +12,7 @@ class PoseScoringResponse(BaseModel):
     status: Literal["scored", "unsupported"]
     applied: bool = False
     exercise_type: Optional[str] = None
+    rule_version: Optional[str] = None
     score: Optional[float] = None
     count: Optional[int] = None
     auto_count: Optional[int] = None

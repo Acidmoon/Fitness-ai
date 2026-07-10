@@ -23,6 +23,8 @@ interface TrainingRecordRepository {
     val records: StateFlow<List<TrainingRecord>>
     suspend fun refresh(): Result<Unit> = Result.success(Unit)
     fun getRecord(id: String): TrainingRecord?
+    /** Replace cached UI state without issuing a backend update. */
+    fun replaceLocal(record: TrainingRecord)
     suspend fun createRecord(record: TrainingRecord): Result<TrainingRecord>
     suspend fun updateRecord(record: TrainingRecord): Result<TrainingRecord>
     suspend fun deleteRecord(id: String): Result<Unit>
@@ -44,6 +46,7 @@ interface VideoRepository {
 
 interface AnalysisRepository {
     suspend fun startAnalysis(recordId: String): Result<Unit>
+    suspend fun resumeAnalysis(recordId: String): Result<Unit> = Result.success(Unit)
     suspend fun scorePose(recordId: String, apply: Boolean): Result<Unit> = Result.failure(
         UnsupportedOperationException("当前模式不支持后端评分")
     )

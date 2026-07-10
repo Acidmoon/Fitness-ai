@@ -71,8 +71,13 @@ def delete_video_file(video_url: Optional[str]) -> str:
 
 
 def delete_record_videos(records: Iterable) -> None:
-    for record in records:
-        delete_video_file(getattr(record, "video_url", None))
+    delete_video_urls(getattr(record, "video_url", None) for record in records)
+
+
+def delete_video_urls(video_urls: Iterable[Optional[str]]) -> None:
+    """Delete stored videos after their database references are removed."""
+    for video_url in video_urls:
+        delete_video_file(video_url)
 
 
 def read_upload_header(upload_file, size: int = VIDEO_SIGNATURE_READ_SIZE) -> bytes:
@@ -86,7 +91,7 @@ def detect_video_signature(header: bytes) -> Optional[str]:
     if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"AVI ":
         return ".avi"
 
-    if len(header) >= 4 and header[:4] == b"\x1A\x45\xDF\xA3":
+    if len(header) >= 4 and header[:4] == b"\x1a\x45\xdf\xa3":
         return ".mkv"
 
     if len(header) >= 12 and header[4:8] == b"ftyp":
@@ -137,6 +142,7 @@ __all__ = [
     "VideoUploadTooLargeError",
     "build_video_url",
     "delete_record_videos",
+    "delete_video_urls",
     "delete_video_file",
     "detect_video_signature",
     "ensure_upload_dir",

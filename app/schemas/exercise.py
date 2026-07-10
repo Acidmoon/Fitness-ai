@@ -1,24 +1,12 @@
 # E:\Fitness-ai-backend\app\schemas\exercise.py
 
-import json
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any, List as PyList
 from datetime import datetime, date
 
 HEART_RATE_MIN = 20
 HEART_RATE_MAX = 260
-MAX_FEEDBACK_LENGTH = 2000
 MAX_KEYPOINTS_DATA_BYTES = 100_000
-
-
-def _validate_keypoints_data_size(value: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    if value is None:
-        return value
-
-    serialized = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    if len(serialized.encode("utf-8")) > MAX_KEYPOINTS_DATA_BYTES:
-        raise ValueError("关键点数据过大")
-    return value
 
 
 # 创建运动记录请求
@@ -29,13 +17,8 @@ class ExerciseRecordCreate(BaseModel):
     duration: int = Field(ge=0, description="时长 (秒)")
     heart_rate_avg: Optional[float] = Field(None, ge=HEART_RATE_MIN, le=HEART_RATE_MAX)
     heart_rate_max: Optional[float] = Field(None, ge=HEART_RATE_MIN, le=HEART_RATE_MAX)
-    keypoints_data: Optional[Dict[str, Any]] = None
-    feedback: Optional[str] = Field(None, max_length=MAX_FEEDBACK_LENGTH)
 
-    @field_validator("keypoints_data")
-    @classmethod
-    def validate_keypoints_data(cls, value):
-        return _validate_keypoints_data_size(value)
+    model_config = ConfigDict(extra="forbid")
 
 
 # 运动记录响应
@@ -44,9 +27,17 @@ class ExerciseRecordResponse(BaseModel):
     exercise_id: int
     score: float
     count: int
+    manual_score: Optional[float]
+    manual_count: Optional[int]
+    score_source: str
+    count_source: str
     duration: int
     heart_rate_avg: Optional[float]
     video_url: Optional[str]
+    video_revision: int
+    analysis_revision: Optional[int]
+    analysis_model: Optional[str]
+    analysis_rule_version: Optional[str]
     feedback: Optional[str]
     created_at: datetime
 
@@ -96,17 +87,13 @@ class ExerciseRecordUpdate(BaseModel):
     duration: Optional[int] = Field(None, ge=0, description="时长 (秒)")
     heart_rate_avg: Optional[float] = Field(None, ge=HEART_RATE_MIN, le=HEART_RATE_MAX)
     heart_rate_max: Optional[float] = Field(None, ge=HEART_RATE_MIN, le=HEART_RATE_MAX)
-    keypoints_data: Optional[Dict[str, Any]] = None
-    feedback: Optional[str] = Field(None, max_length=MAX_FEEDBACK_LENGTH)
 
-    @field_validator("keypoints_data")
-    @classmethod
-    def validate_keypoints_data(cls, value):
-        return _validate_keypoints_data_size(value)
+    model_config = ConfigDict(extra="forbid")
 
 
 class ExerciseRecordPage(BaseModel):
     """分页运动记录响应。"""
+
     items: PyList[ExerciseRecordResponse]
     total: int
     skip: int

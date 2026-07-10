@@ -1,5 +1,10 @@
 export type PoseAnalysisStatus = "idle" | "done" | "failed";
-export type PoseAnalysisJobStatus = "queued" | "running" | "succeeded" | "failed";
+export type PoseAnalysisJobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 
 export interface PoseAnalysisModelMetadata {
   name: string | null;
@@ -31,6 +36,8 @@ export interface PoseAnalysisFrame {
 
 export interface PoseAnalysisResult {
   record_id: number;
+  video_revision: number;
+  analysis_revision: number | null;
   schema_version: number;
   status: PoseAnalysisStatus;
   model: PoseAnalysisModelMetadata | null;
@@ -42,6 +49,8 @@ export interface PoseAnalysisResult {
 export interface PoseAnalysisJob {
   id: number;
   record_id: number;
+  video_revision: number;
+  sample_fps: number | null;
   status: PoseAnalysisJobStatus;
   error: string | null;
   result_summary: Record<string, unknown> | null;

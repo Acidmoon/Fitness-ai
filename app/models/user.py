@@ -10,7 +10,16 @@ class User(Base):
 
     __tablename__ = "users"  # 数据库表名
     records = relationship(
-        "ExerciseRecord", back_populates="user", cascade="all, delete-orphan"
+        "ExerciseRecord",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    pose_analysis_jobs = relationship(
+        "PoseAnalysisJob",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     id = Column(Integer, primary_key=True, index=True)  # 主键

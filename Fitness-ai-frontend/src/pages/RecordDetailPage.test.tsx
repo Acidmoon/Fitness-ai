@@ -23,6 +23,7 @@ vi.mock("@/services/video-api", () => ({
 vi.mock("@/services/pose-analysis-api", () => ({
   applyPoseScoring: vi.fn(),
   createPoseAnalysisJob: vi.fn(),
+  getLatestPoseAnalysisJob: vi.fn(),
   getPoseAnalysisJob: vi.fn(),
   getPoseAnalysis: vi.fn(),
   previewPoseScoring: vi.fn(),
@@ -71,6 +72,7 @@ describe("RecordDetailPage", () => {
       frames: [],
       error: null,
     });
+    vi.mocked(poseAnalysisApi.getLatestPoseAnalysisJob).mockResolvedValue(null);
     vi.mocked(poseAnalysisApi.getPoseAnalysisJob).mockResolvedValue({
       id: 77,
       record_id: 11,
@@ -401,6 +403,50 @@ describe("RecordDetailPage", () => {
     expect(await screen.findByText("姿态分析完成。")).toBeInTheDocument();
     expect(poseAnalysisApi.createPoseAnalysisJob).toHaveBeenCalledWith(11);
     expect(poseAnalysisApi.getPoseAnalysisJob).toHaveBeenCalledWith(77);
+  });
+
+  it("recovers the latest analysis job after a page refresh", async () => {
+    vi.mocked(exerciseApi.getRecordDetail).mockResolvedValue({
+      id: 11,
+      exercise_id: 1,
+      score: 89,
+      count: 14,
+      duration: 65,
+      heart_rate_avg: 126,
+      video_url: "/videos/demo.mp4",
+      feedback: null,
+      created_at: "2026-03-11T08:00:00Z",
+    });
+    vi.mocked(poseAnalysisApi.getLatestPoseAnalysisJob).mockResolvedValue({
+      id: 91,
+      record_id: 11,
+      video_revision: 3,
+      sample_fps: 5,
+      status: "running",
+      error: null,
+      result_summary: null,
+      created_at: "2026-03-11T08:00:00Z",
+      updated_at: "2026-03-11T08:00:01Z",
+      completed_at: null,
+    });
+    vi.mocked(poseAnalysisApi.getPoseAnalysisJob).mockResolvedValue({
+      id: 91,
+      record_id: 11,
+      video_revision: 3,
+      sample_fps: 5,
+      status: "succeeded",
+      error: null,
+      result_summary: null,
+      created_at: "2026-03-11T08:00:00Z",
+      updated_at: "2026-03-11T08:00:02Z",
+      completed_at: "2026-03-11T08:00:02Z",
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("姿态分析完成。")).toBeInTheDocument();
+    expect(poseAnalysisApi.getLatestPoseAnalysisJob).toHaveBeenCalledWith(11);
+    expect(poseAnalysisApi.getPoseAnalysisJob).toHaveBeenCalledWith(91);
   });
 
   it("shows failed pose analysis job state", async () => {

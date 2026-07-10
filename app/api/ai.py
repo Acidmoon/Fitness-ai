@@ -1,5 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import get_db
 from app.models.pose_analysis_job import PoseAnalysisJob
@@ -95,19 +95,26 @@ def create_pose_analysis_job(
     record = get_owned_record_or_404(repo, record_id, current_user.id)
     _check_video_ready_for_http(record)
 
-    job = create_pose_analysis_job_record(
+    creation = create_pose_analysis_job_record(
         db=db,
-        record_id=record.id,
+        record=record,
         user_id=current_user.id,
         sample_fps=request_data.sample_fps if request_data else None,
     )
-    background_tasks.add_task(
-        process_pose_analysis_job,
-        job.id,
-        request_data.sample_fps if request_data else None,
-        db,
-    )
-    return job
+    if creation.created:
+        # Background work must not reuse the request-scoped Session after the response.
+        background_session_factory = sessionmaker(
+            bind=db.get_bind(),
+            autocommit=False,
+            autoflush=False,
+        )
+        background_tasks.add_task(
+            process_pose_analysis_job,
+            creation.job.id,
+            creation.job.sample_fps,
+            background_session_factory,
+        )
+    return creation.job
 
 
 @router.get(
@@ -134,6 +141,30 @@ def get_pose_analysis_job(
 
 
 @router.get(
+    "/records/{record_id}/pose-analysis/jobs/latest",
+    response_model=PoseAnalysisJobResponse | None,
+)
+def get_latest_pose_analysis_job(
+    record_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
+):
+    """Return the latest job for the current video revision so clients can reconnect."""
+    record = get_owned_record_or_404(repo, record_id, current_user.id)
+    return (
+        db.query(PoseAnalysisJob)
+        .filter(
+            PoseAnalysisJob.record_id == record.id,
+            PoseAnalysisJob.user_id == current_user.id,
+            PoseAnalysisJob.video_revision == int(record.video_revision or 0),
+        )
+        .order_by(PoseAnalysisJob.id.desc())
+        .first()
+    )
+
+
+@router.get(
     "/records/{record_id}/pose-analysis",
     response_model=PoseAnalysisResponse,
 )
@@ -143,7 +174,12 @@ def get_pose_analysis(
     repo: ExerciseRecordRepository = Depends(get_exercise_record_repo),
 ):
     record = get_owned_record_or_404(repo, record_id, current_user.id)
-    return build_pose_analysis_response(record.id, record.keypoints_data)
+    return build_pose_analysis_response(
+        record.id,
+        record.keypoints_data,
+        video_revision=int(record.video_revision or 0),
+        analysis_revision=record.analysis_revision,
+    )
 
 
 @router.post(

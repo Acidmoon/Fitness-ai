@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.models.exercise import Exercise, ExerciseRecord
+from app.services.record_analysis_state import MEASUREMENT_SOURCE_AI
+from app.utils.datetime import utc_now
 from app.services.exercise_rules import (
     AngleSample,
     ExerciseRule,
@@ -44,6 +46,11 @@ def score_record_pose(record: ExerciseRecord) -> Dict[str, Any]:
     exercise = record.exercise
     if exercise is None:
         raise PoseScoringUnavailableError("记录缺少动作信息")
+    if (
+        record.keypoints_data is not None
+        and record.analysis_revision != record.video_revision
+    ):
+        raise PoseScoringUnavailableError("姿态分析结果已过期，请重新分析当前视频")
 
     return score_pose_data(exercise, record.keypoints_data)
 
@@ -67,7 +74,9 @@ def score_pose_data(exercise: Exercise, keypoints_data: Any) -> Dict[str, Any]:
     angle_samples = extract_angle_samples(frames, rule)
     video_quality = build_video_quality_score(frames, angle_samples, rule)
     if len(angle_samples) < rule.min_valid_frames:
-        feedback = video_quality.get("feedback") or ["关键点置信度不足，无法生成可靠评分"]
+        feedback = video_quality.get("feedback") or [
+            "关键点置信度不足，无法生成可靠评分"
+        ]
         raise PoseScoringUnavailableError(feedback[0])
 
     phase_summary = extract_phase_summary(angle_samples, rule)
@@ -75,6 +84,8 @@ def score_pose_data(exercise: Exercise, keypoints_data: Any) -> Dict[str, Any]:
     quality["video"] = video_quality
     errors = detect_pose_errors(frames, angle_samples, phase_summary, rule)
     score = quality["score"]
+    analysis_config = (exercise.standard or {}).get("analysis") or {}
+    rule_version = analysis_config.get("rule_version") or f"{rule.exercise_type}-v1"
     feedback = _merge_feedback(
         build_standard_quality_feedback(quality),
         video_quality.get("feedback") or [],
@@ -85,6 +96,7 @@ def score_pose_data(exercise: Exercise, keypoints_data: Any) -> Dict[str, Any]:
         "status": "scored",
         "applied": False,
         "exercise_type": rule.exercise_type,
+        "rule_version": rule_version,
         "score": score,
         "count": phase_summary.repetitions,
         "auto_count": phase_summary.repetitions,
@@ -113,9 +125,17 @@ def apply_pose_scoring_result(
     if scoring_result.get("status") != "scored":
         raise PoseScoringUnavailableError("当前评分结果不可应用")
 
+    if record.manual_score is None:
+        record.manual_score = record.score
+    if record.manual_count is None:
+        record.manual_count = record.count
     record.score = float(scoring_result["score"])
     record.count = int(scoring_result["count"])
+    record.score_source = MEASUREMENT_SOURCE_AI
+    record.count_source = MEASUREMENT_SOURCE_AI
     record.feedback = "\n".join(scoring_result.get("feedback") or [])
+    record.analysis_rule_version = scoring_result.get("rule_version")
+    record.analysis_updated_at = utc_now()
 
 
 def find_scoring_rule(exercise: Exercise) -> Optional[ScoringRule]:
@@ -283,14 +303,16 @@ def _score_joint_angle_dimension(
 
     if phase_summary.min_angle > rule.target_angle:
         deduction = min(
-            35.0, (phase_summary.min_angle - rule.target_angle) * rule.depth_penalty_rate
+            35.0,
+            (phase_summary.min_angle - rule.target_angle) * rule.depth_penalty_rate,
         )
         score -= deduction
         feedback.append("动作幅度不足，最低点关节角仍偏大")
 
     if phase_summary.max_angle < rule.up_angle:
         deduction = min(
-            20.0, (rule.up_angle - phase_summary.max_angle) * rule.extension_penalty_rate
+            20.0,
+            (rule.up_angle - phase_summary.max_angle) * rule.extension_penalty_rate,
         )
         score -= deduction
         feedback.append("复位不充分，最高点未达到伸展阈值")
@@ -400,11 +422,19 @@ def _score_symmetry_dimension(
     frames: Sequence[Dict[str, Any]], rule: ExerciseRule
 ) -> Dict[str, Any]:
     left_triplet = next(
-        (triplet for triplet in rule.joint_triplets if triplet.middle.startswith("left_")),
+        (
+            triplet
+            for triplet in rule.joint_triplets
+            if triplet.middle.startswith("left_")
+        ),
         None,
     )
     right_triplet = next(
-        (triplet for triplet in rule.joint_triplets if triplet.middle.startswith("right_")),
+        (
+            triplet
+            for triplet in rule.joint_triplets
+            if triplet.middle.startswith("right_")
+        ),
         None,
     )
     if left_triplet is None or right_triplet is None:
@@ -454,7 +484,9 @@ def _score_keyframe_confidence_dimension(phase_summary: PhaseSummary) -> Dict[st
         "score": round(_clamp_score(score), 2),
         "metrics": {
             "average_keyframe_confidence": round(confidence, 4),
-            "source": "repetition_keyframes" if keyframe_confidences else "all_valid_frames",
+            "source": (
+                "repetition_keyframes" if keyframe_confidences else "all_valid_frames"
+            ),
         },
         "feedback": feedback,
     }

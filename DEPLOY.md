@@ -27,14 +27,11 @@ cd Fitness-ai
 cp .env.production.example .env.production
 # 编辑 .env.production，填入真实的 SECRET_KEY 和数据库密码
 
-# 3. 构建并启动
+# 3. 构建、迁移并启动
 chmod +x deploy.sh
 ./deploy.sh
 
-# 4. 初始化数据库
-./deploy.sh db-init
-
-# 5. （可选）填充示例数据
+# 4. （可选）填充示例数据
 ./deploy.sh db-seed
 ```
 
@@ -50,8 +47,33 @@ cd /path/to/Fitness-ai
 这一条命令会：
 1. `git pull` 拉取最新代码
 2. `docker compose build` 重新构建镜像
-3. `docker compose up -d` 滚动更新容器
-4. 自动健康检查
+3. 保持旧后端运行，启动数据库并执行迁移前检查
+4. 对已有数据库执行 `pg_dump` 备份
+5. 执行 `alembic upgrade head`
+6. 启动更新后的容器并执行健康检查
+
+## 首次接管历史数据库
+
+2026 年 7 月 10 日之前由 `scripts.init_db` 创建的数据库没有
+`alembic_version` 表。第一次部署包含 Alembic 的版本时，默认更新会主动停止，
+避免误把历史数据库当作空库重新建表。
+
+先确认旧版本后端仍在运行，然后执行：
+
+```bash
+cd /path/to/Fitness-ai
+./deploy.sh db-baseline
+./deploy.sh db-migrate
+./deploy.sh
+```
+
+`db-baseline` 会先生成数据库备份，再执行
+`alembic stamp 20260710_0000`。该命令只用于已经存在 `users`、`records`
+等历史表的数据库；全新空库不需要 stamp。
+
+本次迁移只增加向后兼容列、回填来源字段、修复级联外键并建立活动任务唯一索引。
+旧后端可以在迁移期间继续读取原字段；主要影响是短暂的 DDL 表锁，持续时间取决于
+`records` 和 `pose_analysis_jobs` 的数据量。
 
 ## 常用命令
 
@@ -71,7 +93,10 @@ cd /path/to/Fitness-ai
 ./deploy.sh stop
 
 # 初始化/重置数据库
-./deploy.sh db-init
+./deploy.sh db-migrate
+
+# 首次接管历史数据库（只执行一次）
+./deploy.sh db-baseline
 ```
 
 ## 仅更新后端
@@ -81,7 +106,8 @@ cd /path/to/Fitness-ai
 ```bash
 git pull origin main
 docker compose build backend
-docker compose up -d backend
+./deploy.sh db-migrate
+docker compose --env-file .env.production up -d backend
 ```
 
 ## 仅更新前端
@@ -126,10 +152,9 @@ docker compose logs backend --tail=50
 # 数据库连接失败
 docker compose exec backend python -c "from app.database import engine; print(engine.url)"
 
-# 重建所有容器（核弹选项）
-docker compose down
-docker compose build --no-cache
-docker compose up -d
+# 重新构建所有容器
+docker compose --env-file .env.production build --no-cache
+docker compose --env-file .env.production up -d
 ```
 
 ## Android 端配置

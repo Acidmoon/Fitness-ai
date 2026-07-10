@@ -2,7 +2,7 @@
 
 import re
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
@@ -13,6 +13,9 @@ PLACEHOLDER_DATABASE_URLS = {
     "postgresql://<username>:<password>@<host>:5432/<database>",
 }
 PLACEHOLDER_SECRET_KEYS = {
+    "CHANGE_ME",
+    "CHANGE_ME_TO_A_REAL_SECRET_KEY",
+    "fitness_secret",
     "your-secret-key-change-in-production",
     "your-random-secret-key-here-use-openssl-rand-hex-32",
     "<generate-with-python-secrets-token-hex-32>",
@@ -48,7 +51,9 @@ class Settings(BaseSettings):
     MOVENET_SAMPLE_FPS: int = 5
 
     # CORS 配置
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:8080"
+    ALLOWED_ORIGINS: str = (
+        "http://localhost:3000,http://localhost:5173,http://localhost:8080"
+    )
 
     # 视频存储配置
     VIDEO_STORAGE_BACKEND: str = "local"
@@ -141,10 +146,26 @@ class Settings(BaseSettings):
             raise ValueError("VIDEO_STORAGE_BACKEND 当前仅支持 local")
         return storage_backend
 
+    @model_validator(mode="after")
+    def validate_production_credentials(self):
+        if self.ENVIRONMENT != "production":
+            return self
+
+        database_url = self.DATABASE_URL.lower()
+        if "change_me" in database_url or ":fitness_secret@" in database_url:
+            raise ValueError("生产环境 DATABASE_URL 不能使用示例密码")
+        if len(self.SECRET_KEY) < 32:
+            raise ValueError("生产环境 SECRET_KEY 长度不能少于 32 个字符")
+        return self
+
     @property
     def allowed_origins_list(self) -> List[str]:
         """将逗号分隔的字符串转换为列表"""
-        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+        return [
+            origin.strip()
+            for origin in self.ALLOWED_ORIGINS.split(",")
+            if origin.strip()
+        ]
 
 
 settings = Settings()

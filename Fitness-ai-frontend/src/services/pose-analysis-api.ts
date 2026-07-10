@@ -35,6 +35,13 @@ export async function getPoseAnalysisJob(jobId: number) {
   return data as PoseAnalysisJob;
 }
 
+export async function getLatestPoseAnalysisJob(recordId: number) {
+  const { data } = await http.get<PoseAnalysisJobContract | null>(
+    `/api/ai/records/${recordId}/pose-analysis/jobs/latest`
+  );
+  return data as PoseAnalysisJob | null;
+}
+
 export async function previewPoseScoring(recordId: number) {
   const { data } = await http.post<PoseScoringResult>(
     `/api/ai/records/${recordId}/pose-scoring`,

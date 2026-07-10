@@ -26,6 +26,8 @@ RUN mkdir -p /app/models && \
 # Copy application code
 COPY app/ ./app/
 COPY scripts/ ./scripts/
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 
 # Create directories for uploads and logs
 RUN mkdir -p uploads/videos logs

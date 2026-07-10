@@ -232,6 +232,7 @@ private object StubPoseAnalysisApi : PoseAnalysisApiService {
     override suspend fun triggerPoseAnalysis(recordId: Int, request: PoseAnalysisTriggerDto?) = error("stub")
     override suspend fun createPoseAnalysisJob(recordId: Int, request: PoseAnalysisTriggerDto?) = error("stub")
     override suspend fun getPoseAnalysisJob(jobId: Int) = error("stub")
+    override suspend fun getLatestPoseAnalysisJob(recordId: Int) = error("stub")
     override suspend fun getPoseAnalysis(recordId: Int) = error("stub")
 }
 

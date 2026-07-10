@@ -1,6 +1,7 @@
 package com.fitnessai.android.data.api
 
 import okhttp3.MultipartBody
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.Field
@@ -12,6 +13,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.Response
 import retrofit2.http.Streaming
 
 interface AuthApiService {
@@ -103,6 +105,11 @@ interface PoseAnalysisApiService {
 
     @GET("api/ai/pose-analysis/jobs/{job_id}")
     suspend fun getPoseAnalysisJob(@Path("job_id") jobId: Int): PoseAnalysisJobDto
+
+    @GET("api/ai/records/{record_id}/pose-analysis/jobs/latest")
+    suspend fun getLatestPoseAnalysisJob(
+        @Path("record_id") recordId: Int
+    ): Response<ResponseBody>
 
     @GET("api/ai/records/{record_id}/pose-analysis")
     suspend fun getPoseAnalysis(@Path("record_id") recordId: Int): PoseAnalysisResultDto

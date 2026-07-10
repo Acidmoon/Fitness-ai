@@ -28,6 +28,7 @@ enum class AnalysisStatus {
 
 data class AnalysisResult(
     val status: AnalysisStatus,
+    val jobId: Int? = null,
     val modelName: String? = null,
     val validFrameCount: Int? = null,
     val averageConfidence: Double? = null,
@@ -43,9 +44,15 @@ data class TrainingRecord(
     val category: String,
     val count: Int,
     val score: Int? = null,
+    val manualScore: Int? = null,
+    val manualCount: Int? = null,
+    val scoreSource: String = "manual",
+    val countSource: String = "manual",
     val durationSeconds: Int? = null,
     val recordedAt: LocalDateTime = LocalDateTime.now(),
     val videoUri: Uri? = null,
+    val videoRevision: Int = 0,
+    val analysisRevision: Int? = null,
     val analysisResult: AnalysisResult = AnalysisResult(status = AnalysisStatus.Idle)
 ) {
     val dateLabel: String

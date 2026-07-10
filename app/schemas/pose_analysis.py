@@ -34,6 +34,8 @@ class PoseAnalysisFrame(BaseModel):
 
 class PoseAnalysisResponse(BaseModel):
     record_id: int
+    video_revision: int = 0
+    analysis_revision: Optional[int] = None
     schema_version: int = 1
     status: Literal["idle", "done", "failed"]
     model: Optional[PoseAnalysisModelMetadata] = None
@@ -44,12 +46,14 @@ class PoseAnalysisResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-PoseAnalysisJobStatus = Literal["queued", "running", "succeeded", "failed"]
+PoseAnalysisJobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
 
 class PoseAnalysisJobResponse(BaseModel):
     id: int
     record_id: int
+    video_revision: int
+    sample_fps: Optional[int] = None
     status: PoseAnalysisJobStatus
     error: Optional[str] = None
     result_summary: Optional[Dict[str, Any]] = None

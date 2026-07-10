@@ -29,9 +29,17 @@ export interface ExerciseRecord {
   exercise_id: number;
   score: number;
   count: number;
+  manual_score?: number | null;
+  manual_count?: number | null;
+  score_source?: "manual" | "ai";
+  count_source?: "manual" | "ai";
   duration: number;
   heart_rate_avg: number | null;
   video_url: string | null;
+  video_revision?: number;
+  analysis_revision?: number | null;
+  analysis_model?: string | null;
+  analysis_rule_version?: string | null;
   feedback: string | null;
   created_at: string;
 }
@@ -43,5 +51,4 @@ export interface ExerciseRecordFormValues {
   duration: number;
   heart_rate_avg?: number | null;
   heart_rate_max?: number | null;
-  feedback?: string;
 }

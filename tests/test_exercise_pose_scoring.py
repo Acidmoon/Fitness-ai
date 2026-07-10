@@ -275,6 +275,7 @@ def create_record(
         count=count,
         duration=60,
         keypoints_data=keypoints_data,
+        analysis_revision=0 if keypoints_data else None,
         feedback=feedback,
     )
     db_session.add(record)
@@ -392,17 +393,14 @@ class TestPoseScoringRules:
         assert result["metrics"]["quality"]["version"] == "standard_quality_v1"
         assert result["metrics"]["quality"]["video"]["status"] == "ok"
         assert (
-            result["metrics"]["quality"]["video"]["average_keypoint_confidence"]
-            == 0.9
+            result["metrics"]["quality"]["video"]["average_keypoint_confidence"] == 0.9
         )
         assert result["metrics"]["quality"]["video"]["valid_frame_ratio"] == 1.0
         assert result["metrics"]["quality"]["video"]["missing_required_keypoints"] == []
         assert "joint_angle" in result["metrics"]["quality"]["dimensions"]
         assert result["metrics"]["errors"] == []
 
-    def test_video_quality_warns_on_low_confidence_frames(
-        self, db_session, test_user
-    ):
+    def test_video_quality_warns_on_low_confidence_frames(self, db_session, test_user):
         record = create_record(
             db_session,
             test_user["user"].id,
@@ -436,8 +434,7 @@ class TestPoseScoringRules:
         result = score_record_pose(record)
         video_quality = result["metrics"]["quality"]["video"]
         missing_names = {
-            keypoint["name"]
-            for keypoint in video_quality["missing_required_keypoints"]
+            keypoint["name"] for keypoint in video_quality["missing_required_keypoints"]
         }
 
         assert result["status"] == "scored"
@@ -471,9 +468,15 @@ class TestPoseScoringRules:
             exercise_name="标准俯卧撑",
             keypoints_data=make_full_body_pushup_analysis(
                 [
-                    make_full_body_pushup_frame(0, 162, right_angle=135, hip_offset_x=45),
-                    make_full_body_pushup_frame(1, 85, right_angle=120, hip_offset_x=45),
-                    make_full_body_pushup_frame(2, 164, right_angle=138, hip_offset_x=45),
+                    make_full_body_pushup_frame(
+                        0, 162, right_angle=135, hip_offset_x=45
+                    ),
+                    make_full_body_pushup_frame(
+                        1, 85, right_angle=120, hip_offset_x=45
+                    ),
+                    make_full_body_pushup_frame(
+                        2, 164, right_angle=138, hip_offset_x=45
+                    ),
                 ]
             ),
         )
@@ -487,9 +490,7 @@ class TestPoseScoringRules:
         assert "身体直线度不足" in "\n".join(result["feedback"])
         assert "左右关节角度差异偏大" in "\n".join(result["feedback"])
 
-    def test_standard_quality_penalizes_unstable_rhythm(
-        self, db_session, test_user
-    ):
+    def test_standard_quality_penalizes_unstable_rhythm(self, db_session, test_user):
         record = create_record(
             db_session,
             test_user["user"].id,
@@ -508,9 +509,9 @@ class TestPoseScoringRules:
         result = score_record_pose(record)
 
         assert result["count"] == 2
-        assert result["metrics"]["quality"]["dimensions"]["rhythm_stability"][
-            "score"
-        ] < 85
+        assert (
+            result["metrics"]["quality"]["dimensions"]["rhythm_stability"]["score"] < 85
+        )
         assert "动作节奏波动较大" in "\n".join(result["feedback"])
 
     def test_detects_pushup_error_codes(self, db_session, test_user):
@@ -733,9 +734,20 @@ class TestPoseScoringApi:
         assert record.feedback == "用户原始反馈"
 
     def test_scoring_hides_other_users_record(self, client, db_session, test_user):
+        from app.models.user import User
+        from app.utils.security import hash_password
+
+        other_user = User(
+            username="scoring-other-user",
+            email="scoring-other@example.com",
+            password_hash=hash_password("password123"),
+            is_active=True,
+        )
+        db_session.add(other_user)
+        db_session.commit()
         record = create_record(
             db_session,
-            test_user["user"].id + 1,
+            other_user.id,
             keypoints_data=make_pose_analysis([165, 100, 166]),
         )
 

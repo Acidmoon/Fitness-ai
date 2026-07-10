@@ -1,6 +1,7 @@
 # E:\Fitness-ai-backend\app\api\user.py
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from loguru import logger
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -12,7 +13,7 @@ from app.schemas.user import (
     UserResponse,
 )
 from app.utils.security import get_current_user, verify_password, hash_password
-from app.utils.video_files import delete_record_videos
+from app.utils.video_files import delete_video_urls
 
 router = APIRouter()
 
@@ -109,11 +110,13 @@ def delete_account(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="密码错误"
             )
 
-    try:
-        delete_record_videos(current_user.records)
-    except OSError:
-        raise HTTPException(status_code=500, detail="账户关联视频清理失败")
+    video_urls = [record.video_url for record in current_user.records]
+    user_id = current_user.id
     db.delete(current_user)
     db.commit()
+    try:
+        delete_video_urls(video_urls)
+    except OSError as exc:
+        logger.warning("User {} deleted but video cleanup failed: {}", user_id, exc)
 
     return {"message": "账户已注销"}

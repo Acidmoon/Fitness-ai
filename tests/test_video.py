@@ -3,10 +3,7 @@ from io import BytesIO
 from unittest.mock import patch
 
 VALID_MP4_BYTES = (
-    b"\x00\x00\x00\x20ftypmp42"
-    b"\x00\x00\x00\x00"
-    b"mp42isom"
-    b"\x00\x00\x00\x08mdat"
+    b"\x00\x00\x00\x20ftypmp42" b"\x00\x00\x00\x00" b"mp42isom" b"\x00\x00\x00\x08mdat"
 )
 
 
@@ -21,19 +18,7 @@ class TestVideoUpload:
 
     def test_upload_video_requires_auth(self, client, db_session):
         """测试上传视频需要认证"""
-        from app.models.exercise import Exercise, ExerciseRecord
-
-        exercise = Exercise(name="测试动作", category="上肢")
-        db_session.add(exercise)
-        db_session.commit()
-
-        record = ExerciseRecord(
-            user_id=1, exercise_id=exercise.id, score=80, count=10, duration=60
-        )
-        db_session.add(record)
-        db_session.commit()
-
-        response = client.post(f"/api/video/records/{record.id}/video")
+        response = client.post("/api/video/records/1/video")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_upload_video_success(self, client, db_session, test_user, tmp_path):
@@ -331,8 +316,9 @@ class TestVideoUpload:
     def test_upload_video_replaces_previous_file(
         self, client, db_session, test_user, tmp_path
     ):
-        """测试重新上传会删除旧文件"""
+        """替换视频会删除旧文件，并使旧视频派生的 AI 结果失效。"""
         from app.models.exercise import Exercise, ExerciseRecord
+        from app.models.pose_analysis_job import PoseAnalysisJob
         import os
 
         exercise = Exercise(name="测试动作", category="上肢")
@@ -350,10 +336,28 @@ class TestVideoUpload:
             exercise_id=exercise.id,
             score=80,
             count=10,
+            manual_score=80,
+            manual_count=10,
+            score_source="ai",
+            count_source="ai",
             duration=60,
             video_url=f"/videos/{old_filename}",
+            video_revision=0,
+            keypoints_data={"status": "done", "frames": []},
+            analysis_revision=0,
+            analysis_model="MoveNet",
+            analysis_rule_version="pushup-v1",
+            feedback="旧视频反馈",
         )
         db_session.add(record)
+        db_session.commit()
+        job = PoseAnalysisJob(
+            record_id=record.id,
+            user_id=test_user["user"].id,
+            status="running",
+            video_revision=0,
+        )
+        db_session.add(job)
         db_session.commit()
 
         video_content = make_mp4_file()
@@ -372,6 +376,19 @@ class TestVideoUpload:
         assert not os.path.exists(old_file)
         new_filename = data["video_url"].split("/")[-1]
         assert os.path.exists(upload_dir / new_filename)
+        db_session.refresh(record)
+        db_session.refresh(job)
+        assert record.video_revision == 1
+        assert record.keypoints_data is None
+        assert record.analysis_revision is None
+        assert record.analysis_model is None
+        assert record.analysis_rule_version is None
+        assert record.feedback is None
+        assert record.score == 80
+        assert record.count == 10
+        assert record.score_source == "manual"
+        assert record.count_source == "manual"
+        assert job.status == "cancelled"
 
     def test_upload_video_replacement_cleanup_failure_keeps_new_reference(
         self, client, db_session, test_user, tmp_path
@@ -449,9 +466,7 @@ class TestVideoUpload:
         upload_dir.mkdir()
 
         original_chunk_size = video_files.UPLOAD_CHUNK_SIZE
-        oversized_content = make_mp4_file(
-            "oversized.mp4", VALID_MP4_BYTES + b"a" * 32
-        )
+        oversized_content = make_mp4_file("oversized.mp4", VALID_MP4_BYTES + b"a" * 32)
         headers = {"Authorization": f"Bearer {test_user['token']}"}
 
         with patch("app.utils.video_files.UPLOAD_DIR", str(upload_dir)), patch(
@@ -663,29 +678,13 @@ class TestVideoDelete:
 
     def test_delete_video_requires_auth(self, client, db_session):
         """测试删除视频需要认证"""
-        from app.models.exercise import Exercise, ExerciseRecord
-
-        exercise = Exercise(name="测试动作", category="上肢")
-        db_session.add(exercise)
-        db_session.commit()
-
-        record = ExerciseRecord(
-            user_id=1,
-            exercise_id=exercise.id,
-            score=80,
-            count=10,
-            duration=60,
-            video_url="/videos/test.mp4",
-        )
-        db_session.add(record)
-        db_session.commit()
-
-        response = client.delete(f"/api/video/records/{record.id}/video")
+        response = client.delete("/api/video/records/1/video")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_delete_video_success(self, client, db_session, test_user, tmp_path):
-        """测试删除视频成功"""
+        """删除视频会清理引用，并失效该视频对应的分析结果和活动任务。"""
         from app.models.exercise import Exercise, ExerciseRecord
+        from app.models.pose_analysis_job import PoseAnalysisJob
         import os
 
         # 创建测试记录并关联视频
@@ -704,10 +703,27 @@ class TestVideoDelete:
             exercise_id=exercise.id,
             score=80,
             count=10,
+            manual_score=76,
+            manual_count=8,
+            score_source="ai",
+            count_source="ai",
             duration=60,
             video_url="/videos/test.mp4",
+            video_revision=2,
+            keypoints_data={"status": "done", "frames": []},
+            analysis_revision=2,
+            analysis_model="MoveNet",
+            feedback="旧视频反馈",
         )
         db_session.add(record)
+        db_session.commit()
+        job = PoseAnalysisJob(
+            record_id=record.id,
+            user_id=test_user["user"].id,
+            status="queued",
+            video_revision=2,
+        )
+        db_session.add(job)
         db_session.commit()
 
         headers = {"Authorization": f"Bearer {test_user['token']}"}
@@ -722,7 +738,17 @@ class TestVideoDelete:
 
         # 验证数据库中的视频路径已清空
         db_session.refresh(record)
+        db_session.refresh(job)
         assert record.video_url is None
+        assert record.video_revision == 3
+        assert record.keypoints_data is None
+        assert record.analysis_revision is None
+        assert record.score == 76
+        assert record.count == 8
+        assert record.score_source == "manual"
+        assert record.count_source == "manual"
+        assert record.feedback is None
+        assert job.status == "cancelled"
         assert not os.path.exists(test_video_path)
 
     def test_delete_video_no_video(self, client, db_session, test_user):
@@ -803,10 +829,10 @@ class TestVideoDelete:
         db_session.refresh(record)
         assert record.video_url is None
 
-    def test_delete_video_failure_keeps_reference(
+    def test_delete_video_cleanup_failure_still_clears_reference(
         self, client, db_session, test_user, tmp_path
     ):
-        """测试删除失败时返回 500 且保留数据库引用"""
+        """磁盘清理失败时仍清除数据库引用，避免继续暴露失效视频。"""
         from app.models.exercise import Exercise, ExerciseRecord
 
         exercise = Exercise(name="测试动作", category="上肢")
@@ -835,9 +861,9 @@ class TestVideoDelete:
                 f"/api/video/records/{record.id}/video", headers=headers
             )
 
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.status_code == status.HTTP_200_OK
         db_session.refresh(record)
-        assert record.video_url == "/videos/test.mp4"
+        assert record.video_url is None
 
 
 class TestVideoAccess:

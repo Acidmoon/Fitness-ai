@@ -62,9 +62,7 @@ data class ExerciseRecordCreateDto(
     val count: Int,
     val duration: Int,
     @SerialName("heart_rate_avg") val heartRateAvg: Double? = null,
-    @SerialName("heart_rate_max") val heartRateMax: Double? = null,
-    @SerialName("keypoints_data") val keypointsData: JsonObject? = null,
-    val feedback: String? = null
+    @SerialName("heart_rate_max") val heartRateMax: Double? = null
 )
 
 @Serializable
@@ -73,9 +71,7 @@ data class ExerciseRecordUpdateDto(
     val count: Int? = null,
     val duration: Int? = null,
     @SerialName("heart_rate_avg") val heartRateAvg: Double? = null,
-    @SerialName("heart_rate_max") val heartRateMax: Double? = null,
-    @SerialName("keypoints_data") val keypointsData: JsonObject? = null,
-    val feedback: String? = null
+    @SerialName("heart_rate_max") val heartRateMax: Double? = null
 )
 
 @Serializable
@@ -84,9 +80,17 @@ data class ExerciseRecordDto(
     @SerialName("exercise_id") val exerciseId: Int,
     val score: Double,
     val count: Int,
+    @SerialName("manual_score") val manualScore: Double? = null,
+    @SerialName("manual_count") val manualCount: Int? = null,
+    @SerialName("score_source") val scoreSource: String = "manual",
+    @SerialName("count_source") val countSource: String = "manual",
     val duration: Int,
     @SerialName("heart_rate_avg") val heartRateAvg: Double? = null,
     @SerialName("video_url") val videoUrl: String? = null,
+    @SerialName("video_revision") val videoRevision: Int = 0,
+    @SerialName("analysis_revision") val analysisRevision: Int? = null,
+    @SerialName("analysis_model") val analysisModel: String? = null,
+    @SerialName("analysis_rule_version") val analysisRuleVersion: String? = null,
     val feedback: String? = null,
     @SerialName("created_at") val createdAt: String
 )
@@ -190,6 +194,8 @@ data class PoseAnalysisResultDto(
 data class PoseAnalysisJobDto(
     val id: Int,
     @SerialName("record_id") val recordId: Int,
+    @SerialName("video_revision") val videoRevision: Int = 0,
+    @SerialName("sample_fps") val sampleFps: Int? = null,
     val status: String,
     val error: String? = null,
     @SerialName("result_summary") val resultSummary: JsonObject? = null,

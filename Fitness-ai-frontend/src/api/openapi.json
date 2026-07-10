@@ -111,6 +111,7 @@
         "type": "object"
       },
       "ExerciseRecordCreate": {
+        "additionalProperties": false,
         "properties": {
           "count": {
             "description": "完成次数",
@@ -127,18 +128,6 @@
           "exercise_id": {
             "title": "Exercise Id",
             "type": "integer"
-          },
-          "feedback": {
-            "anyOf": [
-              {
-                "maxLength": 2000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Feedback"
           },
           "heart_rate_avg": {
             "anyOf": [
@@ -165,18 +154,6 @@
               }
             ],
             "title": "Heart Rate Max"
-          },
-          "keypoints_data": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Keypoints Data"
           },
           "score": {
             "description": "动作评分 0-100",
@@ -229,9 +206,46 @@
       },
       "ExerciseRecordResponse": {
         "properties": {
+          "analysis_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Model"
+          },
+          "analysis_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Revision"
+          },
+          "analysis_rule_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Rule Version"
+          },
           "count": {
             "title": "Count",
             "type": "integer"
+          },
+          "count_source": {
+            "title": "Count Source",
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -272,9 +286,39 @@
             "title": "Id",
             "type": "integer"
           },
+          "manual_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Count"
+          },
+          "manual_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Score"
+          },
           "score": {
             "title": "Score",
             "type": "number"
+          },
+          "score_source": {
+            "title": "Score Source",
+            "type": "string"
+          },
+          "video_revision": {
+            "title": "Video Revision",
+            "type": "integer"
           },
           "video_url": {
             "anyOf": [
@@ -293,9 +337,17 @@
           "exercise_id",
           "score",
           "count",
+          "manual_score",
+          "manual_count",
+          "score_source",
+          "count_source",
           "duration",
           "heart_rate_avg",
           "video_url",
+          "video_revision",
+          "analysis_revision",
+          "analysis_model",
+          "analysis_rule_version",
           "feedback",
           "created_at"
         ],
@@ -303,6 +355,7 @@
         "type": "object"
       },
       "ExerciseRecordUpdate": {
+        "additionalProperties": false,
         "properties": {
           "count": {
             "anyOf": [
@@ -330,18 +383,6 @@
             "description": "时长 (秒)",
             "title": "Duration"
           },
-          "feedback": {
-            "anyOf": [
-              {
-                "maxLength": 2000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Feedback"
-          },
           "heart_rate_avg": {
             "anyOf": [
               {
@@ -367,18 +408,6 @@
               }
             ],
             "title": "Heart Rate Max"
-          },
-          "keypoints_data": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Keypoints Data"
           },
           "score": {
             "anyOf": [
@@ -771,12 +800,24 @@
             ],
             "title": "Result Summary"
           },
+          "sample_fps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Fps"
+          },
           "status": {
             "enum": [
               "queued",
               "running",
               "succeeded",
-              "failed"
+              "failed",
+              "cancelled"
             ],
             "title": "Status",
             "type": "string"
@@ -785,11 +826,16 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "video_revision": {
+            "title": "Video Revision",
+            "type": "integer"
           }
         },
         "required": [
           "id",
           "record_id",
+          "video_revision",
           "status",
           "created_at",
           "updated_at"
@@ -838,6 +884,17 @@
       },
       "PoseAnalysisResponse": {
         "properties": {
+          "analysis_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Revision"
+          },
           "error": {
             "anyOf": [
               {
@@ -894,6 +951,11 @@
                 "type": "null"
               }
             ]
+          },
+          "video_revision": {
+            "default": 0,
+            "title": "Video Revision",
+            "type": "integer"
           }
         },
         "required": [
@@ -1059,6 +1121,17 @@
           "record_id": {
             "title": "Record Id",
             "type": "integer"
+          },
+          "rule_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Version"
           },
           "score": {
             "anyOf": [
@@ -1569,6 +1642,62 @@
           }
         ],
         "summary": "Create Pose Analysis Job",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/api/ai/records/{record_id}/pose-analysis/jobs/latest": {
+      "get": {
+        "description": "Return the latest job for the current video revision so clients can reconnect.",
+        "operationId": "get_latest_pose_analysis_job_api_ai_records__record_id__pose_analysis_jobs_latest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PoseAnalysisJobResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Latest Pose Analysis Job Api Ai Records  Record Id  Pose Analysis Jobs Latest Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Latest Pose Analysis Job",
         "tags": [
           "AI"
         ]
