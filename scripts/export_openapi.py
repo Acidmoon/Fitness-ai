@@ -48,7 +48,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--output",
-        default="Fitness-ai-frontend/src/api/openapi.json",
+        default="openapi.json",
         help="Path to write the exported OpenAPI JSON schema.",
     )
     args = parser.parse_args()

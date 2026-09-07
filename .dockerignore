@@ -28,10 +28,6 @@ openspec/
 docs/
 *.md
 
-# Frontend (built separately)
-Fitness-ai-frontend/
-Fitness-ai-android/
-
 # Temp
 tmp/
 logs/

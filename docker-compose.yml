@@ -41,21 +41,5 @@ services:
       timeout: 3s
       retries: 3
 
-  frontend:
-    build:
-      context: ./Fitness-ai-frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_API_BASE_URL: https://api-fitness.waterhill.cyou
-    container_name: fitness-ai-frontend
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:18180:80"
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-
 volumes:
   pgdata:

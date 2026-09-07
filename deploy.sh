@@ -173,7 +173,7 @@ case "${1:-update}" in
     echo "  update   - 拉取代码并重新构建部署（默认）"
     echo "  restart  - 重启所有容器"
     echo "  stop     - 停止所有容器"
-    echo "  logs     - 查看实时日志（可选服务名：backend/frontend/db）"
+    echo "  logs     - 查看实时日志（可选服务名：backend/db）"
     echo "  status   - 查看容器状态和健康检查"
     echo "  db-init  - 兼容旧命令，等同于 db-migrate"
     echo "  db-baseline - 首次接管历史数据库时建立 Alembic 基线"

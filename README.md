@@ -12,6 +12,8 @@
 - 用训练记录和统计数据辅助学生了解长期变化。
 - 后续逐步接入可穿戴数据和个性化建议。
 
+本仓库只实现后端；Web 前端和 Android 客户端由独立仓库维护。
+
 ## 当前功能
 
 - 用户注册、登录和个人资料管理。
@@ -20,15 +22,12 @@
 - 视频上传、删除和认证访问。
 - MoveNet 姿态分析。
 - 动作阶段识别、自动次数统计、动作评分与反馈。
-- React Web 前端和 Android 客户端原型。
 
 ## 技术栈
 
 - 后端：FastAPI、SQLAlchemy、PostgreSQL。
 - AI/视频：MoveNet、OpenCV/TFLite。
-- Web：React、TypeScript、Vite。
-- Android：Kotlin、Jetpack Compose、CameraX。
-- 测试：pytest、Vitest、JUnit。
+- 测试：pytest。
 
 ## 项目结构
 
@@ -38,8 +37,6 @@
 ├── alembic/              # 数据库版本迁移
 ├── tests/                # 后端测试
 ├── scripts/              # 初始化和辅助脚本
-├── Fitness-ai-frontend/  # React Web 前端
-├── Fitness-ai-android/   # Android 客户端
 ├── DEV/                  # 本地开发文档
 └── requirements.txt      # 后端依赖
 ```
@@ -60,37 +57,10 @@ uvicorn app.main:app --reload
 
 接口文档地址：`http://127.0.0.1:8000/docs`
 
-### Web 前端
-
-```powershell
-cd Fitness-ai-frontend
-npm install
-copy .env.example .env
-npm run dev
-```
-
-### Android
-
-```powershell
-cd Fitness-ai-android
-.\gradlew.bat assembleDebug
-```
-
-Android 模拟器默认连接：`http://10.0.2.2:8000/`。
-
 ## 常用测试
 
 ```powershell
-# 后端
 .\venv\Scripts\python.exe -m pytest -q
-
-# Web
-cd Fitness-ai-frontend
-npm run test
-
-# Android
-cd Fitness-ai-android
-.\gradlew.bat testDebugUnitTest
 ```
 
 ## 开发说明
@@ -156,7 +126,7 @@ python -m scripts.seed_data
 
 - 动作命名和别名搜索，例如 `push up`、`push-up`、`俯卧撑`。
 - 分类、部位、器械、目标肌群和辅助肌群筛选。
-- Web 和 Android 可消费的多语言动作说明与步骤。
+- 客户端可消费的多语言动作说明与步骤。
 - 校园低器械候选池，例如 `equipment=body weight` 可筛出 325 条外部无器械动作。
 - 个性化推荐候选字段，例如 `target_muscles`、`equipment` 和 `body_part`。
 - AI 支持路线标记，例如 `analysis_supported`、`canonical_action_key` 和 `analysis_rule_version`。
@@ -164,6 +134,8 @@ python -m scripts.seed_data
 注意：外部动作说明不是姿态评分标准。AI 评分是否可用仍以 `app/services/exercise_rules/` 注册的规则为准，新增动作必须先补齐阶段、计数、错误动作、阈值和 fixtures 后，才能把 `analysis_supported` 标记为 true。
 
 ## 下一阶段
+
+当前路线图与评分标准基线说明维护在 `DEV/ROADMAP.md` 和 `DEV/SCORING_STANDARDS.md`（本地文档，默认不跟踪）。要点：
 
 - 完善俯卧撑错误动作识别。
 - 扩展深蹲动作质量检查。

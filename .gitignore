@@ -62,19 +62,6 @@ desktop.ini
 # ─── 项目内部开发文档（不公开） ───────────────────────────────────────────────
 DEV/
 
-# ─── 前端 ────────────────────────────────────────────────────────────────────
-Fitness-ai-frontend/node_modules/
-Fitness-ai-frontend/dist/
-Fitness-ai-frontend/.env
-Fitness-ai-frontend/.env.*
-!Fitness-ai-frontend/.env.example
-Fitness-ai-frontend/*.tsbuildinfo
-
-# ─── Android ─────────────────────────────────────────────────────────────────
-Fitness-ai-android/.gradle/
-Fitness-ai-android/app/build/
-Fitness-ai-android/build/
-Fitness-ai-android/local.properties
-Fitness-ai-android/app/release/
+# ─── 客户端构建产物 ─────────────────────────────────────────────────────────
 *.apk
 *.aab

@@ -4,7 +4,6 @@
 
 | 服务 | 地址 | 内部端口 |
 |------|------|---------|
-| 前端 | https://fitness.waterhill.cyou | 127.0.0.1:18180 |
 | 后端 API | https://api-fitness.waterhill.cyou | 127.0.0.1:18100 |
 | 数据库 | 内部 | 127.0.0.1:5432 |
 
@@ -84,7 +83,6 @@ cd /path/to/Fitness-ai
 # 查看实时日志
 ./deploy.sh logs           # 所有服务
 ./deploy.sh logs backend   # 仅后端
-./deploy.sh logs frontend  # 仅前端
 
 # 重启服务（不重新构建）
 ./deploy.sh restart
@@ -101,21 +99,13 @@ cd /path/to/Fitness-ai
 
 ## 仅更新后端
 
-如果只改了 Python 代码，不需要重建前端：
+如果只改了 Python 代码：
 
 ```bash
 git pull origin main
 docker compose build backend
 ./deploy.sh db-migrate
 docker compose --env-file .env.production up -d backend
-```
-
-## 仅更新前端
-
-```bash
-git pull origin main
-docker compose build frontend
-docker compose up -d frontend
 ```
 
 ## 环境变量说明
@@ -156,13 +146,3 @@ docker compose exec backend python -c "from app.database import engine; print(en
 docker compose --env-file .env.production build --no-cache
 docker compose --env-file .env.production up -d
 ```
-
-## Android 端配置
-
-Android APK 的 API 地址在 `Fitness-ai-android/gradle.properties` 中配置：
-
-```properties
-FITNESS_AI_BACKEND_BASE_URL=https://api-fitness.waterhill.cyou/
-```
-
-修改后需要 clean build：`./gradlew clean assembleRelease`
