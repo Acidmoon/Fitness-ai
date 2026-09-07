@@ -25,6 +25,7 @@ from app.services.pose_analysis_service import (
     check_video_ready,
     create_pose_analysis_job as create_pose_analysis_job_record,
     process_pose_analysis_job,
+    reclaim_stale_job,
     run_pose_analysis_for_record,
 )
 from app.services.pose_analysis_runtime import (
@@ -137,6 +138,8 @@ def get_pose_analysis_job(
     if not job:
         raise HTTPException(status_code=404, detail="姿态分析任务不存在")
 
+    # Polling must not wait forever on a job whose worker died with the old process.
+    reclaim_stale_job(db, job)
     return job
 
 
@@ -152,7 +155,7 @@ def get_latest_pose_analysis_job(
 ):
     """Return the latest job for the current video revision so clients can reconnect."""
     record = get_owned_record_or_404(repo, record_id, current_user.id)
-    return (
+    job = (
         db.query(PoseAnalysisJob)
         .filter(
             PoseAnalysisJob.record_id == record.id,
@@ -162,6 +165,10 @@ def get_latest_pose_analysis_job(
         .order_by(PoseAnalysisJob.id.desc())
         .first()
     )
+    if job:
+        # A reconnected client must see a dead job as terminal, not as still running.
+        reclaim_stale_job(db, job)
+    return job
 
 
 @router.get(

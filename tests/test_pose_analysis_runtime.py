@@ -196,3 +196,60 @@ def test_runtime_caches_interpreter_per_process(tmp_path):
 
     assert calls["count"] == 1
     assert pose_runtime._input_size == 192
+
+
+def test_runtime_rejects_quantized_int8_model(tmp_path):
+    """int8 模型的输出需要反量化，不能静默产出错误关键点。"""
+    import numpy as np
+
+    model_path = tmp_path / "model.tflite"
+    model_path.write_bytes(b"fake")
+
+    class QuantizedInterpreter:
+        def allocate_tensors(self):
+            return None
+
+        def get_input_details(self):
+            return [{"shape": [1, 192, 192, 3], "index": 0, "dtype": np.dtype("int8")}]
+
+        def get_output_details(self):
+            return [{"index": 1, "dtype": np.dtype("int8")}]
+
+    pose_runtime = MoveNetRuntime(
+        config=enabled_config(str(model_path)),
+        interpreter_factory=lambda _model_path: QuantizedInterpreter(),
+        cv2_module=object(),
+        numpy_module=np,
+    )
+
+    with pytest.raises(PoseAnalysisUnavailableError, match="int8"):
+        pose_runtime.analyze_frame(np.zeros((480, 640, 3), dtype=np.uint8))
+
+
+def test_runtime_accepts_uint8_input_float_output_model(tmp_path):
+    """uint8 输入 + float 输出是受支持路径，不得被误拒。"""
+    import numpy as np
+
+    model_path = tmp_path / "model.tflite"
+    model_path.write_bytes(b"fake")
+
+    class Uint8Interpreter:
+        def allocate_tensors(self):
+            return None
+
+        def get_input_details(self):
+            return [{"shape": [1, 192, 192, 3], "index": 0, "dtype": np.dtype("uint8")}]
+
+        def get_output_details(self):
+            return [{"index": 1, "dtype": np.dtype("float32")}]
+
+    pose_runtime = MoveNetRuntime(
+        config=enabled_config(str(model_path)),
+        interpreter_factory=lambda _model_path: Uint8Interpreter(),
+        cv2_module=object(),
+        numpy_module=np,
+    )
+
+    pose_runtime._ensure_loaded()
+
+    assert pose_runtime._input_size == 192

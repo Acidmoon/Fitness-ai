@@ -51,6 +51,11 @@ cd /path/to/Fitness-ai
 5. 执行 `alembic upgrade head`
 6. 启动更新后的容器并执行健康检查
 
+姿态分析推理跑在后端进程内，所以 `docker compose build` 后的容器切换会中断在跑任务。
+遗留的 `queued`/`running` 任务会在启动对账时标为 `failed`（错误文案提示重新发起分析），
+记录不会被死任务锁住；客户端重新提交一次即可。若将来改成多 worker 共库，
+必须把 `POSE_ANALYSIS_JOB_RECLAIM_ON_STARTUP` 设为 `false`，只依赖超时对账。
+
 ## 首次接管历史数据库
 
 2026 年 7 月 10 日之前由 `scripts.init_db` 创建的数据库没有
@@ -108,6 +113,39 @@ docker compose build backend
 docker compose --env-file .env.production up -d backend
 ```
 
+## 启用 AI 姿态分析
+
+镜像已经内置 MoveNet Lightning **float16** 模型（`/app/models/movenet_lightning.tflite`）。
+运行时不解 int8 量化输出，否则会静默产出错误关键点，因此现在遇到 int8 模型会直接报 503。
+
+`.env.production` 需要：
+
+```bash
+POSE_ANALYSIS_BACKEND=movenet
+MOVENET_ENABLED=true
+MOVENET_MODEL_PATH=/app/models/movenet_lightning.tflite
+MOVENET_MODEL_VARIANT=lightning
+```
+
+验证模型可用（不写数据库，只解权重并跑一帧）：
+
+```bash
+docker compose exec backend python - <<'PY'
+import numpy as np
+from app.services.pose_analysis_runtime import MoveNetRuntime
+print(MoveNetRuntime().analyze_frame(np.zeros((480, 640, 3), dtype=np.uint8))["model"])
+PY
+```
+
+输出包含 `{'backend': 'movenet', 'name': 'lightning', 'input_size': 192}` 即说明姿态分析已就绪；
+报 `PoseAnalysisUnavailable` 则按错误文案检查 `MOVENET_ENABLED`、模型路径和模型精度。
+
+动作目录 seed 依赖仓库里的 `data/external/exercises-dataset/exercises.json`，该目录已打进镜像：
+
+```bash
+./deploy.sh db-seed
+```
+
 ## 环境变量说明
 
 `.env.production` 中的关键配置：
@@ -117,7 +155,10 @@ docker compose --env-file .env.production up -d backend
 | `DATABASE_URL` | PostgreSQL 连接串 | `postgresql://fitness:xxx@db:5432/fitness_ai` |
 | `SECRET_KEY` | JWT 签名密钥（必须修改） | `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `ALLOWED_ORIGINS` | CORS 允许的前端域名 | `https://fitness.waterhill.cyou` |
-| `MOVENET_ENABLED` | 是否启用姿态分析 | `false`（需要 TFLite 运行时） |
+| `MOVENET_ENABLED` | 是否启用姿态分析 | `true`（镜像已内置 float16 模型） |
+| `MOVENET_MODEL_PATH` | 容器内模型路径 | `/app/models/movenet_lightning.tflite` |
+| `POSE_ANALYSIS_JOB_STALE_AFTER_SECONDS` | 活动任务超时回收阈值，默认 1800 | `1800` |
+| `POSE_ANALYSIS_JOB_RECLAIM_ON_STARTUP` | 启动时立即回收遗留任务（仅单进程拓扑） | `true` |
 
 ## 数据备份
 

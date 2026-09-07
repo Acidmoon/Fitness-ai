@@ -1,3 +1,8 @@
+import re
+from pathlib import Path
+
+import pytest
+
 from app.models.exercise import Exercise
 from app.services.exercise_catalog import (
     build_standard_metadata,
@@ -82,3 +87,27 @@ def test_exercises_endpoint_filters_aliases_and_campus_candidates(client, db_ses
     campus_data = campus_response.json()
     assert any(item["external_id"] == "0662" for item in campus_data)
     assert all(item["is_low_equipment_candidate"] for item in campus_data)
+
+
+def test_load_external_exercises_resolves_dataset_from_any_cwd(tmp_path, monkeypatch):
+    """Seeding must not depend on the caller's working directory."""
+    monkeypatch.chdir(tmp_path)
+
+    rows = load_external_exercises()
+
+    assert len(rows) == 1324
+
+
+def test_load_external_exercises_reports_missing_dataset(tmp_path, monkeypatch):
+    """A missing dataset must name the expected location instead of stack-tracing."""
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(FileNotFoundError, match="data/external/exercises-dataset"):
+        load_external_exercises(tmp_path / "missing.json")
+
+
+def test_docker_image_ships_catalog_dataset():
+    """`./deploy.sh db-seed` runs inside the image, so data/ has to be copied."""
+    dockerfile = Path(__file__).resolve().parents[1] / "Dockerfile"
+
+    assert re.search(r"(?m)^COPY data/ ", dockerfile.read_text(encoding="utf-8"))

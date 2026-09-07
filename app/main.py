@@ -1,22 +1,49 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+from sqlalchemy import inspect
 
 from app.api import ai, auth, exercise, stats, user, video
 from app.config import settings
+from app.database import SessionLocal
 from app.exceptions import register_exception_handlers
 from app.logging_config import setup_logging
 from app.middleware.logging_middleware import LoggingMiddleware
+from app.services.pose_analysis_service import reconcile_stale_jobs
 
 # 初始化日志系统（控制台 + 文件轮转）
 setup_logging()
+
+
+def _reconcile_pose_analysis_jobs() -> None:
+    """回收上一个进程遗留的姿态分析任务。
+
+    推理跑在 API 进程内，部署重启会直接杀掉未完成任务；启动时做一次 TTL 对账，
+    避免记录被死任务锁死。对账失败不得阻断启动，因此只记日志。
+    """
+    db = SessionLocal()
+    try:
+        if not inspect(db.get_bind()).has_table("pose_analysis_jobs"):
+            # 尚未执行迁移的数据库不应阻断启动。
+            return
+        reclaimed = reconcile_stale_jobs(
+            db, reclaim_all=settings.POSE_ANALYSIS_JOB_RECLAIM_ON_STARTUP
+        )
+        if reclaimed:
+            logger.warning(f"启动对账：已回收 {reclaimed} 个中断或超时的姿态分析任务")
+    except Exception as exc:
+        logger.error(f"启动对账姿态分析任务失败：{exc}")
+    finally:
+        db.close()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     logger.info("🚀 应用启动中...")
+    _reconcile_pose_analysis_jobs()
     yield
     logger.info("👋 应用关闭中...")
 

@@ -13,6 +13,7 @@ from app.services.exercise_rules.registry import find_rule_for_exercise
 EXERCISES_DATASET_SOURCE = "hasaneyldrm/exercises-dataset"
 EXERCISES_DATASET_COMMIT = "fdb2d48eb7e26f02afbabceea205b114a13e0414"
 EXERCISES_DATASET_URL = "https://github.com/hasaneyldrm/exercises-dataset"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATASET_PATH = Path("data/external/exercises-dataset/exercises.json")
 
 BODY_PART_CATEGORY_ZH = {
@@ -48,9 +49,28 @@ class CatalogImportSummary:
     bodyweight_count: int
 
 
+def _resolve_dataset_path(path: Path) -> Path:
+    """Resolve the dataset relative to the working directory, then the repo root.
+
+    Seeding can be launched from any cwd (`python -m scripts.seed_data`, an
+    interpreter started by a service manager, tests), so a missing cwd-relative
+    path falls back to the repository root before it is reported as absent.
+    """
+    if path.is_absolute() or path.exists():
+        return path
+    repo_relative = REPO_ROOT / path
+    return repo_relative if repo_relative.exists() else path
+
+
 def load_external_exercises(path: Path = DEFAULT_DATASET_PATH) -> List[Dict[str, Any]]:
     """Load the external exercises dataset from a local JSON file."""
-    with path.open("r", encoding="utf-8") as file:
+    resolved_path = _resolve_dataset_path(Path(path))
+    if not resolved_path.is_file():
+        raise FileNotFoundError(
+            f"未找到外部动作数据集：{resolved_path}；"
+            "请确认仓库或部署镜像包含 data/external/exercises-dataset/exercises.json"
+        )
+    with resolved_path.open("r", encoding="utf-8") as file:
         data = json.load(file)
     if not isinstance(data, list):
         raise ValueError("外部动作数据必须是 JSON array")

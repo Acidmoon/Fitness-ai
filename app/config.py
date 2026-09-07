@@ -42,6 +42,13 @@ class Settings(BaseSettings):
 
     # 姿态分析通用配置
     POSE_ANALYSIS_SAMPLE_FPS: int = 5
+    # 异步任务活性超时：queued/running 超过该时长仍未写入终态，则认为执行它的进程已丢失（重启、OOM、部署），
+    # 该任务会被标为 failed 并允许重新入队。推理耗时取决于视频长度与服务端 CPU，默认给 30 分钟宽限。
+    POSE_ANALYSIS_JOB_STALE_AFTER_SECONDS: int = 1800
+    # 启动时是否直接回收所有 queued/running 任务。当前部署为单容器单 uvicorn 进程，
+    # 重启后遗留活动任务的 worker 必定已死，因此默认立即回收以秒级恢复。若改用
+    # 多 worker（uvicorn --workers N / 多副本）共库，请设为 false，只依赖上面的超时对账。
+    POSE_ANALYSIS_JOB_RECLAIM_ON_STARTUP: bool = True
 
     # MoveNet 姿态分析配置（默认关闭，避免缺少 native 推理依赖时影响启动）
     MOVENET_ENABLED: bool = False
@@ -139,6 +146,15 @@ class Settings(BaseSettings):
     def validate_sample_fps(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("采样帧率必须为正整数")
+        return value
+
+    @field_validator("POSE_ANALYSIS_JOB_STALE_AFTER_SECONDS")
+    @classmethod
+    def validate_job_stale_after(cls, value: int) -> int:
+        if value < 60:
+            raise ValueError(
+                "POSE_ANALYSIS_JOB_STALE_AFTER_SECONDS 不得小于 60 秒，否则慢推理会被误回收"
+            )
         return value
 
     @field_validator("VIDEO_STORAGE_BACKEND")

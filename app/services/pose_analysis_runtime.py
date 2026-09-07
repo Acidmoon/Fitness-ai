@@ -214,6 +214,7 @@ class MoveNetRuntime:
         self._input_details = input_details
         self._output_details = output_details
         self._input_size = _input_size_from_details(input_details)
+        _validate_model_io_dtypes(input_details, output_details, self._np)
 
     def _preprocess_frame(self, frame_bgr: Any) -> Any:
         frame_rgb = self._cv2.cvtColor(frame_bgr, self._cv2.COLOR_BGR2RGB)
@@ -249,6 +250,48 @@ def _input_size_from_details(input_details: Any) -> int:
     if len(input_shape) != 4:
         raise PoseAnalysisUnavailableError("MoveNet model input shape is invalid")
     return int(input_shape[1])
+
+
+def _is_integer_dtype(dtype: Any, numpy_module: Any) -> bool:
+    """True for quantized dtypes; test doubles may pass a non-numpy sentinel."""
+    try:
+        return bool(
+            numpy_module.issubdtype(dtype, numpy_module.integer)
+            or numpy_module.issubdtype(dtype, numpy_module.unsignedinteger)
+        )
+    except TypeError:
+        return False
+
+
+def _validate_model_io_dtypes(
+    input_details: Any, output_details: Any, numpy_module: Any
+) -> None:
+    """拒绝无法解码的量化模型，否则关键点是静默错误的垃圾数据。
+
+    全量化（int8）MoveNet 输出的坐标是量化整数，需要 scale/zero_point 反量化；
+    本运行时只做 float 输出解析，因此必须在加载阶段报错而不是返回错误姿态。
+    """
+    if numpy_module is None or not output_details:
+        return
+    if not hasattr(numpy_module, "issubdtype"):
+        # 测试替身可以传入不提供 numpy dtype 机制的假模块。
+        return
+
+    output_dtype = output_details[0].get("dtype")
+    input_dtype = input_details[0].get("dtype") if input_details else None
+    quantized_output = _is_integer_dtype(output_dtype, numpy_module)
+    # uint8 输入有显式支持路径，签名字节输入（int8）没有量化处理，同样不可用。
+    signed_int_input = (
+        input_dtype is not None
+        and bool(_is_integer_dtype(input_dtype, numpy_module))
+        and not (input_dtype == getattr(numpy_module, "uint8", None))
+    )
+
+    if quantized_output or signed_int_input:
+        raise PoseAnalysisUnavailableError(
+            "当前 MoveNet 模型是 int8 量化版本，运行时不做反量化，会产出错误关键点；"
+            "请改用 float16/float32 模型并设置 MOVENET_MODEL_PATH"
+        )
 
 
 def _frame_dimensions(frame: Any) -> Tuple[int, int]:

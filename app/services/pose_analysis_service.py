@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Callable, Dict
 
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import SessionLocal
 from app.models.exercise import ExerciseRecord
 from app.models.pose_analysis_job import (
@@ -55,6 +57,84 @@ def check_video_ready(record: ExerciseRecord) -> str:
     return video_path
 
 
+def job_is_stale(job: PoseAnalysisJob, now: datetime | None = None) -> bool:
+    """Return True when an active job has stayed non-terminal longer than the TTL."""
+    if job.status not in POSE_ANALYSIS_ACTIVE_STATUSES:
+        return False
+    reference = job.updated_at or job.created_at
+    if reference is None:
+        return False
+    ttl_seconds = settings.POSE_ANALYSIS_JOB_STALE_AFTER_SECONDS
+    return ((now or utc_now()) - reference).total_seconds() > ttl_seconds
+
+
+def reclaim_stale_job(
+    db: Session,
+    job: PoseAnalysisJob,
+    now: datetime | None = None,
+    force: bool = False,
+) -> bool:
+    """Fail an active job whose worker can no longer be trusted.
+
+    Analysis runs inside the API process, so a deploy restart, crash or OOM can
+    leave a job `queued`/`running` forever, which also blocks the record via the
+    active-job unique index. The transition uses a conditional update so a worker
+    that is still alive and just wrote a terminal status is never overwritten.
+
+    `force` skips the TTL check and is only meant for startup reconciliation in a
+    single-process deployment, where any active job belongs to the previous process.
+    """
+    if not force and not job_is_stale(job, now):
+        return False
+
+    timestamp = now or utc_now()
+    updated = (
+        db.query(PoseAnalysisJob)
+        .filter(
+            PoseAnalysisJob.id == job.id,
+            PoseAnalysisJob.status.in_(POSE_ANALYSIS_ACTIVE_STATUSES),
+        )
+        .update(
+            {
+                "status": POSE_ANALYSIS_JOB_STATUS_FAILED,
+                "error": "任务超时或分析服务已重启，请重新发起分析",
+                "updated_at": timestamp,
+                "completed_at": timestamp,
+            },
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    if not updated:
+        return False
+
+    db.refresh(job)
+    logger.warning(
+        f"Reclaimed stale pose analysis job {job.id} for record {job.record_id}"
+    )
+    return True
+
+
+def reconcile_stale_jobs(db: Session, reclaim_all: bool = False) -> int:
+    """Reclaim stale active jobs; called on startup to recover after a restart.
+
+    `reclaim_all` is for the single-process topology, where the previous process
+    took every in-flight worker with it, so waiting for the TTL only delays the
+    user's retry.
+    """
+    now = utc_now()
+    query = db.query(PoseAnalysisJob).filter(
+        PoseAnalysisJob.status.in_(POSE_ANALYSIS_ACTIVE_STATUSES)
+    )
+    if not reclaim_all:
+        # 超时判断下推到 SQL，避免每次对账扫描所有活动行。
+        cutoff = now - timedelta(seconds=settings.POSE_ANALYSIS_JOB_STALE_AFTER_SECONDS)
+        query = query.filter(PoseAnalysisJob.updated_at < cutoff)
+    return sum(
+        1 for job in query.all() if reclaim_stale_job(db, job, now, force=reclaim_all)
+    )
+
+
 def create_pose_analysis_job(
     db: Session,
     record: ExerciseRecord,
@@ -75,6 +155,9 @@ def create_pose_analysis_job(
             .first()
         )
         if active_job:
+            # A worker killed mid-run must not lock the record for good.
+            if reclaim_stale_job(db, active_job):
+                continue
             if active_job.video_revision == current_video_revision:
                 return PoseAnalysisJobCreation(job=active_job, created=False)
 

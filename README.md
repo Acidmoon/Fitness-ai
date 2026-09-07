@@ -57,6 +57,8 @@ uvicorn app.main:app --reload
 
 接口文档地址：`http://127.0.0.1:8000/docs`
 
+本地要跑通姿态分析，需额外安装可选推理依赖：`pip install -r requirements-movenet.example.txt`，再自行安装一个兼容当前 Python 的 TFLite 解释器（`tflite-runtime`、`tensorflow` 或 `ai-edge-litert`），并把 `.env` 中 `MOVENET_ENABLED=true`、`MOVENET_MODEL_PATH` 指向本地 float16 模型。服务器镜像已内置该模型，无需本地步骤。
+
 ## 常用测试
 
 ```powershell
@@ -102,6 +104,7 @@ app/api/ai.py
 - 用户手工录入的 `score`、`count` 分别保存在 `manual_score`、`manual_count`；AI 投影失效后恢复人工值。
 - `keypoints_data` 和 `feedback` 是服务端派生字段，创建和普通更新接口拒绝客户端直接写入。
 - 删除记录或账户时先提交数据库删除，再尽力清理视频文件，避免数据库继续引用已删除文件。
+- 推理在后端进程内执行；服务重启遗留的 `queued`/`running` 任务会在启动对账或客户端轮询时标为 `failed` 并释放记录，超时阈值由 `POSE_ANALYSIS_JOB_STALE_AFTER_SECONDS` 控制，不会出现死任务永久锁住记录。
 
 历史数据库首次采用 Alembic 时，先备份并建立基线，再升级：
 
@@ -135,7 +138,7 @@ python -m scripts.seed_data
 
 ## 下一阶段
 
-当前路线图与评分标准基线说明维护在 `DEV/ROADMAP.md` 和 `DEV/SCORING_STANDARDS.md`（本地文档，默认不跟踪）。要点：
+当前路线图与评分、错误识别基线说明维护在 `DEV/体适能AI管家-计算机视觉与个性化算法路线图.md`、`DEV/标准度评分体系设计.md` 和 `DEV/错误动作识别设计.md`（本地文档，默认不跟踪）。要点：
 
 - 完善俯卧撑错误动作识别。
 - 扩展深蹲动作质量检查。

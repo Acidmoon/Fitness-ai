@@ -1,17 +1,25 @@
+from datetime import timedelta
 from unittest.mock import patch
 
 from fastapi import status
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
 
+from app.config import settings
+from app.models.pose_analysis_job import PoseAnalysisJob
 from app.services.pose_analysis_runtime import (
     PoseAnalysisInferenceError,
     PoseAnalysisUnavailableError,
 )
 from app.services.pose_analysis_service import (
     create_pose_analysis_job,
+    job_is_stale,
     process_pose_analysis_job,
+    reclaim_stale_job,
+    reconcile_stale_jobs,
 )
 from app.services.video_pose_analysis import compact_pose_analysis_result
+from app.utils.datetime import utc_now
 
 
 def create_exercise_record(db_session, user_id, video_url=None, keypoints_data=None):
@@ -577,3 +585,159 @@ def test_compact_pose_analysis_result_reduces_stored_frames():
 
     assert len(compacted["frames"]) < 64
     assert compacted["summary"]["sampled_frames"] == len(compacted["frames"])
+
+
+def stale_timestamp():
+    """返回一个超过任务活性超时的时间点。"""
+    ttl = settings.POSE_ANALYSIS_JOB_STALE_AFTER_SECONDS
+    return utc_now() - timedelta(seconds=ttl + 60)
+
+
+def add_dead_job(db_session, record, user_id, status_name="running"):
+    """构造一个旧进程遗留、已超时的活动任务。"""
+    job = PoseAnalysisJob(
+        record_id=record.id,
+        user_id=user_id,
+        status=status_name,
+        video_revision=int(record.video_revision or 0),
+        created_at=stale_timestamp(),
+        updated_at=stale_timestamp(),
+    )
+    db_session.add(job)
+    db_session.commit()
+    return job
+
+
+def test_stale_running_job_is_reclaimed_and_record_can_requeue(db_session, test_user):
+    """进程重启遗留的 running 任务不得永久锁死记录。"""
+    record = create_exercise_record(db_session, test_user["user"].id)
+    zombie = add_dead_job(db_session, record, test_user["user"].id)
+
+    assert reclaim_stale_job(db_session, zombie) is True
+    assert zombie.status == "failed"
+    assert "重新发起分析" in zombie.error
+
+    creation = create_pose_analysis_job(
+        db_session, record, test_user["user"].id, sample_fps=5
+    )
+    assert creation.created is True
+    assert creation.job.id != zombie.id
+    assert creation.job.status == "queued"
+
+
+def test_fresh_active_job_is_not_reclaimed(db_session, test_user):
+    """未超时的活动任务仍被复用，避免重复推理。"""
+    record = create_exercise_record(db_session, test_user["user"].id)
+    first = create_pose_analysis_job(
+        db_session, record, test_user["user"].id, sample_fps=5
+    )
+
+    assert job_is_stale(first.job) is False
+    assert reclaim_stale_job(db_session, first.job) is False
+
+    second = create_pose_analysis_job(
+        db_session, record, test_user["user"].id, sample_fps=10
+    )
+    assert second.created is False
+    assert second.job.id == first.job.id
+
+
+def test_terminal_job_is_never_reclaimed(db_session, test_user):
+    """已完成任务的旧时间戳不得被当成死任务。"""
+    record = create_exercise_record(db_session, test_user["user"].id)
+    finished = add_dead_job(
+        db_session, record, test_user["user"].id, status_name="succeeded"
+    )
+
+    assert job_is_stale(finished) is False
+    assert reclaim_stale_job(db_session, finished) is False
+    assert finished.status == "succeeded"
+
+
+def test_reclaim_skips_job_that_turned_terminal_in_database(db_session, test_user):
+    """对账与仍在运行的 worker 并发时，条件更新不得覆盖已写入的终态。"""
+    record = create_exercise_record(db_session, test_user["user"].id)
+    job = add_dead_job(db_session, record, test_user["user"].id)
+    job_id = job.id
+
+    # 另一个会话模拟 worker 在回收前刚刚写入 succeeded。
+    other_factory = sessionmaker(
+        autocommit=False, autoflush=False, bind=db_session.get_bind()
+    )
+    other = other_factory()
+    try:
+        other.query(PoseAnalysisJob).filter(PoseAnalysisJob.id == job_id).update(
+            {"status": "succeeded", "error": None}, synchronize_session=False
+        )
+        other.commit()
+    finally:
+        other.close()
+
+    # 内存快照仍是过期的 running，因此回收会尝试但影响 0 行。
+    assert reclaim_stale_job(db_session, job) is False
+
+    db_session.expire_all()
+    reloaded = (
+        db_session.query(PoseAnalysisJob).filter(PoseAnalysisJob.id == job_id).one()
+    )
+    assert reloaded.status == "succeeded"
+
+
+def test_job_endpoints_report_dead_job_as_terminal(client, db_session, test_user):
+    """重新连接的客户端轮询到的应当是终态，而不是永恒的 running。"""
+    record = create_exercise_record(db_session, test_user["user"].id)
+    zombie = add_dead_job(
+        db_session, record, test_user["user"].id, status_name="queued"
+    )
+    headers = {"Authorization": f"Bearer {test_user['token']}"}
+
+    latest = client.get(
+        f"/api/ai/records/{record.id}/pose-analysis/jobs/latest", headers=headers
+    )
+    assert latest.status_code == status.HTTP_200_OK
+    assert latest.json()["status"] == "failed"
+
+    by_id = client.get(f"/api/ai/pose-analysis/jobs/{zombie.id}", headers=headers)
+    assert by_id.status_code == status.HTTP_200_OK
+    assert by_id.json()["status"] == "failed"
+
+
+def test_reconcile_stale_jobs_only_touches_expired_active_jobs(db_session, test_user):
+    """启动对账只回收超时的活动任务。"""
+    from app.models.exercise import ExerciseRecord
+
+    record = create_exercise_record(db_session, test_user["user"].id)
+    zombie = add_dead_job(db_session, record, test_user["user"].id)
+    other_record = ExerciseRecord(
+        user_id=test_user["user"].id,
+        exercise_id=record.exercise_id,
+        score=70,
+        count=5,
+        duration=30,
+    )
+    db_session.add(other_record)
+    db_session.commit()
+    live = create_pose_analysis_job(
+        db_session, other_record, test_user["user"].id, sample_fps=5
+    )
+
+    assert reconcile_stale_jobs(db_session) == 1
+    assert zombie.status == "failed"
+    assert live.job.status == "queued"
+
+
+def test_startup_reconcile_can_release_fresh_jobs_after_restart(db_session, test_user):
+    """单进程拓扑重启后，遗留活动任务属于已死进程，应立即释放记录。"""
+    record = create_exercise_record(db_session, test_user["user"].id)
+    fresh = create_pose_analysis_job(
+        db_session, record, test_user["user"].id, sample_fps=5
+    )
+
+    assert job_is_stale(fresh.job) is False
+    assert reconcile_stale_jobs(db_session, reclaim_all=True) == 1
+    assert fresh.job.status == "failed"
+
+    restarted = create_pose_analysis_job(
+        db_session, record, test_user["user"].id, sample_fps=5
+    )
+    assert restarted.created is True
