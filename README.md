@@ -35,9 +35,10 @@
 .
 ├── app/                  # FastAPI 后端
 ├── alembic/              # 数据库版本迁移
+├── docs/                 # 跟踪的耐久设计文档与 API 契约
 ├── tests/                # 后端测试
 ├── scripts/              # 初始化和辅助脚本
-├── DEV/                  # 本地开发文档
+├── DEV/                  # 本地开发草稿与无人值守 Loop 状态（不跟踪）
 └── requirements.txt      # 后端依赖
 ```
 
@@ -57,6 +58,9 @@ uvicorn app.main:app --reload
 
 接口文档地址：`http://127.0.0.1:8000/docs`
 
+机器可读契约：`docs/openapi.json`（由 `python -m scripts.export_openapi --output docs/openapi.json` 生成）；
+`/api/ai` 的状态机、轮询与错误码语义见 `docs/AI-姿态分析接口.md`。
+
 本地要跑通姿态分析，需额外安装可选推理依赖：`pip install -r requirements-movenet.example.txt`，再自行安装一个兼容当前 Python 的 TFLite 解释器（`tflite-runtime`、`tensorflow` 或 `ai-edge-litert`），并把 `.env` 中 `MOVENET_ENABLED=true`、`MOVENET_MODEL_PATH` 指向本地 float16 模型。服务器镜像已内置该模型，无需本地步骤。
 
 ## 常用测试
@@ -72,8 +76,9 @@ uvicorn app.main:app --reload
 - 训练记录、视频和 AI 分析接口需要校验用户归属。
 - 视频文件通过 `/api/video` 认证访问。
 - 数据库结构只能通过 Alembic 迁移升级；不要再用 `scripts.init_db` 更新已有数据库。
-- `DEV/` 下的长期规划和本地开发文档默认不跟踪。
-- 后续新功能不再使用 OpenSpec；计划和设计说明直接维护在 `README.md`、`AGENTS.md` 或 `DEV/` 下的普通 Markdown 文档中。
+- 耐久文档（设计契约、评分体系、错误识别、路线图、`docs/openapi.json`）维护在跟踪的 `docs/` 下，协作者和 CI 可见；`DEV/` 只做本地草稿与无人值守 Loop 状态，默认不跟踪。
+- 改动端点或请求/响应模型后必须重新生成契约产物：`python -m scripts.export_openapi --output docs/openapi.json`，`tests/test_openapi_artifact.py` 会拦住过期产物。
+- 后续新功能不再使用 OpenSpec；计划和设计说明直接维护在 `README.md`、`AGENTS.md` 或 `docs/` 下的普通 Markdown 文档中。
 
 ## 动作分析模块化架构
 
@@ -138,7 +143,7 @@ python -m scripts.seed_data
 
 ## 下一阶段
 
-当前路线图与评分、错误识别基线说明维护在 `DEV/体适能AI管家-计算机视觉与个性化算法路线图.md`、`DEV/标准度评分体系设计.md` 和 `DEV/错误动作识别设计.md`（本地文档，默认不跟踪）。要点：
+当前路线图与评分、错误识别基线说明维护在 `docs/体适能AI管家-计算机视觉与个性化算法路线图.md`、`docs/标准度评分体系设计.md` 和 `docs/错误动作识别设计.md`（已随仓库跟踪）。要点：
 
 - 完善俯卧撑错误动作识别。
 - 扩展深蹲动作质量检查。

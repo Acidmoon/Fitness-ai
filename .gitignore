@@ -50,6 +50,8 @@ movenet/
 .codex/
 .cowork-temp/
 .kiro/
+.codegraph/
+.reasonix/
 openspec/
 AGENTS.md
 
