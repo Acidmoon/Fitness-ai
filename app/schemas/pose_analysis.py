@@ -3,6 +3,10 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# 数据契约：姿态分析结果 JSON 的 schema 版本。唯一定义点；
+# 管线（video_pose_analysis）与评分（pose_scoring_engine）均从本模块导入。
+POSE_ANALYSIS_SCHEMA_VERSION = 1
+
 
 class PoseAnalysisTriggerRequest(BaseModel):
     sample_fps: Optional[int] = Field(None, ge=1, le=30)

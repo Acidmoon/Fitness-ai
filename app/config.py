@@ -80,7 +80,10 @@ class Settings(BaseSettings):
     @field_validator("POSE_ANALYSIS_BACKEND")
     @classmethod
     def validate_pose_analysis_backend(cls, value: str) -> str:
-        backend_id = value.strip()
+        # Only strip ASCII whitespace (typical env-file artifacts). Unicode
+        # whitespace such as \x85 must survive stripping so the strict
+        # identifier regex below rejects it instead of silently trimming it.
+        backend_id = value.strip(" \t")
         if not backend_id:
             return "movenet"
         if not re.match(r"^[a-z0-9][a-z0-9_-]*$", backend_id):

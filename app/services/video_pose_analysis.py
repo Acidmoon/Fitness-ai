@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from app.config import settings
 from app.schemas.exercise import MAX_KEYPOINTS_DATA_BYTES
+from app.schemas.pose_analysis import POSE_ANALYSIS_SCHEMA_VERSION
 from app.services.pose_analysis_runtime import (
     PoseAnalysisInferenceError,
     PoseAnalysisUnavailableError,
@@ -13,7 +14,6 @@ from app.services.pose_backends import registry
 from app.services.pose_backends.protocol import PoseAnalysisBackend
 from app.services.pose_keypoint_result import normalize_keypoint_result
 
-POSE_ANALYSIS_SCHEMA_VERSION = 1
 MAX_STORED_SAMPLE_FRAMES = 120
 
 

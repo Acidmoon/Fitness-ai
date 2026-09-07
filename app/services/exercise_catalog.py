@@ -81,7 +81,6 @@ def build_standard_metadata(raw: Dict[str, Any]) -> Dict[str, Any]:
     muscle_group = _text(raw.get("muscle_group"))
     secondary_muscles = _text_list(raw.get("secondary_muscles"))
     aliases = build_aliases(name_en, instructions)
-    canonical_action_key = resolve_canonical_action_key(aliases)
 
     category_zh = BODY_PART_CATEGORY_ZH.get(body_part, "未分类")
     is_bodyweight = equipment == "body weight"
@@ -129,12 +128,7 @@ def build_standard_metadata(raw: Dict[str, Any]) -> Dict[str, Any]:
             "equipment": equipment,
             "body_part": body_part,
         },
-        "analysis": {
-            "supported": False,
-            "canonical_action_key": canonical_action_key,
-            "rule_version": None,
-            "status_reason": "动作目录可展示，但暂无姿态评分规则",
-        },
+        "analysis": _analysis_block(None),
         "media": {
             "image": raw.get("image"),
             "gif_url": raw.get("gif_url"),
@@ -203,16 +197,7 @@ def build_builtin_exercises() -> List[Exercise]:
                 "equipment": "body weight",
                 "body_part": None,
             },
-            "analysis": {
-                "supported": action_key is not None,
-                "canonical_action_key": action_key,
-                "rule_version": f"{action_key}-v1" if action_key else None,
-                "status_reason": (
-                    "已接入本项目姿态评分规则"
-                    if action_key
-                    else "动作目录可展示，但暂无姿态评分规则"
-                ),
-            },
+            "analysis": _analysis_block(action_key),
             "media": {},
         }
         exercises.append(
@@ -232,12 +217,13 @@ def seed_exercise_catalog(
     """Create or update the exercise catalog without deleting user records."""
     rows = list(source_rows) if source_rows is not None else load_external_exercises()
     incoming = build_builtin_exercises() + [build_exercise_from_external(row) for row in rows]
+    existing_index = _index_existing_exercises(db)
     created = 0
     updated = 0
     skipped = 0
 
     for exercise in incoming:
-        existing = _find_existing_exercise(db, exercise)
+        existing = _find_existing_exercise(existing_index, exercise)
         if existing is None:
             db.add(exercise)
             created += 1
@@ -342,31 +328,48 @@ def exercise_matches_catalog_filters(
     return True
 
 
+ANALYSIS_SUPPORTED_REASON = "已接入本项目姿态评分规则"
+ANALYSIS_UNSUPPORTED_REASON = "动作目录可展示，但暂无姿态评分规则"
+
+
+def _analysis_block(action_key: Optional[str]) -> Dict[str, Any]:
+    """Single source of truth for the ``analysis`` metadata block."""
+    if action_key is None:
+        return {
+            "supported": False,
+            "canonical_action_key": None,
+            "rule_version": None,
+            "status_reason": ANALYSIS_UNSUPPORTED_REASON,
+        }
+    return {
+        "supported": True,
+        "canonical_action_key": action_key,
+        "rule_version": f"{action_key}-v1",
+        "status_reason": ANALYSIS_SUPPORTED_REASON,
+    }
+
+
+def _find_rule_for_aliases(aliases: Iterable[str]):
+    """Probe the rule registry once across a set of aliases."""
+    for alias in aliases:
+        rule = find_rule_for_exercise(Exercise(name=alias))
+        if rule:
+            return rule
+    return None
+
+
 def mark_analysis_support(metadata: Dict[str, Any]) -> Dict[str, Any]:
     """Set AI support fields by asking the current exercise rule registry."""
-    aliases = metadata["search"]["aliases"]
-    for alias in aliases:
-        probe = Exercise(name=alias, category=metadata["classification"]["category_zh"])
-        rule = find_rule_for_exercise(probe)
-        if rule:
-            metadata["analysis"] = {
-                "supported": True,
-                "canonical_action_key": rule.exercise_type,
-                "rule_version": f"{rule.exercise_type}-v1",
-                "status_reason": "已接入本项目姿态评分规则",
-            }
-            break
+    rule = _find_rule_for_aliases(metadata["search"]["aliases"])
+    if rule:
+        metadata["analysis"] = _analysis_block(rule.exercise_type)
     return metadata
 
 
 def resolve_canonical_action_key(aliases: Iterable[str]) -> Optional[str]:
     """Resolve a known action key from imported aliases without changing scoring."""
-    for alias in aliases:
-        probe = Exercise(name=alias)
-        rule = find_rule_for_exercise(probe)
-        if rule:
-            return rule.exercise_type
-    return None
+    rule = _find_rule_for_aliases(aliases)
+    return rule.exercise_type if rule else None
 
 
 def build_aliases(name_en: str, instructions: Dict[str, str]) -> List[str]:
@@ -407,21 +410,36 @@ def build_campus_candidate_reason(equipment: str, body_part: str) -> Optional[st
     return None
 
 
-def _find_existing_exercise(db, incoming: Exercise) -> Optional[Exercise]:
+def _index_existing_exercises(db):
+    """Load the catalog once and index it for O(1) seed matching.
+
+    Source keys preserve first-seen (lowest primary key) order, matching the
+    previous ``.first()`` fallback semantics without per-row table scans.
+    """
+    by_source: Dict[Any, Exercise] = {}
+    by_name: Dict[str, Exercise] = {}
+    for exercise in db.query(Exercise).all():
+        standard = exercise.standard if isinstance(exercise.standard, dict) else {}
+        source = standard.get("source") or {}
+        source_name = source.get("name")
+        external_id = source.get("external_id")
+        if source_name and external_id is not None:
+            by_source.setdefault((source_name, external_id), exercise)
+        by_name.setdefault(exercise.name, exercise)
+    return by_source, by_name
+
+
+def _find_existing_exercise(index, incoming: Exercise) -> Optional[Exercise]:
+    by_source, by_name = index
     standard = incoming.standard if isinstance(incoming.standard, dict) else {}
     source = standard.get("source") or {}
     source_name = source.get("name")
     external_id = source.get("external_id")
     if source_name and external_id is not None:
-        for exercise in db.query(Exercise).all():
-            existing_standard = exercise.standard if isinstance(exercise.standard, dict) else {}
-            existing_source = existing_standard.get("source") or {}
-            if (
-                existing_source.get("name") == source_name
-                and existing_source.get("external_id") == external_id
-            ):
-                return exercise
-    return db.query(Exercise).filter(Exercise.name == incoming.name).first()
+        existing = by_source.get((source_name, external_id))
+        if existing is not None:
+            return existing
+    return by_name.get(incoming.name)
 
 
 def _apply_catalog_update(existing: Exercise, incoming: Exercise) -> bool:
