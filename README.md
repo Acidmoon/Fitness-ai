@@ -90,13 +90,24 @@ app/api/ai.py
   -> app/services/video_pose_analysis.py
   -> app/services/pose_features.py
   -> app/services/exercise_rules/<action>.py
+  -> app/services/cycle_phase_detection.py（周期型动作共用相位状态机）
   -> app/services/exercise_rules/repetition_counter.py
   -> app/services/exercise_pose_scoring.py
 ```
 
 新增周期型动作时，优先在 `app/services/exercise_rules/` 下新增独立规则模块，声明动作别名、所需关键点、关节角组合和阈值，再在 `registry.py` 注册规则。可复用 `pose_features.py` 的角度序列抽取和 `repetition_counter.py` 的 `peak -> valley -> peak` 峰谷次数统计；非周期型动作应在规则模块中输出持续时间、稳定性、漂移和失败原因等证据。
 
-评分响应应持续保留 `auto_count`、`count_source`、`metrics.valid_reps`、`metrics.invalid_reps` 和失败原因，确保自动次数、动作阶段和评分反馈都可解释、可测试、可用于后续评估材料。
+评分响应应持续保留 `auto_count`、`count_source`、`metrics.rule`、`metrics.valid_reps`、`metrics.invalid_reps` 和失败原因，确保自动次数、动作阶段和评分反馈都可解释、可测试、可用于后续评估材料。
+
+## 动作评分标准
+
+每个动作“什么算到位、什么算有效一次”按官方口径固定并可版本化：
+
+- 俯卧撑 `push_up-v3`：国标《国民体质测定标准手册（成年人部分）》——降至肩与肘同一水平面、撑起恢复开始姿势、身体保持平直。
+- 深蹲 `squat-v2`：国标无此项目，采用 ACSM 大腿至或低于平行口径。
+- 数值存放：`Exercise.standard.pose_scoring`（目录行可覆盖），代码默认值为回退；生效值随评分结果以 `metrics.rule` 返回。
+
+判据表、容差理由、采集前提与不支持的判据见 `docs/动作评分标准.md`。改阈值或错误判据必须同时提升 `rule_version`，否则新旧分数无法区分。
 
 ## AI 数据一致性
 
@@ -143,10 +154,10 @@ python -m scripts.seed_data
 
 ## 下一阶段
 
-当前路线图与评分、错误识别基线说明维护在 `docs/体适能AI管家-计算机视觉与个性化算法路线图.md`、`docs/标准度评分体系设计.md` 和 `docs/错误动作识别设计.md`（已随仓库跟踪）。要点：
+当前路线图与评分、错误识别基线说明维护在 `docs/体适能AI管家-计算机视觉与个性化算法路线图.md`、`docs/动作评分标准.md`、`docs/标准度评分体系设计.md` 和 `docs/错误动作识别设计.md`（已随仓库跟踪）。要点：
 
-- 完善俯卧撑错误动作识别。
-- 扩展深蹲动作质量检查。
-- 增加个性化训练建议。
+- 评分标准已按官方口径收紧（俯卧撑 `v3`、深蹲 `v2`）；旧结果靠 `analysis_rule_version` 区分。
+- 待用真实样例与人工标注校准容差，并给出次数误差与一致性报告。
+- 扩展更多动作的规则：先做周期型动作（仰卧起坐等），再验证非计数型动作（坐位体前屈、平板支撑）。
+- 增加个性化训练建议（等历史数据齐备后启动）。
 - 接入 Health Connect 或其他可穿戴健康数据。
-- 建立样本视频、人工标注和算法评估材料。

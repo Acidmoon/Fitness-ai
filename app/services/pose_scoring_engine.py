@@ -78,7 +78,13 @@ def score_pose_data(exercise: Any, keypoints_data: Any) -> Dict[str, Any]:
     errors = detect_pose_errors(frames, angle_samples, phase_summary, rule)
     score = quality["score"]
     analysis_config = (getattr(exercise, "standard", None) or {}).get("analysis") or {}
-    rule_version = analysis_config.get("rule_version") or f"{rule.exercise_type}-v1"
+    # 规则自带版本优先：目录里的 analysis.rule_version 只是展示用镜像，真正生效的
+    # 阈值来自 rule（可被 standard.pose_scoring 覆盖），两者不一致时以规则为准。
+    rule_version = (
+        rule.rule_version
+        or analysis_config.get("rule_version")
+        or f"{rule.exercise_type}-v1"
+    )
     feedback = _merge_feedback(
         build_standard_quality_feedback(quality),
         video_quality.get("feedback") or [],
@@ -97,6 +103,7 @@ def score_pose_data(exercise: Any, keypoints_data: Any) -> Dict[str, Any]:
         "confidence": round(phase_summary.average_confidence, 4),
         "feedback": feedback,
         "metrics": {
+            "rule": rule.effective_standard(),
             "valid_frames": len(angle_samples),
             "min_angle": round(phase_summary.min_angle, 2),
             "max_angle": round(phase_summary.max_angle, 2),

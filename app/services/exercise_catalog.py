@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.models.exercise import Exercise
-from app.services.exercise_rules.registry import find_rule_for_exercise
+from app.services.exercise_rules.registry import (
+    find_rule_for_exercise,
+    get_rule_by_exercise_type,
+)
 
 
 EXERCISES_DATASET_SOURCE = "hasaneyldrm/exercises-dataset"
@@ -218,6 +221,7 @@ def build_builtin_exercises() -> List[Exercise]:
                 "body_part": None,
             },
             "analysis": _analysis_block(action_key),
+            "pose_scoring": _pose_scoring_block(action_key),
             "media": {},
         }
         exercises.append(
@@ -352,8 +356,26 @@ ANALYSIS_SUPPORTED_REASON = "已接入本项目姿态评分规则"
 ANALYSIS_UNSUPPORTED_REASON = "动作目录可展示，但暂无姿态评分规则"
 
 
+def _pose_scoring_block(action_key: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Return the catalog-editable scoring standard for a supported action.
+
+    Keeping the criteria on the catalog row turns a per-action standard change into a
+    data edit instead of a code deploy; the rule defaults remain the fallback for rows
+    without this block, so historical databases keep scoring.
+    """
+    if action_key is None:
+        return None
+    rule = get_rule_by_exercise_type(action_key)
+    return rule.standard_payload() if rule else None
+
+
 def _analysis_block(action_key: Optional[str]) -> Dict[str, Any]:
-    """Single source of truth for the ``analysis`` metadata block."""
+    """Single source of truth for the ``analysis`` metadata block.
+
+    ``rule_version`` is quoted from the registered rule instead of a hard-coded
+    ``-v1`` suffix, so catalog display can never disagree with the version stamped
+    onto stored scoring results.
+    """
     if action_key is None:
         return {
             "supported": False,
@@ -361,10 +383,11 @@ def _analysis_block(action_key: Optional[str]) -> Dict[str, Any]:
             "rule_version": None,
             "status_reason": ANALYSIS_UNSUPPORTED_REASON,
         }
+    rule = get_rule_by_exercise_type(action_key)
     return {
         "supported": True,
         "canonical_action_key": action_key,
-        "rule_version": f"{action_key}-v1",
+        "rule_version": (rule.rule_version if rule else None) or f"{action_key}-v1",
         "status_reason": ANALYSIS_SUPPORTED_REASON,
     }
 
@@ -383,6 +406,8 @@ def mark_analysis_support(metadata: Dict[str, Any]) -> Dict[str, Any]:
     rule = _find_rule_for_aliases(metadata["search"]["aliases"])
     if rule:
         metadata["analysis"] = _analysis_block(rule.exercise_type)
+        # 目录行同时携带可编辑的评分标准，换口径不必改代码（但必须改 rule_version）。
+        metadata["pose_scoring"] = rule.standard_payload()
     return metadata
 
 

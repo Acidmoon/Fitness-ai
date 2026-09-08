@@ -93,12 +93,16 @@ queued ──▶ running ──▶ succeeded
 
 | 键 | 含义 |
 | --- | --- |
+| `rule` | 本次评分生效的标准快照：`rule_version`、`criteria_source`、`measurement_notes`、全部生效阈值 `thresholds`、`required_keypoints`、`joint_triplets`。阈值可被目录行 `Exercise.standard.pose_scoring` 覆盖，所以这是唯一能确定“这个分数按哪套标准算出”的地方 |
 | `valid_frames`、`min_angle`、`max_angle`、`angle_range` | 参与评分的有效帧与关节角行程 |
-| `phases[]` | 阶段事件：`{phase, frame_index, timestamp_ms, angle}`；俯卧撑阶段序列为 `ready → down → bottom → up → complete`  |
+| `phases[]` | 相位事件：`{phase, frame_index, timestamp_ms, angle}`；周期型动作共用同一套词汇 `ready → down → bottom → up → complete`（俯卧撑取肘角，深蹲取膝角） |
 | `valid_reps[]`、`repetitions[]`、`invalid_reps[]` | 每次有效/无效重复的起止帧与失败原因 |
-| `count_source` | 计数来源，当前为 `angle_peak_valley`  |
+| `count_source` | 计数来源，当前为 `angle_peak_valley` |
 | `quality` | 六维标准度评分（`version: standard_quality_v1`、`score`、`weights`、`dimensions`）与 `quality.video` 采集质量（`version: video_quality_v1`、`status: ok/warning/invalid`、置信度、有效帧比例、缺失必需关键点、`feedback`） |
-| `errors[]` | 动作错误项：`code`、`label`、`severity`、`feedback`、`evidence`  |
+| `errors[]` | 动作错误项：`code`、`label`、`severity`、`feedback`、`evidence` |
+
+展示分数时建议同时展示 `metrics.rule.rule_version`：不同版本的分数与次数不可直接比较。
+逐动作判据数值见 `docs/动作评分标准.md`。
 
 规则语义：
 
@@ -112,13 +116,13 @@ queued ──▶ running ──▶ succeeded
 
 | 场景 | 同步分析 | 创建任务 | 说明 |
 | --- | --- | --- | --- |
-| 记录不存在或越权 | 404 | 404 | 归属检查统一 404  |
+| 记录不存在或越权 | 404 | 404 | 归属检查统一 404 |
 | 记录没有视频 | 400 | 400 | 提示先上传视频 |
 | 视频文件丢失 | 404 | 404 | 文件层面不存在 |
-| 视频路径非法 | 400 | 403 | 同步接口按推理错误给 400，任务接口按访问语义给 403  |
+| 视频路径非法 | 400 | 403 | 同步接口按推理错误给 400，任务接口按访问语义给 403 |
 | 姿态分析未启用 / 缺 TFLite 运行时 / 模型不可用 | 503 | — | 任务接口在创建前只做视频就绪检查，这类失败发生在任务里，客户端会在任务 `error` 中看到 |
 | int8 量化模型 | 503 | — | 运行时拒绝反量化不了的模型，避免静默产出错误关键点 |
-| 推理异常 | 400 | — | 同上，异步时表现为任务 `failed`  |
+| 推理异常 | 400 | — | 同上，异步时表现为任务 `failed` |
 
 ## 变更纪律
 

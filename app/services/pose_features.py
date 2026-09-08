@@ -39,6 +39,21 @@ class BodyLineSample:
 
 
 @dataclass(frozen=True)
+class BodyLineOffsetSample:
+    """One frame's *signed* hip offset from the shoulder-ankle line.
+
+    `offset_ratio` 是髋点到肩-踝连线的垂距占肩踝跨度的比例：正值表示髋在连线下方
+    （塌腰），负值表示髋在连线上方（撅臀）。偏差绝对值无法区分这两类错误，
+    但它们的纠正建议相反，因此必须保留符号。
+    """
+
+    frame_index: int
+    timestamp_ms: int
+    offset_ratio: float
+    confidence: float
+
+
+@dataclass(frozen=True)
 class SymmetrySample:
     """One frame's left-right joint-angle difference for a mirrored movement."""
 
@@ -156,6 +171,69 @@ def extract_body_line_samples(
                     frame_index=int(frame.get("frame_index", len(samples))),
                     timestamp_ms=int(frame.get("timestamp_ms", 0)),
                     deviation=sum(deviations) / len(deviations),
+                    confidence=sum(confidences) / len(confidences),
+                )
+            )
+
+    return samples
+
+
+def extract_body_line_offset_samples(
+    frames: Sequence[Dict[str, Any]], min_confidence: float
+) -> List[BodyLineOffsetSample]:
+    """Measure how far the hip sits off the shoulder-ankle line, with direction.
+
+    髋低于体轴为塌腰、高于体轴为撅臀，但这个“上下”只有在俯卧姿势下才有物理意义：
+    肩→踝轴接近水平（|axis_y| <= 0.5·|axis_x|）时，图像 y 方向才近似重力方向。
+    轴接近竖直时（站立、坐姿或机位不对）返回的帧被丢弃，调用方因此拿不到方向，
+    只能退回“身体未保持平直”这一无方向结论，而不是凭空判定塌腰或撅臀。
+
+    偏移按肩踝跨度归一化，因此与身高和画面尺度无关；符号再按肩→踝的 x 分量规范化，
+    避免受试者头朝左还是朝右影响结论。
+    """
+    samples: List[BodyLineOffsetSample] = []
+    chains = (
+        ("left_shoulder", "left_hip", "left_ankle"),
+        ("right_shoulder", "right_hip", "right_ankle"),
+    )
+
+    for frame in frames:
+        keypoints_by_name = index_keypoints(frame.get("keypoints") or [])
+        ratios: List[float] = []
+        confidences: List[float] = []
+
+        for shoulder_name, hip_name, ankle_name in chains:
+            chain = (shoulder_name, hip_name, ankle_name)
+            if not keypoints_have_confidence(keypoints_by_name, chain, min_confidence):
+                continue
+
+            shoulder = keypoints_by_name[shoulder_name]
+            hip = keypoints_by_name[hip_name]
+            ankle = keypoints_by_name[ankle_name]
+            axis_x = float(ankle["x"]) - float(shoulder["x"])
+            axis_y = float(ankle["y"]) - float(shoulder["y"])
+            span_squared = axis_x * axis_x + axis_y * axis_y
+            if span_squared < 1e-6:
+                continue
+            # 只有接近水平的体轴才让“髋在连线上方/下方”等价于重力方向的塌腰/撅臀。
+            if abs(axis_y) > 0.5 * abs(axis_x):
+                continue
+
+            cross = axis_x * (float(hip["y"]) - float(shoulder["y"])) - axis_y * (
+                float(hip["x"]) - float(shoulder["x"])
+            )
+            # 图像 y 轴向下：cross>0 表示髋在体轴下方（髋下沉）。
+            # 受试者左右朝向相反时 axis_x 变号，因此按 axis_x 符号规范化。
+            facing = 1.0 if axis_x >= 0 else -1.0
+            ratios.append(cross * facing / span_squared)
+            confidences.append(average_keypoint_confidence(keypoints_by_name, chain))
+
+        if ratios:
+            samples.append(
+                BodyLineOffsetSample(
+                    frame_index=int(frame.get("frame_index", len(samples))),
+                    timestamp_ms=int(frame.get("timestamp_ms", 0)),
+                    offset_ratio=sum(ratios) / len(ratios),
                     confidence=sum(confidences) / len(confidences),
                 )
             )

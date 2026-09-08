@@ -43,6 +43,11 @@ class ExerciseRule:
     low_confidence_threshold: float = 0.55
     min_rep_duration_ms: int = 250
     max_rep_duration_ms: int = 8000
+    # 版本与口径必须随结果一同存储：否则同一个 `push_up-v1` 下的不同阈值无法区分，
+    # 旧分数也就无法与新分数比较或复现。
+    rule_version: str = ""
+    criteria_source: str = ""
+    measurement_notes: str = ""
 
     def with_standard_overrides(
         self, standard: Optional[Dict[str, Any]]
@@ -98,7 +103,75 @@ class ExerciseRule:
             max_rep_duration_ms=int(
                 pose_standard.get("max_rep_duration_ms", self.max_rep_duration_ms)
             ),
+            rule_version=str(pose_standard.get("rule_version", self.rule_version)),
+            criteria_source=str(
+                pose_standard.get("criteria_source", self.criteria_source)
+            ),
+            measurement_notes=str(
+                pose_standard.get("measurement_notes", self.measurement_notes)
+            ),
         )
+
+    def standard_payload(self) -> Dict[str, Any]:
+        """返回与 `with_standard_overrides()` 对称的扁平标准描述。
+
+        这个结构就是写进动作目录 `Exercise.standard.pose_scoring` 的内容，
+        因此字段名必须和读取端一致，目录行可以原样覆盖代码默认值。
+        """
+        return {
+            "required_keypoints": list(self.required_keypoints),
+            "min_confidence": self.min_confidence,
+            "min_valid_frames": self.min_valid_frames,
+            "down_angle": self.down_angle,
+            "up_angle": self.up_angle,
+            "target_angle": self.target_angle,
+            "min_range": self.min_range,
+            "depth_penalty_rate": self.depth_penalty_rate,
+            "extension_penalty_rate": self.extension_penalty_rate,
+            "range_penalty_rate": self.range_penalty_rate,
+            "no_repetition_penalty": self.no_repetition_penalty,
+            "low_confidence_penalty": self.low_confidence_penalty,
+            "low_confidence_threshold": self.low_confidence_threshold,
+            "min_rep_duration_ms": self.min_rep_duration_ms,
+            "max_rep_duration_ms": self.max_rep_duration_ms,
+            "rule_version": self.rule_version,
+            "criteria_source": self.criteria_source,
+            "measurement_notes": self.measurement_notes,
+        }
+
+    def effective_standard(self) -> Dict[str, Any]:
+        """返回本次评分使用的标准快照，随结果一同输出以便离线复现。
+
+        分数本身不是契约的一部分，但“这个分数由哪套阈值算出”必须是。
+        """
+        payload = self.standard_payload()
+        threshold_keys = (
+            "down_angle",
+            "up_angle",
+            "target_angle",
+            "min_range",
+            "min_confidence",
+            "min_valid_frames",
+            "low_confidence_threshold",
+            "min_rep_duration_ms",
+            "max_rep_duration_ms",
+        )
+        return {
+            "exercise_type": self.exercise_type,
+            "rule_version": self.rule_version,
+            "criteria_source": self.criteria_source,
+            "measurement_notes": self.measurement_notes,
+            "thresholds": {key: payload[key] for key in threshold_keys},
+            "required_keypoints": payload["required_keypoints"],
+            "joint_triplets": [
+                {
+                    "start": triplet.start,
+                    "middle": triplet.middle,
+                    "end": triplet.end,
+                }
+                for triplet in self.joint_triplets
+            ],
+        }
 
     def summarize_phases(self, angle_samples: Sequence[AngleSample]) -> PhaseSummary:
         return extract_threshold_phases(

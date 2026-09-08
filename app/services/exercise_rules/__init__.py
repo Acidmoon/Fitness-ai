@@ -7,7 +7,10 @@ from app.services.exercise_rules.base import (
     PhaseSummary,
     PoseScoringUnavailableError,
 )
-from app.services.exercise_rules.registry import find_rule_for_exercise
+from app.services.exercise_rules.registry import (
+    find_rule_for_exercise,
+    get_rule_by_exercise_type,
+)
 
 __all__ = [
     "AngleSample",
@@ -16,4 +19,5 @@ __all__ = [
     "PhaseSummary",
     "PoseScoringUnavailableError",
     "find_rule_for_exercise",
+    "get_rule_by_exercise_type",
 ]

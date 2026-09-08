@@ -15,6 +15,11 @@ from app.services.exercise_pose_scoring import (
     score_record_pose,
 )
 
+# 标准深蹲膝角序列：底部达到平行位（约 90-95 度）、顶部接近完全伸直（约 176 度），
+# 与 squat-v2 阈值（down_angle 100、up_angle 165、min_range 55）一致。
+# 旧序列底部停在 100/102 度，按 ACSM 平行口径属于未达平行的半程蹲，不能作为标准样例。
+SQUAT_TWO_REPS_STANDARD = [176, 92, 176, 90, 176]
+
 
 def make_pose_analysis(angles, exercise_type="squat", confidence=0.9):
     return {
@@ -355,7 +360,7 @@ class TestPoseScoringRules:
             db_session,
             test_user["user"].id,
             exercise_name="标准深蹲",
-            keypoints_data=make_pose_analysis([165, 100, 166, 102, 168]),
+            keypoints_data=make_pose_analysis(SQUAT_TWO_REPS_STANDARD),
         )
 
         result = score_record_pose(record)
@@ -617,7 +622,7 @@ class TestPoseScoringApi:
         record = create_record(
             db_session,
             test_user["user"].id,
-            keypoints_data=make_pose_analysis([165, 100, 166, 102, 168]),
+            keypoints_data=make_pose_analysis(SQUAT_TWO_REPS_STANDARD),
         )
 
         response = client.post(
@@ -641,7 +646,7 @@ class TestPoseScoringApi:
         record = create_record(
             db_session,
             test_user["user"].id,
-            keypoints_data=make_pose_analysis([165, 100, 166, 102, 168]),
+            keypoints_data=make_pose_analysis(SQUAT_TWO_REPS_STANDARD),
         )
 
         response = client.post(

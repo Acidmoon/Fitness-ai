@@ -36,7 +36,10 @@ def test_registered_error_codes_are_discoverable_by_exercise_key():
     assert get_registered_error_codes("push_up") == [
         "push_up_insufficient_range",
         "push_up_sagging_waist",
+        "push_up_hip_pike",
         "push_up_elbow_flare",
+        "push_up_body_twist",
+        "push_up_rhythm_instability",
     ]
     assert get_registered_error_codes("squat") == [
         "squat_insufficient_depth",
