@@ -216,3 +216,95 @@ def summarize_confidence(keypoints: Sequence[Mapping[str, Any]]) -> Dict[str, fl
             sum(1 for score in scores if score < MID_CONFIDENCE_THRESHOLD)
         ),
     }
+
+
+def write_annotated_video(
+    video_path: Any,
+    output_path: Any,
+    analysis: Mapping[str, Any],
+    *,
+    cv2_module: Any = None,
+    min_confidence: float = MID_CONFIDENCE_THRESHOLD,
+    show_names: bool = False,
+    angle_labels: Iterable[Tuple[str, Tuple[str, str, str]]] = (),
+    all_frames: bool = False,
+    fourcc: str = "mp4v",
+    output_fps: Optional[float] = None,
+) -> Dict[str, Any]:
+    """把分析结果里的关键点骨架写回视频，返回写出统计。
+
+    `all_frames=False` 时只写出采样帧（文件小、播放即逐次重复）；
+    为 True 时写出每一帧，但只有采样帧带骨架。
+    """
+
+    cv2 = _resolve_cv2(cv2_module)
+    sampled_frames = list(analysis.get("frames") or [])
+    if not sampled_frames:
+        raise ValueError("分析结果没有采样帧，无法生成叠加视频")
+
+    by_index = {int(frame["frame_index"]): frame for frame in sampled_frames}
+    video_meta = analysis.get("video") or {}
+    source_fps = float(video_meta.get("source_fps") or 0.0)
+    sample_fps = float(video_meta.get("sample_fps") or 0.0) or 5.0
+    if source_fps <= 0:
+        source_fps = sample_fps
+    sample_interval = max(1, int(round(source_fps / sample_fps)))
+    target_fps = output_fps or (
+        source_fps if all_frames else source_fps / sample_interval
+    )
+
+    capture = cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():
+        raise ValueError(f"无法打开视频：{video_path}")
+
+    output_path = str(output_path)
+    writer: Any = None
+    written = 0
+    frame_index = 0
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            sampled = by_index.get(frame_index)
+            if sampled is not None:
+                draw_pose_overlay(
+                    frame,
+                    sampled.get("keypoints") or [],
+                    cv2_module=cv2,
+                    min_confidence=min_confidence,
+                    show_names=show_names,
+                    angle_labels=angle_labels,
+                    caption=f"frame {frame_index}  t={sampled.get('timestamp_ms')}ms",
+                )
+            if sampled is not None or all_frames:
+                if writer is None:
+                    height, width = frame.shape[:2]
+                    writer = cv2.VideoWriter(
+                        output_path,
+                        cv2.VideoWriter_fourcc(*fourcc),
+                        max(1.0, float(target_fps)),
+                        (width, height),
+                    )
+                    if not writer.isOpened():
+                        raise ValueError(
+                            f"无法创建输出视频（编码器 {fourcc} 不可用）：{output_path}"
+                        )
+                writer.write(frame)
+                written += 1
+            frame_index += 1
+    finally:
+        capture.release()
+        if writer is not None:
+            writer.release()
+
+    if written == 0:
+        raise ValueError("没有写出任何帧，请检查采样参数")
+
+    return {
+        "frames_read": frame_index,
+        "frames_annotated": len(sampled_frames),
+        "frames_written": written,
+        "output_fps": round(float(target_fps), 3),
+        "sample_fps": int(sample_fps),
+    }

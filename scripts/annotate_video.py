@@ -75,28 +75,14 @@ def annotate_video(
     project_root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(project_root))
 
-    import cv2  # type: ignore
-
     from app.services.exercise_pose_scoring import score_pose_data
-    from app.services.pose_overlay import (
-        draw_pose_overlay,
-        summarize_confidence,
-    )
+    from app.services.pose_overlay import summarize_confidence, write_annotated_video
     from app.services.video_pose_analysis import analyze_video_file
 
     analysis = analyze_video_file(str(video_path), sample_fps=sample_fps)
     sampled_frames = analysis.get("frames") or []
     if not sampled_frames:
         raise SystemExit("分析结果没有采样帧，无法生成叠加视频")
-
-    by_index = {int(frame["frame_index"]): frame for frame in sampled_frames}
-    video_meta = analysis.get("video") or {}
-    source_fps = float(video_meta.get("source_fps") or 0.0)
-    used_sample_fps = int(video_meta.get("sample_fps") or sample_fps or 5)
-    if source_fps <= 0:
-        source_fps = float(used_sample_fps)
-    sample_interval = max(1, int(round(source_fps / used_sample_fps)))
-    output_fps = source_fps if all_frames else source_fps / sample_interval
 
     angle_labels = _parse_angles(angle_values)
     confidence_summary: Dict[str, Any] = {}
@@ -112,64 +98,28 @@ def annotate_video(
                 confidence_summary.get("minimum", 1.0), summary["minimum"]
             )
 
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        raise SystemExit(f"无法打开视频：{video_path}")
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    writer: Any = None
-    written = 0
-    frame_index = 0
     try:
-        while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
-            sampled = by_index.get(frame_index)
-            if sampled is not None:
-                keypoints = sampled.get("keypoints") or []
-                draw_pose_overlay(
-                    frame,
-                    keypoints,
-                    min_confidence=min_confidence,
-                    show_names=show_names,
-                    angle_labels=angle_labels,
-                    caption=(f"frame {frame_index}  t={sampled.get('timestamp_ms')}ms"),
-                )
-            if sampled is not None or all_frames:
-                if writer is None:
-                    height, width = frame.shape[:2]
-                    writer = cv2.VideoWriter(
-                        str(output_path),
-                        cv2.VideoWriter_fourcc(*fourcc),
-                        max(1.0, output_fps),
-                        (width, height),
-                    )
-                    if not writer.isOpened():
-                        raise SystemExit(
-                            f"无法创建输出视频（编码器 {fourcc} 不可用）：{output_path}"
-                        )
-                writer.write(frame)
-                written += 1
-            frame_index += 1
-    finally:
-        cap.release()
-        if writer is not None:
-            writer.release()
-
-    if writer is None or written == 0:
-        raise SystemExit("没有写出任何帧，请检查采样参数")
+        video_stats = write_annotated_video(
+            video_path,
+            output_path,
+            analysis,
+            min_confidence=min_confidence,
+            show_names=show_names,
+            angle_labels=angle_labels,
+            all_frames=all_frames,
+            fourcc=fourcc,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     result: Dict[str, Any] = {
         "video": str(video_path),
         "output": str(output_path),
-        "frames_read": frame_index,
         "frames_annotated": len(sampled_frames),
-        "frames_written": written,
-        "output_fps": round(output_fps, 3),
-        "sample_fps": used_sample_fps,
         "confidence": confidence_summary,
         "model": analysis.get("model"),
+        **video_stats,
     }
 
     rule = _resolve_rule(exercise)
