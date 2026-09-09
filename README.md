@@ -109,6 +109,20 @@ app/api/ai.py
 
 判据表、容差理由、采集前提与不支持的判据见 `docs/动作评分标准.md`。改阈值或错误判据必须同时提升 `rule_version`，否则新旧分数无法区分。
 
+## 调试姿态识别
+
+`scripts/annotate_video.py` 把 MoveNet 关键点骨架叠加到原视频上，用于判断识别是否贴合人体：
+
+```bash
+python scripts/annotate_video.py videos/pushup_side.mp4 -o out/pushup_side.mp4 \
+    --sample-fps 10 --exercise 俯卧撑 \
+    --angle left_shoulder,left_elbow,left_wrist
+```
+
+它输出叠加视频与 JSON 摘要（采样帧数、置信度概览、次数/分数/相位/错误码）。
+关键点坐标已做 letterbox 还原（`POSE_ANALYSIS_SCHEMA_VERSION=2`）；
+版本 1 的存量结果会被评分拒绝并提示重新分析。
+
 ## AI 数据一致性
 
 视频、姿态任务和评分结果遵守以下不变量：

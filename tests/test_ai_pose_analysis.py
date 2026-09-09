@@ -5,6 +5,7 @@ from fastapi import status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
+from app.schemas.pose_analysis import POSE_ANALYSIS_SCHEMA_VERSION
 from app.config import settings
 from app.models.pose_analysis_job import PoseAnalysisJob
 from app.services.pose_analysis_runtime import (
@@ -62,7 +63,7 @@ def create_other_user(db_session, suffix: str):
 
 def sample_pose_analysis_result():
     return {
-        "schema_version": 1,
+        "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
         "status": "done",
         "model": {"name": "thunder", "input_size": 256},
         "summary": {
@@ -559,7 +560,7 @@ def test_compact_pose_analysis_result_reduces_stored_frames():
         "padding": "x" * 5000,
     }
     result = {
-        "schema_version": 1,
+        "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
         "status": "done",
         "model": {"name": "thunder", "input_size": 256},
         "summary": {

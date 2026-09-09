@@ -3,6 +3,7 @@ import math
 import pytest
 from fastapi import status
 
+from app.schemas.pose_analysis import POSE_ANALYSIS_SCHEMA_VERSION
 from app.models.exercise import Exercise, ExerciseRecord
 from app.services.exercise_pose_scoring import (
     AngleSample,
@@ -23,7 +24,7 @@ SQUAT_TWO_REPS_STANDARD = [176, 92, 176, 90, 176]
 
 def make_pose_analysis(angles, exercise_type="squat", confidence=0.9):
     return {
-        "schema_version": 1,
+        "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
         "status": "done",
         "model": {"name": "thunder", "input_size": 256},
         "summary": {
@@ -147,7 +148,7 @@ def make_full_body_pushup_frame(
 
 def make_full_body_pushup_analysis(frames):
     return {
-        "schema_version": 1,
+        "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
         "status": "done",
         "model": {"name": "thunder", "input_size": 256},
         "summary": {
@@ -222,7 +223,7 @@ def make_full_body_squat_frame(
 
 def make_full_body_squat_analysis(frames):
     return {
-        "schema_version": 1,
+        "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
         "status": "done",
         "model": {"name": "thunder", "input_size": 256},
         "summary": {

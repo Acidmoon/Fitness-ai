@@ -81,6 +81,12 @@ queued ──▶ running ──▶ succeeded
 ```
 
 - `coordinate_space` 恒为 `image_pixels`，坐标是原图像素值，客户端可直接叠加绘制。
+  MoveNet 内部使用方形 letterbox 输入，服务端已用 `LetterboxTransform` 反解缩放与补零，
+  因此非方形视频（4:3 / 16:9 / 9:16）的坐标与角度一致，可直接比较。
+- `schema_version` 当前为 **2**。版本 1 的关键点未做 letterbox 还原，非方形视频的几何量
+  被各向异性拉伸（16:9 下竖轴压缩到 H/W，竖直平分的 90 度会被算成约 121 度）。
+  评分侧会拒绝版本 1 的结果并返回“姿态分析结果版本已过期，请重新分析”；
+  重新触发分析即可得到版本 2 的关键点，不需要重新上传视频。
 - `keypoints` 固定 17 个 COCO 风格点：`nose`、`left_shoulder`…`right_ankle`；`score` 为该点置信度。
 - 顶层 `summary` 给出 `total_frames`、`processed_frames`、`sampled_frames`、`valid_frame_count`、`average_confidence`、`source_fps`、`sample_fps`，用于解释这次分析抽了多少帧、可信度如何。
 - 存储侧会压缩采样帧序列，因此 `summary.sampled_frames` 可能小于视频总帧数，`frames` 是抽样证据不是逐帧全集。
@@ -123,6 +129,20 @@ queued ──▶ running ──▶ succeeded
 | 姿态分析未启用 / 缺 TFLite 运行时 / 模型不可用 | 503 | — | 任务接口在创建前只做视频就绪检查，这类失败发生在任务里，客户端会在任务 `error` 中看到 |
 | int8 量化模型 | 503 | — | 运行时拒绝反量化不了的模型，避免静默产出错误关键点 |
 | 推理异常 | 400 | — | 同上，异步时表现为任务 `failed` |
+
+## 调试可视化
+
+排查“关键点是否贴合人体”不需要改动服务端，用本地脚本把同一条链路的关键点画回原视频：
+
+```bash
+python scripts/annotate_video.py videos/pushup_side.mp4 -o out/pushup_side.mp4 \
+    --sample-fps 10 --exercise 俯卧撑 \
+    --angle left_shoulder,left_elbow,left_wrist \
+    --angle left_hip,left_knee,left_ankle
+```
+
+脚本输出骨架叠加视频与一段 JSON 摘要（采样帧数、置信度概览、评分结果），
+用于判断采集质量与识别偏差；它只用于调试，不属于对外接口。
 
 ## 变更纪律
 

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from app.schemas.pose_analysis import POSE_ANALYSIS_SCHEMA_VERSION
 from app.models.exercise import Exercise
 from app.services.exercise_pose_scoring import score_pose_data
 
@@ -29,7 +30,7 @@ def build_pose_analysis(recipe):
     ]
     confidence = float(recipe.get("confidence", 0.9))
     return {
-        "schema_version": 1,
+        "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
         "status": "done",
         "model": {"name": "synthetic-keypoints", "input_size": 256},
         "summary": {

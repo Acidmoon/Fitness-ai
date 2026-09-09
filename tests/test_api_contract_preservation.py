@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from fastapi import status
 
+from app.schemas.pose_analysis import POSE_ANALYSIS_SCHEMA_VERSION
 from app.models.exercise import Exercise, ExerciseRecord
 from app.services.pose_analysis_runtime import (
     PoseAnalysisDisabledError,
@@ -41,7 +42,7 @@ def _create_exercise_record(db_session, user_id, video_url=None, keypoints_data=
 def _sample_analysis_result():
     """Return a valid pose analysis result matching the abstracted backend output."""
     return {
-        "schema_version": 1,
+        "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
         "status": "done",
         "model": {"name": "thunder", "input_size": 256},
         "summary": {
@@ -230,7 +231,7 @@ class TestGetPoseAnalysisResponseSchema:
 
         # Validate PoseAnalysisResponse schema
         assert data["record_id"] == record.id
-        assert data["schema_version"] == 1
+        assert data["schema_version"] == POSE_ANALYSIS_SCHEMA_VERSION
         assert data["status"] == "idle"
         assert data["frames"] == []
         assert data.get("model") is None
@@ -255,7 +256,7 @@ class TestGetPoseAnalysisResponseSchema:
 
         # Validate full PoseAnalysisResponse schema with data
         assert data["record_id"] == record.id
-        assert data["schema_version"] == 1
+        assert data["schema_version"] == POSE_ANALYSIS_SCHEMA_VERSION
         assert data["status"] == "done"
         assert isinstance(data["frames"], list)
         assert len(data["frames"]) == 1
@@ -313,7 +314,7 @@ class TestPostPoseScoringWithAbstractedBackend:
         # Simulate a squat movement: up -> down -> up (1 rep)
         angles = [165, 100, 166]
         keypoints_data = {
-            "schema_version": 1,
+            "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
             "status": "done",
             "model": {"name": "thunder", "input_size": 256},
             "summary": {

@@ -7,6 +7,7 @@ from app.services.pose_analysis_runtime import (
     PoseAnalysisInferenceError,
     PoseAnalysisUnavailableError,
     PoseRuntimeConfig,
+    letterbox_transform,
     normalize_keypoints,
     resolve_movenet_model_path,
 )
@@ -54,28 +55,34 @@ def test_resolve_movenet_model_path_accepts_existing_tflite_file(tmp_path):
 
 
 def test_normalize_keypoints_retains_low_confidence_values():
+    # y 取在 letterbox 内容带内（640x480 下内容带为 [0.125, 0.875]），
+    # 否则会还原到画面之外。
     raw_keypoints = [
         [
             [
-                [index / 100, index / 200, 0.05 if index == 0 else 0.9]
+                [0.125 + index * 0.04, 0.05 + index * 0.05, 0.05 if index == 0 else 0.9]
                 for index in range(17)
             ]
         ]
     ]
 
-    result = normalize_keypoints(raw_keypoints, frame_width=640, frame_height=480)
+    transform = letterbox_transform(640, 480, 192)
+    result = normalize_keypoints(raw_keypoints, transform=transform)
 
     assert len(result) == 17
-    assert result[0] == {"name": "nose", "x": 0.0, "y": 0.0, "score": 0.05}
+    assert result[0] == {"name": "nose", "x": 32.0, "y": 0.0, "score": 0.05}
     assert result[5]["name"] == "left_shoulder"
-    assert result[5]["x"] == 16.0
-    assert result[5]["y"] == 24.0
+    assert result[5]["x"] == 192.0
+    assert result[5]["y"] == 128.0
     assert result[5]["score"] == 0.9
 
 
 def test_normalize_keypoints_rejects_invalid_keypoint_count():
     with pytest.raises(PoseAnalysisInferenceError):
-        normalize_keypoints([[[[0, 0, 1]]]], frame_width=640, frame_height=480)
+        normalize_keypoints(
+            [[[[0, 0, 1]]]],
+            transform=letterbox_transform(640, 480, 192),
+        )
 
 
 def test_runtime_analyze_frame_returns_canonical_keypoint_result(tmp_path):

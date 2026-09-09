@@ -1,7 +1,7 @@
 """深蹲相位证据验收（cv-squat-phase-enhancement）。
 
 要求不是“深蹲也能出分”，而是深蹲给出与俯卧撑同构的可解释证据：
-`ready -> down -> bottom -> up -> complete` 相位事件 + 每次重复的起止帧喵。
+`ready -> down -> bottom -> up -> complete` 相位事件 + 每次重复的起止帧。
 """
 
 import pytest

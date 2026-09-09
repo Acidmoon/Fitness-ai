@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from app.config import settings
 from app.services.pose_keypoint_result import (
@@ -12,6 +12,49 @@ from app.services.pose_keypoint_result import (
 )
 
 KEYPOINT_NAMES = list(STANDARD_KEYPOINT_NAMES)
+
+
+class LetterboxTransform(NamedTuple):
+    """MoveNet 方形输入与原始帧之间的映射参数。
+
+    MoveNet 的输出坐标是相对“居中补零后的方形输入”归一化的，不是相对原始帧。
+    非方形视频如果直接乘以原始宽高，几何形状会被各向异性拉伸（16:9 下竖轴被压到
+    H/W），关节角随之系统性偏移，因此必须用这里的参数反解回原始像素。
+    """
+
+    input_size: int
+    scale: float
+    x_offset: int
+    y_offset: int
+
+    def to_frame_pixels(self, x_norm: float, y_norm: float) -> Tuple[float, float]:
+        """把方形输入内的归一化坐标还原为原始帧像素坐标。
+
+        落在补零区域的坐标会还原到画面之外（负值或超出宽高），这是真实情况，
+        不做裁剪，让调用方按置信度自行判断。
+        """
+
+        x = (x_norm * self.input_size - self.x_offset) / self.scale
+        y = (y_norm * self.input_size - self.y_offset) / self.scale
+        return x, y
+
+
+def letterbox_transform(
+    frame_width: int,
+    frame_height: int,
+    input_size: int,
+) -> LetterboxTransform:
+    """计算与 `_preprocess_frame` 完全一致的 letterbox 参数。"""
+
+    scale = min(input_size / frame_height, input_size / frame_width)
+    new_width = int(frame_width * scale)
+    new_height = int(frame_height * scale)
+    return LetterboxTransform(
+        input_size=input_size,
+        scale=scale,
+        x_offset=(input_size - new_width) // 2,
+        y_offset=(input_size - new_height) // 2,
+    )
 
 
 class PoseAnalysisRuntimeError(Exception):
@@ -70,8 +113,8 @@ def resolve_movenet_model_path(config: PoseRuntimeConfig) -> Path:
 
 def normalize_keypoints(
     keypoints_with_scores: Any,
-    frame_width: int,
-    frame_height: int,
+    *,
+    transform: LetterboxTransform,
 ) -> List[Dict[str, float | str]]:
     keypoints = _extract_keypoint_rows(keypoints_with_scores)
     if len(keypoints) != len(KEYPOINT_NAMES):
@@ -82,11 +125,12 @@ def normalize_keypoints(
         y_norm = float(row[0])
         x_norm = float(row[1])
         score = float(row[2])
+        x_px, y_px = transform.to_frame_pixels(x_norm, y_norm)
         normalized.append(
             {
                 "name": KEYPOINT_NAMES[index],
-                "x": round(x_norm * frame_width, 3),
-                "y": round(y_norm * frame_height, 3),
+                "x": round(x_px, 3),
+                "y": round(y_px, 3),
                 "score": round(score, 6),
             }
         )
@@ -155,7 +199,7 @@ class MoveNetRuntime:
             with self._lock:
                 self._ensure_loaded()
                 frame_height, frame_width = _frame_dimensions(frame_bgr)
-                input_tensor = self._preprocess_frame(frame_bgr)
+                input_tensor, transform = self._preprocess_frame(frame_bgr)
                 self._interpreter.set_tensor(
                     self._input_details[0]["index"], input_tensor
                 )
@@ -177,8 +221,7 @@ class MoveNetRuntime:
                 "confidence_threshold": self.config.min_confidence,
                 "keypoints": normalize_keypoints(
                     raw_keypoints,
-                    frame_width=frame_width,
-                    frame_height=frame_height,
+                    transform=transform,
                 ),
             }
             normalized_result = normalize_keypoint_result(
@@ -216,12 +259,13 @@ class MoveNetRuntime:
         self._input_size = _input_size_from_details(input_details)
         _validate_model_io_dtypes(input_details, output_details, self._np)
 
-    def _preprocess_frame(self, frame_bgr: Any) -> Any:
+    def _preprocess_frame(self, frame_bgr: Any) -> Tuple[Any, LetterboxTransform]:
         frame_rgb = self._cv2.cvtColor(frame_bgr, self._cv2.COLOR_BGR2RGB)
         frame_height, frame_width = _frame_dimensions(frame_rgb)
         input_size = self._input_size or 256
 
-        scale = min(input_size / frame_height, input_size / frame_width)
+        transform = letterbox_transform(frame_width, frame_height, input_size)
+        scale = transform.scale
         new_height = int(frame_height * scale)
         new_width = int(frame_width * scale)
         resized_image = self._cv2.resize(frame_rgb, (new_width, new_height))
@@ -229,20 +273,18 @@ class MoveNetRuntime:
         padded_image = self._np.zeros(
             (input_size, input_size, 3), dtype=frame_rgb.dtype
         )
-        y_offset = (input_size - new_height) // 2
-        x_offset = (input_size - new_width) // 2
         padded_image[
-            y_offset : y_offset + new_height,
-            x_offset : x_offset + new_width,
+            transform.y_offset : transform.y_offset + new_height,
+            transform.x_offset : transform.x_offset + new_width,
         ] = resized_image
 
         input_tensor = self._np.expand_dims(padded_image, axis=0)
         input_dtype = self._input_details[0]["dtype"]
         if input_dtype == self._np.uint8:
-            return self._np.clip(input_tensor, 0, 255).astype(self._np.uint8)
+            return self._np.clip(input_tensor, 0, 255).astype(self._np.uint8), transform
         if input_dtype == self._np.float32:
-            return input_tensor.astype(self._np.float32)
-        return input_tensor.astype(input_dtype)
+            return input_tensor.astype(self._np.float32), transform
+        return input_tensor.astype(input_dtype), transform
 
 
 def _input_size_from_details(input_details: Any) -> int:
