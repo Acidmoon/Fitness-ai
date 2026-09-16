@@ -90,6 +90,11 @@ queued ──▶ running ──▶ succeeded
 - `keypoints` 固定 17 个 COCO 风格点：`nose`、`left_shoulder`…`right_ankle`；`score` 为该点置信度。
 - 顶层 `summary` 给出 `total_frames`、`processed_frames`、`sampled_frames`、`valid_frame_count`、`average_confidence`、`source_fps`、`sample_fps`，用于解释这次分析抽了多少帧、可信度如何。
 - 存储侧会压缩采样帧序列，因此 `summary.sampled_frames` 可能小于视频总帧数，`frames` 是抽样证据不是逐帧全集。
+  压缩后 `summary.sample_fps` 会同步下调为存储帧真实时间基对应的帧率（可能低于请求值），
+  消费方应以 `frames[].frame_index` 的步长还原时间轴，不要直接按请求帧率解读；
+  `average_confidence` 仍是压缩前全部采样帧的统计量。
+- 采样帧数上限为 120 帧：请求 10fps 时约 12 秒以后的视频尾部不会被分析，
+  此时 `summary.processed_frames` 会小于 `total_frames`。按采集规范（每段 5–10 秒）拍摄不会触及该上限。
 
 ## 评分响应
 

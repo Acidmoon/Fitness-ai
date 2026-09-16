@@ -316,3 +316,32 @@ def test_render_markdown_lists_sample_rows():
     markdown = render_markdown(report)
 
     assert "| a.mp4 | 俯卧撑 | side | 1 | 1 | 0 |" in markdown
+
+
+def test_evaluate_sample_records_unscorable_analysis_instead_of_raising():
+    """采集质量太差时评分会抛错；批量评估必须记为单条失败而不是整批中断。"""
+
+    row = evaluate_sample(
+        EvaluationSample(file="bad.mp4", exercise="俯卧撑", camera_angle="side"),
+        rule=PUSHUP_RULE,
+        analysis=fake_analysis([180, 90, 180], confidence=0.05),
+    )
+
+    assert row["scored"] is False
+    assert row["analysis_error"].startswith("评分不可用：")
+
+    summary = summarize_results([row])
+    assert summary["scored"] == 0
+    assert summary["analysis_failures"] == 1
+    assert summary["analysis_failure_files"] == ["bad.mp4"]
+
+    report = {
+        "generated_at": "2026-09-08T00:00:00+00:00",
+        "model": "thunder",
+        "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
+        "rule_versions": ["push_up-v3"],
+        "summary": summary,
+        "samples": [row],
+    }
+    markdown = render_markdown(report)
+    assert "评分不可用：" in markdown

@@ -194,11 +194,17 @@ def evaluate_sample(
     if error is not None or analysis is None:
         return row
 
+    from app.services.exercise_rules.base import PoseScoringUnavailableError
     from app.services.pose_scoring_engine import score_pose_data
 
-    scoring = score_pose_data(
-        SimpleNamespace(name=rule.aliases[0], standard=None), analysis
-    )
+    try:
+        scoring = score_pose_data(
+            SimpleNamespace(name=rule.aliases[0], standard=None), analysis
+        )
+    except PoseScoringUnavailableError as exc:
+        # 采集质量太差或数据过期时评分不可用；这是逐条失败，不是整批失败。
+        row["analysis_error"] = f"评分不可用：{exc}"
+        return row
     metrics = scoring.get("metrics") or {}
     video_quality = ((metrics.get("quality") or {}).get("video")) or {}
     phases = metrics.get("phases") or []

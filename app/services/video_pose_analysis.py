@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 from app.config import settings
 from app.schemas.exercise import MAX_KEYPOINTS_DATA_BYTES
@@ -110,9 +110,28 @@ def analyze_video_file(
     return compact_pose_analysis_result(result)
 
 
+def sampled_frame_stride(frame_indices: Sequence[int]) -> int:
+    """采样帧之间的典型步长（中位数）；0 表示无法推断。
+
+    步长是采样帧序列唯一的真实时间基：存储侧压缩后 `sample_fps` 字段仍是请求值，
+    消费方必须用步长还原帧率，否则会把证据按错误的速度解读。
+    """
+
+    ordered = sorted(int(index) for index in frame_indices)
+    strides = sorted(
+        later - earlier
+        for earlier, later in zip(ordered, ordered[1:])
+        if later > earlier
+    )
+    if not strides:
+        return 0
+    return strides[len(strides) // 2]
+
+
 def compact_pose_analysis_result(result: Dict[str, Any]) -> Dict[str, Any]:
     compacted = dict(result)
     frames = list(compacted.get("frames") or [])
+    stored_count = len(frames)
 
     while _payload_size(compacted) > MAX_KEYPOINTS_DATA_BYTES and frames:
         frames = frames[::2]
@@ -120,6 +139,15 @@ def compact_pose_analysis_result(result: Dict[str, Any]) -> Dict[str, Any]:
         summary = dict(compacted.get("summary") or {})
         summary["sampled_frames"] = len(frames)
         summary["valid_frame_count"] = len(frames)
+        compacted["summary"] = summary
+
+    if len(frames) < stored_count:
+        # 抽稀之后声明的采样率不再是真实时间基，同步纠正，避免下游按错误帧率解读。
+        summary = dict(compacted.get("summary") or {})
+        stride = sampled_frame_stride([int(frame["frame_index"]) for frame in frames])
+        source_fps = float(summary.get("source_fps") or 0.0)
+        if stride > 0 and source_fps > 0:
+            summary["sample_fps"] = int(round(source_fps / stride))
         compacted["summary"] = summary
 
     if _payload_size(compacted) > MAX_KEYPOINTS_DATA_BYTES:

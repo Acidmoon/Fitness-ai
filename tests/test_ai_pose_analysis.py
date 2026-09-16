@@ -587,6 +587,12 @@ def test_compact_pose_analysis_result_reduces_stored_frames():
     assert len(compacted["frames"]) < 64
     assert compacted["summary"]["sampled_frames"] == len(compacted["frames"])
 
+    # 抽稀后声明的采样率必须跟着步长走，否则下游按错误帧率解读这段证据。
+    kept = [frame["frame_index"] for frame in compacted["frames"]]
+    stride = kept[1] - kept[0]
+    assert stride > 1  # 确实发生了抽稀
+    assert compacted["summary"]["sample_fps"] == int(round(30.0 / stride))
+
 
 def stale_timestamp():
     """返回一个超过任务活性超时的时间点。"""

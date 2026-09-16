@@ -68,8 +68,12 @@ def fake_analysis(frames: int = 4):
     }
 
 
-def fake_analysis_from_summary(frames: int = 4):
-    """复刻 analyze_video_file 的真实形状：采样率写在 summary，没有 video 块。"""
+def fake_analysis_from_summary(frames: int = 4, *, stride: int = 3):
+    """复刻 analyze_video_file 的真实形状：采样率写在 summary，没有 video 块。
+
+    `stride` 是采样帧之间的真实步长；存储侧压缩采样帧序列时步长会翻倍，
+    而 summary.sample_fps 仍是请求值，因此时间基必须按步长推算。
+    """
 
     payload = fake_analysis(frames)
     payload.pop("video")
@@ -78,6 +82,9 @@ def fake_analysis_from_summary(frames: int = 4):
         "sample_fps": 10,
         "processed_frames": 20,
     }
+    for index, frame in enumerate(payload["frames"]):
+        frame["frame_index"] = index * stride
+        frame["timestamp_ms"] = index * stride * 100
     return payload
 
 
@@ -149,20 +156,34 @@ def test_annotate_video_writes_every_frame_with_all_frames(tmp_path, monkeypatch
     assert "scoring" not in result
 
 
-def test_annotate_video_takes_output_fps_from_analysis_summary(tmp_path, monkeypatch):
-    """真实分析结果只在 summary 里带采样率，输出帧率不能悄悄退回默认 5 fps。"""
+@pytest.mark.parametrize(
+    ("stride", "expected_fps"),
+    [
+        (3, 10.0),  # 未压缩：源 30 fps、请求 10 fps，每 3 帧取 1 帧
+        (6, 5.0),  # 被 payload 上限压缩后步长翻倍，声明的 10 fps 已不成立
+    ],
+)
+def test_annotate_video_keeps_source_timing(
+    tmp_path, monkeypatch, stride, expected_fps
+):
+    """叠加视频必须与源视频等速：时间基按采样帧的实际步长推算。
+
+    存储侧压缩采样帧序列（`frames[::2]`）后 `summary.sample_fps` 仍是请求值，
+    因此只信声明值会写出 2 倍速视频。
+    """
 
     module = load_script_module()
     video = tmp_path / "input.mp4"
-    if not write_synthetic_video(video):
+    if not write_synthetic_video(video, frames=20, fps=30.0):
         pytest.skip("当前 OpenCV 构建没有可用的 mp4v 编码器")
 
+    analysis = fake_analysis_from_summary(frames=4, stride=stride)
     monkeypatch.setattr(
         "app.services.video_pose_analysis.analyze_video_file",
-        lambda *args, **kwargs: fake_analysis_from_summary(),
+        lambda *args, **kwargs: analysis,
     )
 
-    output = tmp_path / "annotated_summary_fps.mp4"
+    output = tmp_path / f"annotated_stride{stride}.mp4"
     result = module.annotate_video(
         video,
         output,
@@ -175,9 +196,13 @@ def test_annotate_video_takes_output_fps_from_analysis_summary(tmp_path, monkeyp
         fourcc="mp4v",
     )
 
-    # 源 30 fps、采样 10 fps → 每 3 帧取 1 帧，叠加视频应为 10 fps 等速播放。
-    assert result["output_fps"] == pytest.approx(10.0)
-    assert result["sample_fps"] == 10
+    assert result["output_fps"] == pytest.approx(expected_fps)
+    assert result["sample_fps"] == pytest.approx(expected_fps)
+
+    frames = analysis["frames"]
+    source_span = (frames[-1]["frame_index"] - frames[0]["frame_index"]) / 30.0
+    output_span = (result["frames_written"] - 1) / result["output_fps"]
+    assert output_span == pytest.approx(source_span)
 
 
 def test_parse_angles_rejects_incomplete_triplet():

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from app.services.pose_features import calculate_joint_angle
+from app.services.video_pose_analysis import sampled_frame_stride
 
 # COCO-17 骨架连线，与 STANDARD_KEYPOINT_NAMES 对齐。
 COCO_SKELETON_EDGES: Tuple[Tuple[str, str], ...] = (
@@ -236,8 +237,8 @@ def write_annotated_video(
     `all_frames=False` 时只写出采样帧（文件小、播放即逐次重复）；
     为 True 时写出每一帧，但只有采样帧带骨架。
 
-    输出帧率按采样间隔折算，使叠加视频与原始视频等速播放；采样率取自
-    video 或 summary 块，缺失时按 5 fps 处理。
+    输出帧率按采样帧的实际步长折算，使叠加视频与原始视频等速播放；
+    源帧率取自 video 或 summary 块，两者都缺时退回声明采样率或 5 fps。
     """
 
     cv2 = _resolve_cv2(cv2_module)
@@ -246,20 +247,23 @@ def write_annotated_video(
         raise ValueError("分析结果没有采样帧，无法生成叠加视频")
 
     by_index = {int(frame["frame_index"]): frame for frame in sampled_frames}
-    # 采样率证据既可能出现在调用方拼装的 video 块，也可能由
-    # analyze_video_file 写在 summary 里；两者都缺时才退回默认值。
     video_meta = analysis.get("video") or {}
     summary = analysis.get("summary") or {}
     source_fps = float(video_meta.get("source_fps") or summary.get("source_fps") or 0.0)
-    sample_fps = (
-        float(video_meta.get("sample_fps") or summary.get("sample_fps") or 0.0) or 5.0
-    )
+    # 存储侧会在 payload 超限时压缩采样帧序列，此时声明的采样率不再成立
+    # （frames[::2] 之后 sample_fps 字段仍是请求值）。时间基必须以实际帧步长为准，
+    # 否则叠加视频会以 2 倍速播放。
+    stride = sampled_frame_stride(list(by_index))
+    if source_fps > 0 and stride > 0:
+        sample_fps = source_fps / stride
+    else:
+        sample_fps = (
+            float(video_meta.get("sample_fps") or summary.get("sample_fps") or 0.0)
+            or 5.0
+        )
     if source_fps <= 0:
         source_fps = sample_fps
-    sample_interval = max(1, int(round(source_fps / sample_fps)))
-    target_fps = output_fps or (
-        source_fps if all_frames else source_fps / sample_interval
-    )
+    target_fps = output_fps or (source_fps if all_frames else sample_fps)
 
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
@@ -314,5 +318,5 @@ def write_annotated_video(
         "frames_annotated": len(sampled_frames),
         "frames_written": written,
         "output_fps": round(float(target_fps), 3),
-        "sample_fps": int(sample_fps),
+        "sample_fps": round(float(sample_fps), 3),
     }
