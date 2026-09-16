@@ -68,6 +68,19 @@ def fake_analysis(frames: int = 4):
     }
 
 
+def fake_analysis_from_summary(frames: int = 4):
+    """复刻 analyze_video_file 的真实形状：采样率写在 summary，没有 video 块。"""
+
+    payload = fake_analysis(frames)
+    payload.pop("video")
+    payload["summary"] = {
+        "source_fps": 30.0,
+        "sample_fps": 10,
+        "processed_frames": 20,
+    }
+    return payload
+
+
 def test_annotate_video_writes_frames_and_scores(tmp_path, monkeypatch):
     module = load_script_module()
     video = tmp_path / "input.mp4"
@@ -134,6 +147,37 @@ def test_annotate_video_writes_every_frame_with_all_frames(tmp_path, monkeypatch
     assert result["frames_written"] == result["frames_read"] == 20
     assert result["frames_annotated"] == 4
     assert "scoring" not in result
+
+
+def test_annotate_video_takes_output_fps_from_analysis_summary(tmp_path, monkeypatch):
+    """真实分析结果只在 summary 里带采样率，输出帧率不能悄悄退回默认 5 fps。"""
+
+    module = load_script_module()
+    video = tmp_path / "input.mp4"
+    if not write_synthetic_video(video):
+        pytest.skip("当前 OpenCV 构建没有可用的 mp4v 编码器")
+
+    monkeypatch.setattr(
+        "app.services.video_pose_analysis.analyze_video_file",
+        lambda *args, **kwargs: fake_analysis_from_summary(),
+    )
+
+    output = tmp_path / "annotated_summary_fps.mp4"
+    result = module.annotate_video(
+        video,
+        output,
+        sample_fps=10,
+        angle_values=[],
+        exercise=None,
+        show_names=False,
+        min_confidence=0.3,
+        all_frames=False,
+        fourcc="mp4v",
+    )
+
+    # 源 30 fps、采样 10 fps → 每 3 帧取 1 帧，叠加视频应为 10 fps 等速播放。
+    assert result["output_fps"] == pytest.approx(10.0)
+    assert result["sample_fps"] == 10
 
 
 def test_parse_angles_rejects_incomplete_triplet():

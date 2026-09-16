@@ -235,6 +235,9 @@ def write_annotated_video(
 
     `all_frames=False` 时只写出采样帧（文件小、播放即逐次重复）；
     为 True 时写出每一帧，但只有采样帧带骨架。
+
+    输出帧率按采样间隔折算，使叠加视频与原始视频等速播放；采样率取自
+    video 或 summary 块，缺失时按 5 fps 处理。
     """
 
     cv2 = _resolve_cv2(cv2_module)
@@ -243,9 +246,14 @@ def write_annotated_video(
         raise ValueError("分析结果没有采样帧，无法生成叠加视频")
 
     by_index = {int(frame["frame_index"]): frame for frame in sampled_frames}
+    # 采样率证据既可能出现在调用方拼装的 video 块，也可能由
+    # analyze_video_file 写在 summary 里；两者都缺时才退回默认值。
     video_meta = analysis.get("video") or {}
-    source_fps = float(video_meta.get("source_fps") or 0.0)
-    sample_fps = float(video_meta.get("sample_fps") or 0.0) or 5.0
+    summary = analysis.get("summary") or {}
+    source_fps = float(video_meta.get("source_fps") or summary.get("source_fps") or 0.0)
+    sample_fps = (
+        float(video_meta.get("sample_fps") or summary.get("sample_fps") or 0.0) or 5.0
+    )
     if source_fps <= 0:
         source_fps = sample_fps
     sample_interval = max(1, int(round(source_fps / sample_fps)))

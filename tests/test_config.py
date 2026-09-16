@@ -6,7 +6,10 @@ from app.config import Settings
 
 class TestSettings:
     def test_settings_accept_valid_critical_values(self):
+        # 断言的是默认值，因此显式忽略本地 .env：开发者按 .env.example 打开
+        # MOVENET_ENABLED 不该让这条默认值断言变红。
         settings = Settings(
+            _env_file=None,
             ENVIRONMENT="development",
             DATABASE_URL="sqlite:///./test.db",
             SECRET_KEY="valid-secret-key-for-tests-123456789",
