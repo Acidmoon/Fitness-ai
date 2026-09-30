@@ -43,7 +43,10 @@ class ExerciseRecord(Base):
     heart_rate_max = Column(Float, nullable=True)  # 最大心率
     video_url = Column(String(255), nullable=True)  # 视频存储路径
     video_revision = Column(Integer, nullable=False, default=0)
+    row_version = Column(Integer, nullable=False, default=1, server_default="1")
+    __mapper_args__ = {"version_id_col": row_version}
     keypoints_data = Column(JSON, nullable=True)  # 关键点数据
+    scoring_data = Column(JSON, nullable=True)
     analysis_revision = Column(Integer, nullable=True)
     analysis_model = Column(String(100), nullable=True)
     analysis_rule_version = Column(String(100), nullable=True)

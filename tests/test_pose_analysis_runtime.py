@@ -229,8 +229,10 @@ def test_runtime_rejects_quantized_int8_model(tmp_path):
         numpy_module=np,
     )
 
-    with pytest.raises(PoseAnalysisUnavailableError, match="int8"):
-        pose_runtime.analyze_frame(np.zeros((480, 640, 3), dtype=np.uint8))
+    for _ in range(2):
+        with pytest.raises(PoseAnalysisUnavailableError, match="int8"):
+            pose_runtime.analyze_frame(np.zeros((480, 640, 3), dtype=np.uint8))
+        assert pose_runtime._interpreter is None
 
 
 def test_runtime_accepts_uint8_input_float_output_model(tmp_path):

@@ -7,6 +7,7 @@ and re-exports the historical public API so existing callers keep working.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Dict
 
 from app.models.exercise import ExerciseRecord
@@ -74,6 +75,11 @@ def apply_pose_scoring_result(
 ) -> None:
     if scoring_result.get("status") != "scored":
         raise PoseScoringUnavailableError("当前评分结果不可应用")
+    quality = (scoring_result.get("metrics") or {}).get("quality") or {}
+    if quality.get("assessment_status") != "complete":
+        raise PoseScoringUnavailableError(
+            "评分证据不完整，仅可预览，请补齐全身关键点后重新分析"
+        )
 
     if record.manual_score is None:
         record.manual_score = record.score
@@ -86,3 +92,9 @@ def apply_pose_scoring_result(
     record.feedback = "\n".join(scoring_result.get("feedback") or [])
     record.analysis_rule_version = scoring_result.get("rule_version")
     record.analysis_updated_at = utc_now()
+    record.scoring_data = {
+        **deepcopy(scoring_result),
+        "applied": True,
+        "analysis_id": (record.keypoints_data or {}).get("analysis_id"),
+        "video_revision": record.video_revision,
+    }

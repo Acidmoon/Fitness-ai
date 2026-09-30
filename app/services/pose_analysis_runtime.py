@@ -253,11 +253,13 @@ class MoveNetRuntime:
         input_details = interpreter.get_input_details()
         output_details = interpreter.get_output_details()
 
+        input_size = _input_size_from_details(input_details)
+        _validate_model_io_dtypes(input_details, output_details, self._np)
+        # Publish only a validated interpreter; failed loads must fail on every retry.
         self._interpreter = interpreter
         self._input_details = input_details
         self._output_details = output_details
-        self._input_size = _input_size_from_details(input_details)
-        _validate_model_io_dtypes(input_details, output_details, self._np)
+        self._input_size = input_size
 
     def _preprocess_frame(self, frame_bgr: Any) -> Tuple[Any, LetterboxTransform]:
         frame_rgb = self._cv2.cvtColor(frame_bgr, self._cv2.COLOR_BGR2RGB)

@@ -1,4 +1,4 @@
-"""俯卧撑身体直线类错误判据（push_up-v3）。
+"""俯卧撑身体直线类错误判据（push_up-v4）。
 
 国标只给了一句“身体未保持平直”，塌腰和撅臀是它的两种相反表现，
 因此必须落到两个 code 上，且方向不成立时不得假装判出方向。
@@ -32,7 +32,7 @@ def make_pushup_rule() -> ExerciseRule:
         up_angle=160,
         target_angle=90,
         min_range=60,
-        rule_version="push_up-v3",
+        rule_version="push_up-v4",
     )
 
 

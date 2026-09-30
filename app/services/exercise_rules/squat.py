@@ -54,7 +54,7 @@ SQUAT_RULE = SquatRule(
     min_range=55,
     min_rep_duration_ms=300,
     max_rep_duration_ms=12000,
-    rule_version="squat-v2",
+    rule_version="squat-v3",
     criteria_source=(
         "深蹲不是《国民体质测定标准》成年人部分测试项目（该项目只包含俯卧撑、"
         "1分钟仰卧起坐、纵跳、坐位体前屈、选择反应时、闭眼单脚站立、握力）；"

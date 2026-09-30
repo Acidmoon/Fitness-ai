@@ -19,12 +19,12 @@
 
 | 方法 | 路径 | 用途 | 成功 | 主要错误 |
 | --- | --- | --- | --- | --- |
-| POST | `/api/ai/records/{record_id}/pose-analysis` | 同步执行分析（阻塞到推理完成，仅适合调试与小视频） | 200 `PoseAnalysisResponse` | 404 / 503 / 400 |
-| POST | `/api/ai/records/{record_id}/pose-analysis/jobs` | 创建异步分析任务（**客户端推荐方式**） | 200 `PoseAnalysisJobResponse` | 404 / 403 / 400 |
+| POST | `/api/ai/records/{record_id}/pose-analysis` | 同步执行分析（阻塞到推理完成，仅适合调试与小视频） | 200 `PoseAnalysisResponse` | 404 / 503 / 400 / 409 |
+| POST | `/api/ai/records/{record_id}/pose-analysis/jobs` | 创建异步分析任务（**客户端推荐方式**） | 200 `PoseAnalysisJobResponse` | 404 / 403 / 400 / 409 |
 | GET | `/api/ai/pose-analysis/jobs/{job_id}` | 按任务 id 轮询 | 200 `PoseAnalysisJobResponse` | 404 |
 | GET | `/api/ai/records/{record_id}/pose-analysis/jobs/latest` | 取当前视频版本的最新任务（断线重连入口） | 200 `PoseAnalysisJobResponse`，无任务时 `null` | 404 |
 | GET | `/api/ai/records/{record_id}/pose-analysis` | 读取已持久化的关键点结果 | 200 `PoseAnalysisResponse` | 404 |
-| POST | `/api/ai/records/{record_id}/pose-scoring` | 生成可解释评分与反馈；`apply=true` 时写回训练记录 | 200 `PoseScoringResponse` | 400 / 404 |
+| POST | `/api/ai/records/{record_id}/pose-scoring` | 生成可解释评分与反馈；`apply=true` 时写回训练记录 | 200 `PoseScoringResponse` | 400 / 404 / 409 |
 
 ## 版本不变量（读取结果前必须理解）
 
@@ -37,6 +37,8 @@
 
 评分同理：`/pose-scoring` 只消费与当前视频版本一致的关键点数据，旧结果不可评分。
 
+记录和任务均使用 `row_version` 乐观锁，最终提交也检查版本；冲突返回 **409**，不会覆盖另一个请求的更新。同步分析也创建、领取同一任务表中的任务；已有活动任务时返回 409。客户端应刷新记录与最新任务后决定是否重试。
+
 ## 异步任务状态机
 
 ```text
@@ -48,6 +50,8 @@ queued ──▶ running ──▶ succeeded
 
 - 同一记录同一时刻最多一个活动任务（`queued`/`running`），由 `pose_analysis_jobs` 上的部分唯一索引保证；重复 `POST /jobs` 会**复用**已有活动任务并返回 `created=false` 语义的同一 `id`，不会产生两次推理。
 - 视频被替换或删除时，旧任务转为 `cancelled`，且 `result_data` 不会写回。
+- 任务通过行版本条件从 `queued` 领取为 `running`，推理期间不占用数据库事务；完成时只有持有同一执行版本的 worker 可以提交。回收或取消后的慢 worker 不能恢复任务或写入结果。
+- 同一视频重新分析成功后会生成新的 `analysis_id`，清除旧评分快照及反馈，并把旧 AI 投影恢复为人工值；新结果需重新评分和应用。若重新分析失败，已有结果保持原样。
 
 ### 进程重启与任务回收
 
@@ -57,7 +61,7 @@ queued ──▶ running ──▶ succeeded
 - 超时对账：`queued`/`running` 超过 `POSE_ANALYSIS_JOB_STALE_AFTER_SECONDS`（默认 1800 秒）未写入终态时，被标为 `failed`，`error` 为「任务超时或分析服务已重启，请重新发起分析」。
 - 轮询对账：两个 GET 任务端点在返回前就地回收，所以客户端最终一定会看到终态而不会无限轮询。
 
-回收只改任务状态，不写脏数据；结果写入始终受 `video_revision` 守卫。若后端改为多 worker 共库，运维必须关闭启动对账，只保留超时对账。
+回收只改任务状态并递增任务行版本；结果写入受 `video_revision` 与执行版本共同守卫。若后端改为多 worker 共库，运维必须关闭启动对账，只保留超时对账。
 
 ### 客户端轮询建议
 
@@ -83,18 +87,14 @@ queued ──▶ running ──▶ succeeded
 - `coordinate_space` 恒为 `image_pixels`，坐标是原图像素值，客户端可直接叠加绘制。
   MoveNet 内部使用方形 letterbox 输入，服务端已用 `LetterboxTransform` 反解缩放与补零，
   因此非方形视频（4:3 / 16:9 / 9:16）的坐标与角度一致，可直接比较。
-- `schema_version` 当前为 **2**。版本 1 的关键点未做 letterbox 还原，非方形视频的几何量
-  被各向异性拉伸（16:9 下竖轴压缩到 H/W，竖直平分的 90 度会被算成约 121 度）。
-  评分侧会拒绝版本 1 的结果并返回“姿态分析结果版本已过期，请重新分析”；
-  重新触发分析即可得到版本 2 的关键点，不需要重新上传视频。
+- `schema_version` 当前为 **3**。版本 1 未做 letterbox 还原；版本 2 可能截断尾部或抽稀峰谷证据。旧结果可以读取，评分侧拒绝版本 1/2 并提示重新分析；无需重新上传视频。
+- `analysis_id` 标识一次成功持久化的分析，历史结果可能为 `null`；不能仅凭 `analysis_revision` 区分同一视频的多次分析。
 - `keypoints` 固定 17 个 COCO 风格点：`nose`、`left_shoulder`…`right_ankle`；`score` 为该点置信度。
 - 顶层 `summary` 给出 `total_frames`、`processed_frames`、`sampled_frames`、`valid_frame_count`、`average_confidence`、`source_fps`、`sample_fps`，用于解释这次分析抽了多少帧、可信度如何。
-- 存储侧会压缩采样帧序列，因此 `summary.sampled_frames` 可能小于视频总帧数，`frames` 是抽样证据不是逐帧全集。
-  压缩后 `summary.sample_fps` 会同步下调为存储帧真实时间基对应的帧率（可能低于请求值），
-  消费方应以 `frames[].frame_index` 的步长还原时间轴，不要直接按请求帧率解读；
-  `average_confidence` 仍是压缩前全部采样帧的统计量。
-- 采样帧数上限为 120 帧：请求 10fps 时约 12 秒以后的视频尾部不会被分析，
-  此时 `summary.processed_frames` 会小于 `total_frames`。按采集规范（每段 5–10 秒）拍摄不会触及该上限。
+- `summary.requested_sample_fps` 是请求值；`summary.sample_fps` 是源帧率除以实际采样步长，类型为浮点数，例如 29.97fps 按步长 6 采样为 4.995fps；低帧率视频不会声称达到请求值。
+- 新结果保留全部采样帧，`average_confidence` 与保存的证据一致。`valid_frame_count` 是兼容字段，表示采样帧数；动作特定有效帧应读取评分的 `metrics.quality.video.valid_frames`。
+- 成功结果的 `summary.coverage_status` 为 `complete`：读取至解码 EOF，已知总帧数时还校验未提前结束。超过 120 个采样帧或 100KB JSON 预算时明确失败，提示缩短视频或降低采样帧率，不保存局部成功结果。
+- 当前时间轴仍依赖解码器报告的源帧率；可变帧率逐帧时间戳支持与真实解码兼容性待验证。
 
 ## 评分响应
 
@@ -104,12 +104,12 @@ queued ──▶ running ──▶ succeeded
 
 | 键 | 含义 |
 | --- | --- |
-| `rule` | 本次评分生效的标准快照：`rule_version`、`criteria_source`、`measurement_notes`、全部生效阈值 `thresholds`、`required_keypoints`、`joint_triplets`。阈值可被目录行 `Exercise.standard.pose_scoring` 覆盖，所以这是唯一能确定“这个分数按哪套标准算出”的地方 |
+| `rule` | 本次评分生效的标准快照：`rule_version`、`criteria_source`、`measurement_notes`、生效阈值 `thresholds`、扣分系数 `scoring_parameters`、`required_keypoints`、`joint_triplets`。目录行 `Exercise.standard.pose_scoring` 可覆盖默认值 |
 | `valid_frames`、`min_angle`、`max_angle`、`angle_range` | 参与评分的有效帧与关节角行程 |
 | `phases[]` | 相位事件：`{phase, frame_index, timestamp_ms, angle}`；周期型动作共用同一套词汇 `ready → down → bottom → up → complete`（俯卧撑取肘角，深蹲取膝角） |
 | `valid_reps[]`、`repetitions[]`、`invalid_reps[]` | 每次有效/无效重复的起止帧与失败原因 |
 | `count_source` | 计数来源，当前为 `angle_peak_valley` |
-| `quality` | 六维标准度评分（`version: standard_quality_v1`、`score`、`weights`、`dimensions`）与 `quality.video` 采集质量（`version: video_quality_v1`、`status: ok/warning/invalid`、置信度、有效帧比例、缺失必需关键点、`feedback`） |
+| `quality` | 标准度评分（`version: standard_quality_v2`、`score`、`base_weights`、实际归一化 `weights`、`coverage`、`assessment_status`、`dimensions`）与 `quality.video` 采集质量（`version: video_quality_v2`、`status: ok/warning/invalid`、置信度、有效帧比例、缺失必需关键点、`feedback`） |
 | `errors[]` | 动作错误项：`code`、`label`、`severity`、`feedback`、`evidence` |
 
 展示分数时建议同时展示 `metrics.rule.rule_version`：不同版本的分数与次数不可直接比较。
@@ -118,8 +118,10 @@ queued ──▶ running ──▶ succeeded
 规则语义：
 
 - `status: "unsupported"` 表示该动作未在 `app/services/exercise_rules/registry.py` 注册规则，此时 `score`/`count` 为 `null`，不是 0 分。
-- 有效帧不足 `rule.min_valid_frames` 时返回 **400**，`detail` 是可展示给用户的原因文案（来自采集质量 feedback），客户端应直接显示而不是通用报错。
-- 只有 `apply=true` **且** `status == "scored"` 时才写回记录：`score`、`count`、`feedback`、`score_source`/`count_source` 标为 AI、`analysis_rule_version` 与 `analysis_updated_at` 。评分本身不写 `keypoints_data`，关键点只来自分析端点。
+- 有效帧不足 `rule.min_valid_frames` 或有效帧比例低于 60% 时返回 **400**。无效规则配置也返回 400。`detail` 可直接展示；60% 是未经真实样本校准的工程门槛。
+- 维度 `status` 为 `assessed`、`unassessed` 或 `not_applicable`；后两者 `score=null`，实际权重为 0。缺失证据不是满分；深蹲不适用俯卧撑身体直线度，少于两次有效重复不评节奏一致性。
+- `assessment_status=partial` 时分数仅供预览，`apply=true` 返回 **400**，不修改记录。`coverage` 表示适用维度的已评权重覆盖率，不是算法准确率。
+- 只有 `apply=true`、`status == "scored"` 且 `assessment_status=complete` 时才写回 AI 分数、次数、反馈和来源，并保存 `records.scoring_data` 中的规则、质量维度、阶段和错误证据快照。该字段暂不由记录 API 返回，也不是完整历史结果表。
 - 首次应用前会把用户当前值快照到 `manual_score`/`manual_count`（已有值不覆盖）；AI 投影失效后读取端恢复人工值，因此用户的手工分数不会被 AI 结果静默抹掉。
 - 展示分数时应一并展示 `auto_count` 与 `metrics.quality`/`metrics.errors`，不要只展示一个总分。
 
@@ -134,6 +136,10 @@ queued ──▶ running ──▶ succeeded
 | 姿态分析未启用 / 缺 TFLite 运行时 / 模型不可用 | 503 | — | 任务接口在创建前只做视频就绪检查，这类失败发生在任务里，客户端会在任务 `error` 中看到 |
 | int8 量化模型 | 503 | — | 运行时拒绝反量化不了的模型，避免静默产出错误关键点 |
 | 推理异常 | 400 | — | 同上，异步时表现为任务 `failed` |
+| 已有活动任务 / 提交版本冲突 | 409 | 409 | 刷新记录和最新任务后重试；创建任务的常规重复请求仍复用已有任务 |
+| 超过帧数或 JSON 预算 / 未完整解码 | 400 | — | 异步任务为 `failed`，不保存前缀结果 |
+
+上传接口的 `keep_video=false` 只丢弃本次上传，不执行分析，也不更换原关联视频；响应会明确说明“未执行分析”。当前尚未提供临时上传分析闭环。
 
 ## 调试可视化
 

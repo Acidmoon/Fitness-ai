@@ -358,30 +358,16 @@
         "additionalProperties": false,
         "properties": {
           "count": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "description": "完成次数",
-            "title": "Count"
+            "ge": 0,
+            "title": "Count",
+            "type": "integer"
           },
           "duration": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "description": "时长 (秒)",
-            "title": "Duration"
+            "ge": 0,
+            "title": "Duration",
+            "type": "integer"
           },
           "heart_rate_avg": {
             "anyOf": [
@@ -410,18 +396,11 @@
             "title": "Heart Rate Max"
           },
           "score": {
-            "anyOf": [
-              {
-                "maximum": 100.0,
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "description": "动作评分 0-100",
-            "title": "Score"
+            "ge": 0,
+            "le": 100,
+            "title": "Score",
+            "type": "number"
           }
         },
         "title": "ExerciseRecordUpdate",
@@ -884,6 +863,17 @@
       },
       "PoseAnalysisResponse": {
         "properties": {
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Id"
+          },
           "analysis_revision": {
             "anyOf": [
               {
@@ -929,7 +919,7 @@
             "type": "integer"
           },
           "schema_version": {
-            "default": 1,
+            "default": 3,
             "title": "Schema Version",
             "type": "integer"
           },
@@ -972,14 +962,37 @@
             "title": "Average Confidence",
             "type": "number"
           },
+          "coverage_status": {
+            "anyOf": [
+              {
+                "const": "complete",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Status"
+          },
           "processed_frames": {
             "default": 0,
             "title": "Processed Frames",
             "type": "integer"
           },
+          "requested_sample_fps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Sample Fps"
+          },
           "sample_fps": {
             "title": "Sample Fps",
-            "type": "integer"
+            "type": "number"
           },
           "sampled_frames": {
             "default": 0,

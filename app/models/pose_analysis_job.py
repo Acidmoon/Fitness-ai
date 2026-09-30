@@ -50,6 +50,8 @@ class PoseAnalysisJob(Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     status = Column(String(20), nullable=False, index=True)
+    row_version = Column(Integer, nullable=False, default=1, server_default="1")
+    __mapper_args__ = {"version_id_col": row_version}
     video_revision = Column(Integer, nullable=False, default=0)
     sample_fps = Column(Integer, nullable=True)
     error = Column(Text, nullable=True)

@@ -115,7 +115,7 @@ def test_annotate_video_writes_frames_and_scores(tmp_path, monkeypatch):
     assert output.exists() and output.stat().st_size > 0
     assert result["frames_annotated"] == 4
     assert result["frames_written"] == 4
-    assert result["scoring"]["rule_version"] == "push_up-v3"
+    assert result["scoring"]["rule_version"] == "push_up-v4"
     assert result["scoring"]["status"] == "scored"
 
     cap = cv2.VideoCapture(str(output))
@@ -213,7 +213,7 @@ def test_parse_angles_rejects_incomplete_triplet():
 
 def test_resolve_rule_accepts_chinese_alias():
     module = load_script_module()
-    assert module._resolve_rule("俯卧撑").rule_version == "push_up-v3"
-    assert module._resolve_rule("push_up").rule_version == "push_up-v3"
+    assert module._resolve_rule("俯卧撑").rule_version == "push_up-v4"
+    assert module._resolve_rule("push_up").rule_version == "push_up-v4"
     with pytest.raises(SystemExit):
         module._resolve_rule("不存在的动作")

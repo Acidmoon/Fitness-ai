@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import math
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.services.pose_features import AngleSample, JointTriplet
@@ -49,12 +50,64 @@ class ExerciseRule:
     criteria_source: str = ""
     measurement_notes: str = ""
 
+    def __post_init__(self) -> None:
+        from app.services.pose_keypoint_result import STANDARD_KEYPOINT_NAMES
+
+        values = (
+            self.down_angle,
+            self.up_angle,
+            self.target_angle,
+            self.min_range,
+            self.min_confidence,
+            self.low_confidence_threshold,
+            self.depth_penalty_rate,
+            self.extension_penalty_rate,
+            self.range_penalty_rate,
+            self.no_repetition_penalty,
+            self.low_confidence_penalty,
+        )
+        valid = (
+            all(math.isfinite(value) for value in values)
+            and 0 <= self.down_angle < self.up_angle <= 180
+            and 0 <= self.target_angle <= 180
+            and 0 < self.min_range <= 180
+            and 0 <= self.min_confidence <= self.low_confidence_threshold <= 1
+            and self.min_valid_frames >= 3
+            and 0 < self.min_rep_duration_ms <= self.max_rep_duration_ms
+            and min(
+                self.depth_penalty_rate,
+                self.extension_penalty_rate,
+                self.range_penalty_rate,
+                self.no_repetition_penalty,
+                self.low_confidence_penalty,
+            )
+            >= 0
+            and bool(self.required_keypoints)
+            and set(self.required_keypoints).issubset(STANDARD_KEYPOINT_NAMES)
+        )
+        if not valid:
+            raise ValueError("动作评分标准配置无效")
+
     def with_standard_overrides(
         self, standard: Optional[Dict[str, Any]]
     ) -> "ExerciseRule":
-        pose_standard = (standard or {}).get("pose_scoring") or {}
-        if not isinstance(pose_standard, dict):
+        try:
+            return self._with_standard_overrides(standard)
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise PoseScoringUnavailableError(
+                "动作评分标准配置无效，请联系管理员"
+            ) from exc
+
+    def _with_standard_overrides(
+        self, standard: Optional[Dict[str, Any]]
+    ) -> "ExerciseRule":
+        if standard is not None and not isinstance(standard, dict):
+            raise ValueError("动作标准必须为对象")
+        pose_standard = (standard or {}).get("pose_scoring")
+        if pose_standard is None:
             return self
+        if not isinstance(pose_standard, dict):
+            raise ValueError("姿态评分标准必须为对象")
 
         return replace(
             self,
@@ -75,22 +128,16 @@ class ExerciseRule:
                 pose_standard.get("depth_penalty_rate", self.depth_penalty_rate)
             ),
             extension_penalty_rate=float(
-                pose_standard.get(
-                    "extension_penalty_rate", self.extension_penalty_rate
-                )
+                pose_standard.get("extension_penalty_rate", self.extension_penalty_rate)
             ),
             range_penalty_rate=float(
                 pose_standard.get("range_penalty_rate", self.range_penalty_rate)
             ),
             no_repetition_penalty=float(
-                pose_standard.get(
-                    "no_repetition_penalty", self.no_repetition_penalty
-                )
+                pose_standard.get("no_repetition_penalty", self.no_repetition_penalty)
             ),
             low_confidence_penalty=float(
-                pose_standard.get(
-                    "low_confidence_penalty", self.low_confidence_penalty
-                )
+                pose_standard.get("low_confidence_penalty", self.low_confidence_penalty)
             ),
             low_confidence_threshold=float(
                 pose_standard.get(
@@ -162,6 +209,16 @@ class ExerciseRule:
             "criteria_source": self.criteria_source,
             "measurement_notes": self.measurement_notes,
             "thresholds": {key: payload[key] for key in threshold_keys},
+            "scoring_parameters": {
+                key: payload[key]
+                for key in (
+                    "depth_penalty_rate",
+                    "extension_penalty_rate",
+                    "range_penalty_rate",
+                    "no_repetition_penalty",
+                    "low_confidence_penalty",
+                )
+            },
             "required_keypoints": payload["required_keypoints"],
             "joint_triplets": [
                 {

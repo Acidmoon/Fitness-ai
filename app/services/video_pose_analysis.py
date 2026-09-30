@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Dict, List, Sequence
 
 from app.config import settings
@@ -30,32 +31,40 @@ def analyze_video_file(
         ) from exc
 
     cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise PoseAnalysisInferenceError("无法打开视频文件进行姿态分析")
-
-    pose_backend = backend or registry.get_backend()
-
-    if not pose_backend.is_available():
-        raise PoseAnalysisUnavailableError(
-            f"Pose analysis backend '{pose_backend.backend_name}' is not available"
-        )
-    target_sample_fps = sample_fps or settings.POSE_ANALYSIS_SAMPLE_FPS
-    source_fps = cap.get(cv2.CAP_PROP_FPS) or float(target_sample_fps)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    sample_interval = max(1, int(round(source_fps / target_sample_fps)))
-
     frames: List[Dict[str, Any]] = []
     confidence_values: List[float] = []
     frame_index = 0
     model_metadata: Dict[str, Any] = {}
 
     try:
-        while len(frames) < MAX_STORED_SAMPLE_FRAMES:
+        if not cap.isOpened():
+            raise PoseAnalysisInferenceError("无法打开视频文件进行姿态分析")
+        pose_backend = backend or registry.get_backend()
+        if not pose_backend.is_available():
+            raise PoseAnalysisUnavailableError(
+                f"Pose analysis backend '{pose_backend.backend_name}' is not available"
+            )
+        target_sample_fps = (
+            sample_fps if sample_fps is not None else settings.POSE_ANALYSIS_SAMPLE_FPS
+        )
+        if not 1 <= target_sample_fps <= 30:
+            raise PoseAnalysisInferenceError("采样帧率必须在 1 到 30 之间")
+        source_fps = float(cap.get(cv2.CAP_PROP_FPS))
+        if not math.isfinite(source_fps) or source_fps <= 0:
+            raise PoseAnalysisInferenceError("视频帧率不可用，无法建立可靠时间轴")
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        sample_interval = max(1, int(round(source_fps / target_sample_fps)))
+
+        while True:
             ret, frame = cap.read()
             if not ret:
                 break
 
             if frame_index % sample_interval == 0:
+                if len(frames) >= MAX_STORED_SAMPLE_FRAMES:
+                    raise PoseAnalysisInferenceError(
+                        "视频超过 120 帧分析预算，请缩短视频或降低采样帧率"
+                    )
                 timestamp_ms = int((frame_index / source_fps) * 1000)
                 try:
                     frame_result = normalize_keypoint_result(
@@ -83,6 +92,8 @@ def analyze_video_file(
                 )
 
             frame_index += 1
+        if total_frames > 0 and frame_index < total_frames:
+            raise PoseAnalysisInferenceError("视频未完整解码，分析结果未保存")
     finally:
         cap.release()
 
@@ -104,17 +115,19 @@ def analyze_video_file(
             "average_confidence": round(average_confidence, 6),
             "source_fps": round(float(source_fps), 3),
             "sample_fps": target_sample_fps,
+            "requested_sample_fps": target_sample_fps,
+            "coverage_status": "complete",
         },
         "frames": frames,
     }
+    result["summary"]["sample_fps"] = round(source_fps / sample_interval, 6)
     return compact_pose_analysis_result(result)
 
 
 def sampled_frame_stride(frame_indices: Sequence[int]) -> int:
     """采样帧之间的典型步长（中位数）；0 表示无法推断。
 
-    步长是采样帧序列唯一的真实时间基：存储侧压缩后 `sample_fps` 字段仍是请求值，
-    消费方必须用步长还原帧率，否则会把证据按错误的速度解读。
+    用于回放历史抽稀结果；新分析保留全部采样帧。
     """
 
     ordered = sorted(int(index) for index in frame_indices)
@@ -129,31 +142,10 @@ def sampled_frame_stride(frame_indices: Sequence[int]) -> int:
 
 
 def compact_pose_analysis_result(result: Dict[str, Any]) -> Dict[str, Any]:
-    compacted = dict(result)
-    frames = list(compacted.get("frames") or [])
-    stored_count = len(frames)
-
-    while _payload_size(compacted) > MAX_KEYPOINTS_DATA_BYTES and frames:
-        frames = frames[::2]
-        compacted["frames"] = frames
-        summary = dict(compacted.get("summary") or {})
-        summary["sampled_frames"] = len(frames)
-        summary["valid_frame_count"] = len(frames)
-        compacted["summary"] = summary
-
-    if len(frames) < stored_count:
-        # 抽稀之后声明的采样率不再是真实时间基，同步纠正，避免下游按错误帧率解读。
-        summary = dict(compacted.get("summary") or {})
-        stride = sampled_frame_stride([int(frame["frame_index"]) for frame in frames])
-        source_fps = float(summary.get("source_fps") or 0.0)
-        if stride > 0 and source_fps > 0:
-            summary["sample_fps"] = int(round(source_fps / stride))
-        compacted["summary"] = summary
-
-    if _payload_size(compacted) > MAX_KEYPOINTS_DATA_BYTES:
-        raise PoseAnalysisInferenceError("姿态分析结果过大，无法保存")
-
-    return compacted
+    """Historical entry point: reject oversized evidence instead of thinning it."""
+    if _payload_size(result) > MAX_KEYPOINTS_DATA_BYTES:
+        raise PoseAnalysisInferenceError("姿态分析结果过大，请缩短视频或降低采样帧率")
+    return dict(result)
 
 
 def _payload_size(payload: Dict[str, Any]) -> int:

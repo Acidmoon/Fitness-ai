@@ -217,7 +217,7 @@ class TestVideoUpload:
         # keep_video=False，视频应该被删除
         assert data["video_deleted"] is True
         assert data["video_url"] is None
-        assert "临时分析" in data["note"]
+        assert "未执行分析" in data["note"]
         # 目录应为空，说明临时文件已删除
         assert len(list(upload_dir.iterdir())) == 0
 

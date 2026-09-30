@@ -17,7 +17,7 @@ from app.services.exercise_pose_scoring import (
 )
 
 # 标准深蹲膝角序列：底部达到平行位（约 90-95 度）、顶部接近完全伸直（约 176 度），
-# 与 squat-v2 阈值（down_angle 100、up_angle 165、min_range 55）一致。
+# 与 squat-v3 阈值（down_angle 100、up_angle 165、min_range 55）一致。
 # 旧序列底部停在 100/102 度，按 ACSM 平行口径属于未达平行的半程蹲，不能作为标准样例。
 SQUAT_TWO_REPS_STANDARD = [176, 92, 176, 90, 176]
 
@@ -396,7 +396,7 @@ class TestPoseScoringRules:
         ]
         assert result["metrics"]["valid_reps"][0]["bottom_angle"] == 85.0
         assert result["metrics"]["invalid_reps"] == []
-        assert result["metrics"]["quality"]["version"] == "standard_quality_v1"
+        assert result["metrics"]["quality"]["version"] == "standard_quality_v2"
         assert result["metrics"]["quality"]["video"]["status"] == "ok"
         assert (
             result["metrics"]["quality"]["video"]["average_keypoint_confidence"] == 0.9
@@ -673,8 +673,11 @@ class TestPoseScoringApi:
             db_session,
             test_user["user"].id,
             exercise_name="标准俯卧撑",
-            keypoints_data=make_pose_analysis(
-                [162, 132, 86, 118, 164], exercise_type="push_up"
+            keypoints_data=make_full_body_pushup_analysis(
+                [
+                    make_full_body_pushup_frame(index, angle)
+                    for index, angle in enumerate([162, 132, 86, 118, 164])
+                ]
             ),
         )
 

@@ -31,15 +31,15 @@ from app.services.pose_features import (
 calculate_joint_angle = pose_features.calculate_joint_angle
 keypoints_have_confidence = pose_features.keypoints_have_confidence
 
-QUALITY_SCORE_VERSION = "standard_quality_v1"
-VIDEO_QUALITY_VERSION = "video_quality_v1"
+QUALITY_SCORE_VERSION = "standard_quality_v2"
+VIDEO_QUALITY_VERSION = "video_quality_v2"
 QUALITY_WEIGHTS = {
     "joint_angle": 0.25,
     "body_alignment": 0.20,
     "movement_range": 0.20,
     "rhythm_stability": 0.15,
     "left_right_symmetry": 0.10,
-    "keyframe_confidence": 0.10,
+    "keyframe_confidence": 0.0,
 }
 
 
@@ -66,7 +66,7 @@ def score_pose_data(exercise: Any, keypoints_data: Any) -> Dict[str, Any]:
     frames = pose_data.get("frames") or []
     angle_samples = extract_angle_samples(frames, rule)
     video_quality = build_video_quality_score(frames, angle_samples, rule)
-    if len(angle_samples) < rule.min_valid_frames:
+    if video_quality["status"] == "invalid":
         feedback = video_quality.get("feedback") or [
             "关键点置信度不足，无法生成可靠评分"
         ]
@@ -170,8 +170,30 @@ def build_standard_quality_score(
         "left_right_symmetry": _score_symmetry_dimension(frames, rule),
         "keyframe_confidence": _score_keyframe_confidence_dimension(phase_summary),
     }
+    for dimension in dimensions.values():
+        dimension.setdefault("status", "assessed")
+    assessed_weight = sum(
+        weight
+        for name, weight in QUALITY_WEIGHTS.items()
+        if dimensions[name]["score"] is not None
+    )
+    weights = {
+        name: (
+            weight / assessed_weight
+            if dimensions[name]["score"] is not None and assessed_weight
+            else 0.0
+        )
+        for name, weight in QUALITY_WEIGHTS.items()
+    }
     weighted_score = sum(
-        dimensions[name]["score"] * QUALITY_WEIGHTS[name] for name in QUALITY_WEIGHTS
+        dimensions[name]["score"] * weights[name]
+        for name in QUALITY_WEIGHTS
+        if weights[name] > 0
+    )
+    applicable_weight = sum(
+        weight
+        for name, weight in QUALITY_WEIGHTS.items()
+        if dimensions[name]["status"] != "not_applicable"
     )
 
     if phase_summary.repetitions == 0:
@@ -180,7 +202,19 @@ def build_standard_quality_score(
     return {
         "version": QUALITY_SCORE_VERSION,
         "score": round(_clamp_score(weighted_score), 2),
-        "weights": QUALITY_WEIGHTS,
+        "weights": weights,
+        "base_weights": QUALITY_WEIGHTS,
+        "coverage": (
+            round(assessed_weight / applicable_weight, 4) if applicable_weight else 0.0
+        ),
+        "assessment_status": (
+            "partial"
+            if any(
+                dimensions[name]["status"] == "unassessed" and weight > 0
+                for name, weight in QUALITY_WEIGHTS.items()
+            )
+            else "complete"
+        ),
         "dimensions": dimensions,
     }
 
@@ -190,7 +224,10 @@ def build_standard_quality_feedback(quality: Dict[str, Any]) -> List[str]:
     dimensions = quality.get("dimensions") or {}
     for name in QUALITY_WEIGHTS:
         dimension = dimensions.get(name) or {}
-        if float(dimension.get("score", 100.0)) < 85.0:
+        if dimension.get("score") is None:
+            if dimension.get("status") == "unassessed":
+                feedback.append(dimension["metrics"]["neutral_reason"])
+        elif float(dimension["score"]) < 85.0:
             feedback.extend(dimension.get("feedback") or [])
 
     if not feedback:
@@ -240,10 +277,10 @@ def build_video_quality_score(
     elif valid_frame_count < rule.min_valid_frames:
         status = "invalid"
         feedback.append("有效姿态帧不足，建议保持全身入镜并重新拍摄")
+    elif valid_frame_ratio < 0.6:
+        status = "invalid"
+        feedback.append("有效姿态帧比例不足 60%，请保持全身入镜并重新拍摄")
     else:
-        if valid_frame_ratio < 0.6:
-            status = "warning"
-            feedback.append("部分采样帧无法识别关键点，评分可信度可能下降")
         if average_confidence < rule.low_confidence_threshold:
             status = "warning"
             feedback.append("关键点平均置信度偏低，建议改善光照、距离和拍摄角度")
@@ -341,9 +378,11 @@ def _score_movement_range_dimension(
 def _score_body_alignment_dimension(
     frames: Sequence[Dict[str, Any]], rule: ExerciseRule
 ) -> Dict[str, Any]:
+    if rule.exercise_type != "push_up":
+        return _neutral_dimension("当前动作不使用俯卧撑身体直线判据", applicable=False)
     samples = extract_body_line_samples(frames, min_confidence=rule.min_confidence)
     if not samples:
-        return _neutral_dimension("缺少肩-髋-踝完整链路，身体直线度暂按中性处理")
+        return _neutral_dimension("缺少肩-髋-踝完整链路，身体直线度未评估")
 
     average_deviation = sum(sample.deviation for sample in samples) / len(samples)
     max_deviation = max(sample.deviation for sample in samples)
@@ -369,14 +408,10 @@ def _score_rhythm_dimension(phase_summary: PhaseSummary) -> Dict[str, Any]:
         for rep in phase_summary.repetition_details
         if rep.get("duration_ms") is not None
     ]
-    if phase_summary.repetitions == 0:
-        return {
-            "score": 0.0,
-            "metrics": {"valid_repetitions": 0, "duration_ms": []},
-            "feedback": ["未形成完整动作周期，无法判断节奏稳定性"],
-        }
     if len(durations) < 2:
-        return _neutral_dimension("有效动作次数不足 2 次，节奏稳定性暂按中性处理")
+        return _neutral_dimension(
+            "有效动作次数不足 2 次，节奏稳定性不适用", applicable=False
+        )
 
     average_duration = sum(durations) / len(durations)
     variance = sum((duration - average_duration) ** 2 for duration in durations) / len(
@@ -425,7 +460,7 @@ def _score_symmetry_dimension(
         frames, left_triplet, right_triplet, min_confidence=rule.min_confidence
     )
     if not samples:
-        return _neutral_dimension("缺少左右侧完整关键点，左右对称性暂按中性处理")
+        return _neutral_dimension("缺少左右侧完整关键点，左右对称性未评估")
 
     average_difference = sum(sample.difference for sample in samples) / len(samples)
     max_difference = max(sample.difference for sample in samples)
@@ -473,8 +508,13 @@ def _score_keyframe_confidence_dimension(phase_summary: PhaseSummary) -> Dict[st
     }
 
 
-def _neutral_dimension(reason: str) -> Dict[str, Any]:
-    return {"score": 100.0, "metrics": {"neutral_reason": reason}, "feedback": []}
+def _neutral_dimension(reason: str, *, applicable: bool = True) -> Dict[str, Any]:
+    return {
+        "score": None,
+        "status": "unassessed" if applicable else "not_applicable",
+        "metrics": {"neutral_reason": reason},
+        "feedback": [],
+    }
 
 
 def _clamp_score(value: float) -> float:

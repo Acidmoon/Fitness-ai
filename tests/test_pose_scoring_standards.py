@@ -25,8 +25,8 @@ SQUAT_ABOVE_PARALLEL_LOOSE = [165, 100, 166, 102, 168]
 
 
 def test_rules_declare_calibrated_versions_and_official_sources():
-    assert PUSHUP_RULE.rule_version == "push_up-v3"
-    assert SQUAT_RULE.rule_version == "squat-v2"
+    assert PUSHUP_RULE.rule_version == "push_up-v4"
+    assert SQUAT_RULE.rule_version == "squat-v3"
 
     # 《国民体质测定标准》俯卧撑：降至“肩与肘处于同一水平面”，即肘角约 90 度。
     assert PUSHUP_RULE.target_angle == 90
@@ -69,10 +69,10 @@ def test_scoring_response_carries_effective_standard_snapshot():
     result = score_pose_data(exercise, make_pose_analysis(SQUAT_TWO_REPS_STANDARD))
 
     assert result["status"] == "scored"
-    assert result["rule_version"] == "squat-v2"
+    assert result["rule_version"] == "squat-v3"
     rule_snapshot = result["metrics"]["rule"]
     assert rule_snapshot["exercise_type"] == "squat"
-    assert rule_snapshot["rule_version"] == "squat-v2"
+    assert rule_snapshot["rule_version"] == "squat-v3"
     assert rule_snapshot["thresholds"]["down_angle"] == SQUAT_RULE.down_angle
     assert rule_snapshot["thresholds"]["up_angle"] == SQUAT_RULE.up_angle
     assert rule_snapshot["required_keypoints"] == list(SQUAT_RULE.required_keypoints)
@@ -106,7 +106,7 @@ def test_catalog_pose_scoring_overrides_change_thresholds_and_version():
     # 同一份关键点：膝角 100 度仍在平行判据内（判 1 次），102 度未达标被拒；
     # 旧口径会把两次都算有效。版本号区分了这两种结果，历史分数不会被误当同类比较。
     assert default_result["count"] == 1
-    assert default_result["rule_version"] == "squat-v2"
+    assert default_result["rule_version"] == "squat-v3"
     assert legacy_result["count"] == 2
     assert legacy_result["rule_version"] == "squat-v1-legacy"
     assert legacy_result["metrics"]["rule"]["thresholds"]["down_angle"] == 115
@@ -137,8 +137,8 @@ def test_builtin_rows_carry_their_own_scoring_standard():
     pushup_standard = builtin_by_name["标准俯卧撑"].standard["pose_scoring"]
     squat_standard = builtin_by_name["标准深蹲"].standard["pose_scoring"]
 
-    assert pushup_standard["rule_version"] == "push_up-v3"
-    assert squat_standard["rule_version"] == "squat-v2"
+    assert pushup_standard["rule_version"] == "push_up-v4"
+    assert squat_standard["rule_version"] == "squat-v3"
     assert pushup_standard["down_angle"] == PUSHUP_RULE.down_angle
     assert squat_standard["down_angle"] == SQUAT_RULE.down_angle
 
@@ -172,5 +172,5 @@ def test_external_catalog_rows_get_standard_when_rule_matches():
     exercise = build_exercise_from_external(external_pushup)
 
     assert exercise.standard["analysis"]["supported"] is True
-    assert exercise.standard["pose_scoring"]["rule_version"] == "push_up-v3"
+    assert exercise.standard["pose_scoring"]["rule_version"] == "push_up-v4"
     assert exercise.standard["pose_scoring"]["up_angle"] == PUSHUP_RULE.up_angle

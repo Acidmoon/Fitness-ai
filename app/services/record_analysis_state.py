@@ -55,6 +55,7 @@ def invalidate_record_analysis(
     record.analysis_rule_version = None
     record.analysis_updated_at = None
     record.feedback = None
+    record.scoring_data = None
 
     if record.score_source == MEASUREMENT_SOURCE_AI:
         record.score = record.manual_score if record.manual_score is not None else 0
@@ -64,6 +65,8 @@ def invalidate_record_analysis(
         record.count_source = MEASUREMENT_SOURCE_MANUAL
 
     now = utc_now()
+    # Acquire/update the record before its jobs in every write transaction.
+    db.flush()
     (
         db.query(PoseAnalysisJob)
         .filter(
@@ -76,6 +79,7 @@ def invalidate_record_analysis(
                 PoseAnalysisJob.error: reason,
                 PoseAnalysisJob.updated_at: now,
                 PoseAnalysisJob.completed_at: now,
+                PoseAnalysisJob.row_version: PoseAnalysisJob.row_version + 1,
             },
             synchronize_session=False,
         )

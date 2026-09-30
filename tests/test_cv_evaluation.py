@@ -165,7 +165,7 @@ def test_evaluate_sample_compares_count_and_quality():
     assert row["count_exact"] is True
     assert row["predicted_usable"] is True
     assert row["quality_status"] == "ok"
-    assert row["rule_version"] == "push_up-v3"
+    assert row["rule_version"] == "push_up-v4"
     assert row["schema_version"] == POSE_ANALYSIS_SCHEMA_VERSION
 
 
@@ -178,6 +178,25 @@ def test_evaluate_sample_reports_analysis_failure():
 
     assert row["scored"] is False
     assert "没有可分析的采样帧" in row["analysis_error"]
+
+
+def test_report_does_not_confuse_failed_labeled_samples_with_missing_labels():
+    row = evaluate_sample(
+        EvaluationSample(
+            file="bad.mp4",
+            exercise="俯卧撑",
+            expected_count=1,
+            expected_errors=("push_up_sagging_waist",),
+            expected_usable=True,
+        ),
+        rule=PUSHUP_RULE,
+        error="decode failed",
+    )
+    markdown = render_markdown({"summary": summarize_results([row]), "samples": [row]})
+    assert "计次标注样本：1" in markdown
+    assert "错误标注样本：1" in markdown
+    assert "没有成功评分且带次数标注的样本" in markdown
+    assert "清单里没有" not in markdown
 
 
 def test_evaluate_sample_marks_unsupported_exercise():
@@ -263,7 +282,7 @@ def test_render_markdown_contains_tables_and_versions():
         "generated_at": "2026-09-08T00:00:00+00:00",
         "model": "thunder",
         "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
-        "rule_versions": ["push_up-v3"],
+        "rule_versions": ["push_up-v4"],
         "summary": summarize_results(
             [
                 evaluate_sample(
@@ -285,7 +304,7 @@ def test_render_markdown_contains_tables_and_versions():
     markdown = render_markdown(report)
 
     assert "次数准确率" in markdown
-    assert "push_up-v3" in markdown
+    assert "push_up-v4" in markdown
     assert "| a.mp4 |" not in markdown  # samples 为空时不渲染逐条表格
 
 
@@ -308,7 +327,7 @@ def test_render_markdown_lists_sample_rows():
         "generated_at": "2026-09-08T00:00:00+00:00",
         "model": "thunder",
         "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
-        "rule_versions": ["push_up-v3"],
+        "rule_versions": ["push_up-v4"],
         "summary": summarize_results(rows),
         "samples": rows,
     }
@@ -339,7 +358,7 @@ def test_evaluate_sample_records_unscorable_analysis_instead_of_raising():
         "generated_at": "2026-09-08T00:00:00+00:00",
         "model": "thunder",
         "schema_version": POSE_ANALYSIS_SCHEMA_VERSION,
-        "rule_versions": ["push_up-v3"],
+        "rule_versions": ["push_up-v4"],
         "summary": summary,
         "samples": [row],
     }

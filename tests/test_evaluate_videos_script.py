@@ -110,7 +110,7 @@ def test_evaluate_videos_writes_report_and_metrics(tmp_path, monkeypatch):
     assert report["summary"]["count"]["compared"] == 2
     assert report["summary"]["count"]["mae"] == 0.5
     assert report["summary"]["count"]["within_one_rate"] == 1.0
-    assert report["rule_versions"] == ["push_up-v3"]
+    assert report["rule_versions"] == ["push_up-v4"]
 
     annotated = sorted((output_dir / "annotated").glob("*.mp4"))
     assert [path.name for path in annotated] == ["pushup_ok.mp4", "pushup_short.mp4"]

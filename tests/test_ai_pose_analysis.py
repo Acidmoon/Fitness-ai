@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest.mock import patch
 
+import pytest
 from fastapi import status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
@@ -551,7 +552,7 @@ class TestPoseAnalysisApi:
         assert record.analysis_revision is None
 
 
-def test_compact_pose_analysis_result_reduces_stored_frames():
+def test_compact_pose_analysis_result_rejects_oversized_evidence():
     large_keypoint = {
         "name": "nose",
         "x": 1,
@@ -582,16 +583,10 @@ def test_compact_pose_analysis_result_reduces_stored_frames():
         ],
     }
 
-    compacted = compact_pose_analysis_result(result)
-
-    assert len(compacted["frames"]) < 64
-    assert compacted["summary"]["sampled_frames"] == len(compacted["frames"])
-
-    # 抽稀后声明的采样率必须跟着步长走，否则下游按错误帧率解读这段证据。
-    kept = [frame["frame_index"] for frame in compacted["frames"]]
-    stride = kept[1] - kept[0]
-    assert stride > 1  # 确实发生了抽稀
-    assert compacted["summary"]["sample_fps"] == int(round(30.0 / stride))
+    with pytest.raises(PoseAnalysisInferenceError, match="过大"):
+        compact_pose_analysis_result(result)
+    assert len(result["frames"]) == 64
+    assert result["summary"]["sample_fps"] == 5
 
 
 def stale_timestamp():

@@ -23,6 +23,7 @@ from app.services.exercise_pose_scoring import (
 from app.services.pose_analysis_service import (
     build_pose_analysis_response,
     check_video_ready,
+    PoseAnalysisConflictError,
     create_pose_analysis_job as create_pose_analysis_job_record,
     process_pose_analysis_job,
     reclaim_stale_job,
@@ -54,6 +55,8 @@ def _run_pose_analysis_sync(record, sample_fps: int | None, db: Session):
         return run_pose_analysis_for_record(record, sample_fps, db)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except PoseAnalysisConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     except (PoseAnalysisDisabledError, PoseAnalysisUnavailableError) as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except PoseAnalysisInferenceError as exc:
@@ -96,12 +99,15 @@ def create_pose_analysis_job(
     record = get_owned_record_or_404(repo, record_id, current_user.id)
     _check_video_ready_for_http(record)
 
-    creation = create_pose_analysis_job_record(
-        db=db,
-        record=record,
-        user_id=current_user.id,
-        sample_fps=request_data.sample_fps if request_data else None,
-    )
+    try:
+        creation = create_pose_analysis_job_record(
+            db=db,
+            record=record,
+            user_id=current_user.id,
+            sample_fps=request_data.sample_fps if request_data else None,
+        )
+    except PoseAnalysisConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     if creation.created:
         # Background work must not reuse the request-scoped Session after the response.
         background_session_factory = sessionmaker(

@@ -135,10 +135,11 @@ def load_manifest(path: Path) -> List[EvaluationSample]:
 def is_canonical_phase_sequence(phases: Sequence[Mapping[str, Any]]) -> bool:
     """相位必须按 `ready → down → bottom → up → complete` 的次序出现。
 
-    `transition` 视为噪声忽略；同一相位可重复出现（滞回抖动），但不能回退。
+    `transition` 忽略；允许重复相位、新周期衔接，以及检测器的下降中止/再次下探。
     """
 
     last_rank = -1
+    last_phase = None
     for event in phases:
         phase = str(event.get("phase") or "")
         if phase == "transition":
@@ -146,9 +147,12 @@ def is_canonical_phase_sequence(phases: Sequence[Mapping[str, Any]]) -> bool:
         if phase not in CANONICAL_PHASE_ORDER:
             return False
         rank = CANONICAL_PHASE_ORDER.index(phase)
-        if rank < last_rank:
+        restart = last_phase == "complete" and phase in ("ready", "down")
+        interrupted = (last_phase, phase) in (("down", "ready"), ("up", "bottom"))
+        if rank < last_rank and not (restart or interrupted):
             return False
         last_rank = rank
+        last_phase = phase
     return True
 
 
@@ -204,11 +208,14 @@ def evaluate_sample(
     except PoseScoringUnavailableError as exc:
         # 采集质量太差或数据过期时评分不可用；这是逐条失败，不是整批失败。
         row["analysis_error"] = f"评分不可用：{exc}"
+        row["predicted_usable"] = False
         return row
     metrics = scoring.get("metrics") or {}
     video_quality = ((metrics.get("quality") or {}).get("video")) or {}
     phases = metrics.get("phases") or []
     phase_summary = summarize_phases(phases)
+    valid_reps = metrics.get("valid_reps") or []
+    invalid_reps = metrics.get("invalid_reps") or []
 
     row.update(
         {
@@ -231,6 +238,8 @@ def evaluate_sample(
             "phase_canonical": phase_summary["canonical"],
             "phase_cycles": phase_summary["complete_cycles"],
             "phase_counts": phase_summary["counts"],
+            "completed_candidates": len(valid_reps)
+            + sum(rep.get("complete_frame_index") is not None for rep in invalid_reps),
         }
     )
 
@@ -366,7 +375,7 @@ def summarize_results(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
         for row in scored
         if row.get("phase_cycles") is not None
         and row.get("count") is not None
-        and row["phase_cycles"] != row["count"]
+        and row["phase_cycles"] != row.get("completed_candidates", row["count"])
     ]
     confidences = [
         float(row["average_confidence"])
@@ -376,6 +385,13 @@ def summarize_results(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     return {
         "samples": len(rows),
         "scored": len(scored),
+        "scoring_completion_rate": round(len(scored) / len(rows), 4) if rows else None,
+        "count_labeled_samples": sum(
+            row.get("expected_count") is not None for row in rows
+        ),
+        "error_labeled_samples": sum(
+            row.get("expected_errors") is not None for row in rows
+        ),
         "unsupported_exercises": len(unsupported),
         "unsupported_files": [row["file"] for row in unsupported],
         "analysis_failures": len(failed),
@@ -417,6 +433,15 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     lines.append("")
 
     summary = report.get("summary") or {}
+    lines.append(
+        f"- 评分完成率：{summary.get('scoring_completion_rate')}；"
+        f"计次标注样本：{summary.get('count_labeled_samples')}；"
+        f"错误标注样本：{summary.get('error_labeled_samples')}"
+    )
+    lines.append(
+        "- 次数误差和错误码指标仅描述成功评分子集，应同时查看完成率与失败清单。"
+    )
+    lines.append("")
     count = summary.get("count") or {}
     lines.append("## 次数准确率")
     lines.append("")
@@ -434,7 +459,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         lines.append(f"| 最大绝对误差 | {count['max_abs_error']} |")
         lines.append(f"| 偏差（正=多计） | {count['bias']} |")
     else:
-        lines.append("清单里没有 `expected_count`，未计算次数指标。")
+        lines.append("没有成功评分且带次数标注的样本，未计算次数指标。")
     lines.append("")
 
     usable = summary.get("usable") or {}
@@ -446,7 +471,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
             f"（误判可用 {usable['false_usable']}，误判不可用 {usable['false_unusable']}）"
         )
     else:
-        lines.append("清单里没有 `expected_usable`，未计算可用性指标。")
+        lines.append("没有带可用性标注且有算法判定的样本，未计算可用性指标。")
     lines.append("")
 
     codes = (summary.get("error_codes") or {}).get("codes") or {}
@@ -464,7 +489,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
                 f"{item['false_negative']} | {precision} | {recall} |"
             )
     else:
-        lines.append("清单里没有标注 `expected_errors`，未计算错误判据指标。")
+        lines.append("没有可比较的错误码，未计算错误判据指标。")
     lines.append("")
 
     phases = summary.get("phases") or {}
@@ -475,7 +500,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"（{phases.get('canonical')}/{phases.get('checked')}）"
     )
     lines.append(
-        f"- 完整周期数与计次不一致的样本：{phases.get('cycle_count_mismatches')}"
+        f"- 相位完成数与已闭合候选周期数不一致的样本：{phases.get('cycle_count_mismatches')}"
     )
     confidence = summary.get("confidence") or {}
     lines.append(

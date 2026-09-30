@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from loguru import logger
 from pydantic import BaseModel
-
+from sqlalchemy.orm.exc import StaleDataError
 
 # ─── Standard Error Response Schema ───────────────────────────────────────────
 
@@ -78,15 +78,13 @@ async def system_exception_handler(request: Request, exc: SystemException):
 
     return JSONResponse(
         status_code=500,
-        content=ErrorResponse(
-            code=exc.code, detail="服务器内部错误"
-        ).model_dump(exclude_none=True),
+        content=ErrorResponse(code=exc.code, detail="服务器内部错误").model_dump(
+            exclude_none=True
+        ),
     )
 
 
-async def validation_exception_handler(
-    request: Request, exc: RequestValidationError
-):
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """请求校验异常处理器 - 统一 Pydantic 校验错误格式"""
     errors = exc.errors()
     first_error = errors[0] if errors else {}
@@ -122,13 +120,21 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ─── Registration ─────────────────────────────────────────────────────────────
 
 
+async def concurrent_update_exception_handler(request: Request, exc: StaleDataError):
+    return JSONResponse(
+        status_code=409,
+        content=ErrorResponse(
+            code="CONCURRENT_UPDATE", detail="记录或任务已变化，请刷新后重试"
+        ).model_dump(exclude_none=True),
+    )
+
+
 def register_exception_handlers(app):
     """注册所有异常处理器到 FastAPI 应用"""
     app.add_exception_handler(BusinessException, business_exception_handler)
+    app.add_exception_handler(StaleDataError, concurrent_update_exception_handler)
     app.add_exception_handler(SystemException, system_exception_handler)
-    app.add_exception_handler(
-        RequestValidationError, validation_exception_handler
-    )
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, general_exception_handler)
 
 

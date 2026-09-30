@@ -47,7 +47,7 @@ PUSHUP_RULE = PushupRule(
     min_range=60,
     min_rep_duration_ms=300,
     max_rep_duration_ms=12000,
-    rule_version="push_up-v3",
+    rule_version="push_up-v4",
     criteria_source=(
         "《国民体质测定标准手册（成年人部分）》俯卧撑测试方法：屈臂使身体平直下降至"
         "肩与肘处于同一水平面，再平直撑起恢复开始姿势为 1 次；身体未保持平直或未降至"

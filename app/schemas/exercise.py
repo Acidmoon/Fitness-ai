@@ -1,6 +1,7 @@
 # E:\Fitness-ai-backend\app\schemas\exercise.py
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic.json_schema import SkipJsonSchema
 from typing import Optional, Dict, Any, List as PyList
 from datetime import datetime, date
 
@@ -82,13 +83,23 @@ class ExerciseRecordQuery(BaseModel):
 
 # 更新运动记录请求
 class ExerciseRecordUpdate(BaseModel):
-    score: Optional[float] = Field(None, ge=0, le=100, description="动作评分 0-100")
-    count: Optional[int] = Field(None, ge=0, description="完成次数")
-    duration: Optional[int] = Field(None, ge=0, description="时长 (秒)")
+    # None marks omission internally; explicit null is rejected and absent from OpenAPI.
+    score: float | SkipJsonSchema[None] = Field(
+        None, ge=0, le=100, description="动作评分 0-100"
+    )
+    count: int | SkipJsonSchema[None] = Field(None, ge=0, description="完成次数")
+    duration: int | SkipJsonSchema[None] = Field(None, ge=0, description="时长 (秒)")
     heart_rate_avg: Optional[float] = Field(None, ge=HEART_RATE_MIN, le=HEART_RATE_MAX)
     heart_rate_max: Optional[float] = Field(None, ge=HEART_RATE_MIN, le=HEART_RATE_MAX)
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("score", "count", "duration", mode="before")
+    @classmethod
+    def reject_explicit_null(cls, value):
+        if value is None:
+            raise ValueError("评分、次数和时长不能清空，请省略不修改的字段")
+        return value
 
 
 class ExerciseRecordPage(BaseModel):

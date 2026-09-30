@@ -8,12 +8,8 @@ from app.schemas.pose_analysis import POSE_ANALYSIS_SCHEMA_VERSION
 from app.models.exercise import Exercise
 from app.services.exercise_pose_scoring import score_pose_data
 
-
 FIXTURE_PATH = (
-    Path(__file__).parent
-    / "fixtures"
-    / "cv_evaluation_samples"
-    / "samples.json"
+    Path(__file__).parent / "fixtures" / "cv_evaluation_samples" / "samples.json"
 )
 
 
@@ -177,7 +173,7 @@ def test_cv_evaluation_sample_matches_expected_scoring(sample):
     assert result["count"] == expected["count"]
     assert collect_invalid_reasons(result) == expected["invalid_reasons"]
     assert result["metrics"]["quality"]["video"]["status"] == expected["quality_status"]
-    assert result["metrics"]["quality"]["version"] == "standard_quality_v1"
+    assert result["metrics"]["quality"]["version"] == "standard_quality_v2"
 
     actual_error_codes = {error["code"] for error in result["metrics"]["errors"]}
     assert set(expected["representative_errors"]).issubset(actual_error_codes)

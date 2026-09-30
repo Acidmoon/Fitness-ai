@@ -9,7 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 # 版本 2：修正 MoveNet letterbox 坐标映射。版本 1 把方形输入内的归一化坐标直接乘上
 # 原始宽高，非方形视频的关键点会被各向异性拉伸（16:9 下竖轴压缩到 H/W），关节角
 # 因此系统性偏移。评分侧会拒绝版本 1 的结果并提示重新分析。
-POSE_ANALYSIS_SCHEMA_VERSION = 2
+# 版本 3：只保存完整、未抽稀的分析证据；版本 2 可能已丢失峰谷。
+POSE_ANALYSIS_SCHEMA_VERSION = 3
 
 
 class PoseAnalysisTriggerRequest(BaseModel):
@@ -29,7 +30,9 @@ class PoseAnalysisSummary(BaseModel):
     valid_frame_count: int = 0
     average_confidence: float = 0
     source_fps: Optional[float] = None
-    sample_fps: int
+    sample_fps: float
+    requested_sample_fps: Optional[int] = None
+    coverage_status: Optional[Literal["complete"]] = None
 
 
 class PoseAnalysisFrame(BaseModel):
@@ -44,7 +47,8 @@ class PoseAnalysisResponse(BaseModel):
     record_id: int
     video_revision: int = 0
     analysis_revision: Optional[int] = None
-    schema_version: int = 1
+    schema_version: int = POSE_ANALYSIS_SCHEMA_VERSION
+    analysis_id: Optional[str] = None
     status: Literal["idle", "done", "failed"]
     model: Optional[PoseAnalysisModelMetadata] = None
     summary: Optional[PoseAnalysisSummary] = None

@@ -137,7 +137,11 @@ def upload_record_video(
         video_url=record.video_url if keep_video else None,
         file_size=file_size,
         video_deleted=video_deleted,
-        note="视频仅用于临时分析，不会永久存储" if not keep_video else "视频已永久存储",
+        note=(
+            "本次上传的视频已丢弃，未执行分析；原关联视频保持不变"
+            if not keep_video
+            else "视频已永久存储"
+        ),
     )
 
 
