@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "sessionId": "demo-curl-goal-001",
+  "exerciseId": "Alternate_Incline_Dumbbell_Curl",
+  "unit": "repetitions",
+  "target": 10,
+  "observed": 8,
+  "confidence": 1,
+  "observationSource": "manual"
+}

@@ -1,0 +1,15 @@
+[
+  { "file": "15a5b5775d4db2735579912adac7968f.mp4", "exercise": "push-up", "targetRepetitions": 5 },
+  { "file": "2f2f0bc1ef82754fa31a1031c7ef54e5.mp4", "exercise": "squat", "targetRepetitions": 5 },
+  { "file": "3098ca849ef45f5b71a4a21ca40475ff.mp4", "exercise": null },
+  { "file": "3cc74fcd9fd873d41b1c8212645ced05.mp4", "exercise": "squat", "targetRepetitions": 5 },
+  { "file": "592aeef1509e58d016020c9739e59889.mp4", "exercise": "push-up", "targetRepetitions": 5 },
+  { "file": "631c726ae859c444011c8e4a7a8cc1c4.mp4", "exercise": "push-up", "targetRepetitions": 5 },
+  { "file": "740d89a06b3fc047c58a748db8802777.mp4", "exercise": "squat", "targetRepetitions": 5 },
+  { "file": "b02eac6e65d85aaa8da29d6063200624.mp4", "exercise": "push-up", "targetRepetitions": 5 },
+  { "file": "b2651023cb33324a55baf13aa6ae04a1.mp4", "exercise": "squat", "targetRepetitions": 5 },
+  { "file": "c2359a305399c9b68c4bb3d4577cfaf2.mp4", "exercise": "push-up", "targetRepetitions": 5 },
+  { "file": "e3fa40d65df96669ab56b86b0a626766.mp4", "exercise": "push-up", "targetRepetitions": 5 },
+  { "file": "f477586e5d9b359d090d1d954ef5a9a0.mp4", "exercise": "squat", "targetRepetitions": 5 },
+  { "file": "fff7f75993bebe8ac7542aa42571af67.mp4", "exercise": "push-up", "targetRepetitions": 5 }
+]

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fitness-ai:exercise-goal:1.0",
+  "title": "ExerciseGoalRequest",
+  "description": "Personal target completion observations. Units are chosen by the caller; these are not movement quality labels or official fitness thresholds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sessionId", "exerciseId", "unit", "target", "observed", "confidence", "observationSource"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "sessionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S" },
+    "exerciseId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S", "description": "Upstream exercise ID or an explicitly registered alias." },
+    "unit": { "enum": ["repetitions", "seconds", "meters"] },
+    "target": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000000 },
+    "observed": { "type": "number", "minimum": 0, "maximum": 1000000000 },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "Reliability on the producing adapter's scale. Below 0.6 is structurally valid but cannot be scored." },
+    "observationSource": { "enum": ["manual", "sensor", "pose"] }
+  },
+  "allOf": [{
+    "if": { "properties": { "unit": { "const": "repetitions" } }, "required": ["unit"] },
+    "then": { "properties": { "target": { "type": "integer" }, "observed": { "type": "integer" } } }
+  }]
+}

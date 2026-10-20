@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0",
+  "sessionId": "demo-squat-001",
+  "exercise": "squat",
+  "targetRepetitions": 5,
+  "repetitions": [
+    { "rangeOfMotion": 0.9, "stability": 0.85, "durationMs": 3000, "confidence": 0.98 },
+    { "rangeOfMotion": 0.8, "stability": 0.8, "durationMs": 2500, "confidence": 0.95 },
+    { "rangeOfMotion": 0.7, "stability": 0.75, "durationMs": 1500, "confidence": 0.92 },
+    { "rangeOfMotion": 0.6, "stability": 0.6, "durationMs": 4000, "confidence": 0.90 },
+    { "rangeOfMotion": 0.5, "stability": 0.5, "durationMs": 3000, "confidence": 0.40 }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "free-exercise-db",
+  "repository": "https://github.com/yuhonas/free-exercise-db",
+  "revision": "79ca7b47d77cd5a6dd7a50440e9f0bf24da6a142",
+  "retrievedOn": "2026-10-16",
+  "license": "Unlicense",
+  "dataFile": "dist/exercises.json",
+  "sha256": "5bb747e3fc658f095a60dcbf6d53c96627acdcc6ffb6fffde86f7e26995d40bf",
+  "exerciseCount": 876,
+  "upstream": "https://github.com/wrkout/exercises.json",
+  "authority": "community-catalog",
+  "includesMediaFiles": false,
+  "includesQualityAnnotations": false,
+  "mediaRights": "unverified",
+  "categoryCounts": {
+    "cardio": 14,
+    "olympic weightlifting": 35,
+    "plyometrics": 61,
+    "powerlifting": 38,
+    "strength": 584,
+    "stretching": 123,
+    "strongman": 21
+  }
+}

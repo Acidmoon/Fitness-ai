@@ -1,0 +1,31 @@
+{
+  "name": "fitness-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A Cordis-based plugin runtime for fitness assessment.",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "demo": "node src/main.ts examples/squat-session.json",
+    "evaluate:videos": "node scripts/evaluate-videos.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-exercise-assets.ts && node scripts/copy-user-database-assets.ts",
+    "test": "node --test tests/*.test.ts",
+    "test:database": "pnpm build && node scripts/test-user-database.ts",
+    "users:db": "node src/user-db-main.ts",
+    "check": "pnpm typecheck && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "cordis": "4.0.0-rc.11",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/pg": "8.23.1",
+    "typescript": "5.9.3"
+  }
+}

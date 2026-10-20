@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+.dsh-analysis/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+artifacts/
+.venv/
+__pycache__/
+*.pyc
