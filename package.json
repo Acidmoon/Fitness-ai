@@ -10,6 +10,7 @@
   },
   "scripts": {
     "start": "node src/main.ts",
+    "serve": "node src/http-main.ts",
     "demo": "node src/main.ts examples/squat-session.json",
     "evaluate:videos": "node scripts/evaluate-videos.ts",
     "typecheck": "tsc --noEmit",
