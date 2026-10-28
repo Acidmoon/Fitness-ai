@@ -56,7 +56,7 @@ pnpm users:db tenant-create <租户UUID> <名称>
 pnpm users:db check
 ```
 
-迁移步骤使用 `FITNESS_DATABASE_MIGRATION_URL`，普通业务只使用 `FITNESS_DATABASE_URL`。程序不自动加载 `.env`，可由部署系统注入环境或用 `node --env-file=.env src/user-db-main.ts ...`。当前提供可信后端服务接口，HTTP 用户接口和身份认证另由后续插件实现。
+迁移步骤使用 `FITNESS_DATABASE_MIGRATION_URL`，普通业务只使用 `FITNESS_DATABASE_URL`。程序不自动加载 `.env`，可由部署系统注入环境或用 `node --env-file=.env src/user-db-main.ts ...`。数据库插件只提供可信后端服务接口，不承担登录、Token 或授权策略；最小 HTTP 入口见下文，带身份认证的用户接口仍由后续插件实现。
 
 ## 视频入口
 
@@ -104,6 +104,26 @@ pnpm start video "C:\videos\push-up.mp4" --exercise push-up --target 5
 
 预处理先自动应用视频旋转，再执行人体自适应裁剪和 RGB 补边缩放。首个采样帧细化两次裁剪区域，后续根据上一帧调整；最终坐标全部还原到旋转后的原图像素。落在补边区域的坐标可能超出图像边界，骨架证据保留它们，动作分析排除这些点。时间戳使用解码器 PTS，不通过采样帧编号猜测动作时长。
 
+## HTTP 入口（最小可用前端）
+
+HTTP 入口是可选运行方式，只由 [http-main.ts](src/http-main.ts) 装载，不进入命令行清单，因此 CLI 模式不会被端口占住。入口提供 `fitnessHttp` 服务和五个内置路由；页面插件只 import [http-contracts.ts](src/http-contracts.ts) 注册 `GET /`，不 import 入口实现。
+
+```powershell
+$env:FITNESS_VIDEO_ROOT = 'C:\videos'   # 必填，没有默认目录
+$env:FITNESS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe).Path
+pnpm serve
+
+# GET  /api/health
+# GET  /api/videos?limit=100&offset=0
+# GET  /api/exercises?query=squat
+# GET  /api/exercises/{id}/standard
+# POST /api/assessments   {"path":"squat.mp4","exercise":"squat","targetRepetitions":10}
+```
+
+- 只监听 `127.0.0.1:8787`，可用 `FITNESS_HTTP_HOST`、`FITNESS_HTTP_PORT` 覆盖；非回环地址会被直接拒绝，改绑需先经 owner 拍板。本轮不做登录、Token、鉴权与 CORS。
+- `FITNESS_VIDEO_ROOT` 必须显式配置，不设默认值；未配置时视频相关请求返回 503 `INPUT_IO`。`POST` 的 `path` 可以是相对根目录或绝对路径，解析（含符号链接）后必须仍在根目录内，否则返回 400。响应一律不含本机绝对路径。
+- 本轮只做同步请求，没有任务队列；一次真实视频评价通常数秒。失败统一返回 `{"error":{"code":"<FitnessErrorCode>","message":"..."}}`，状态码映射见主管维护的 HTTP 入口契约（集成后位于 `docs/http-api-contract.md`）。
+
 ## 插件结构
 
 [运行时](src/runtime.ts)不引用业务实现，[应用清单](src/app.ts)决定安装哪些插件。[基础契约](src/contracts.ts)和[视觉契约](src/vision-contracts.ts)约定服务、数据、事件和错误。
@@ -125,6 +145,7 @@ pnpm start video "C:\videos\push-up.mp4" --exercise push-up --target 5
 | [AssessmentPlugin](src/plugins/assessment.ts) | `fitnessAssessment`：运动记录评价 | 输入、评分和建议服务 |
 | [JsonReportPlugin](src/plugins/json-report.ts) | 结果 JSON 输出 | 完成事件 |
 | [CliPlugin](src/plugins/cli.ts) | `fitnessCli`：命令行入口 | JSON、视频与动作库能力 |
+| [HttpApiPlugin](src/plugins/http-api.ts) | `fitnessHttp`：`node:http` 监听、路由注册与错误映射 | 视频与动作库服务；仅由 `http-main.ts` 装载 |
 
 提供方继承 Cordis `Service` 注册能力，消费方用 `static inject` 声明依赖。插件清单允许先写消费方，Cordis 根据依赖激活。结果分别通过 `fitness/pose-produced`、`fitness/motion-produced`、`fitness/assessment-completed` 和 `fitness/exercise-goal-scored` 广播；事件是同步通知，不存储或补发历史数据。
 
@@ -172,7 +193,7 @@ JSON 示例见 [examples/squat-session.json](examples/squat-session.json)。必�
 pnpm check
 ```
 
-该命令运行类型检查、73 项 Node.js 测试及 ESM 构建。用户数据库还需单独配置 `FITNESS_TEST_PG_BIN` 后运行 `pnpm test:database`，验证真实 PostgreSQL 约束与备份恢复；不会将未运行的集成检查算作通过。源码使用 Node.js 原生 TypeScript 类型擦除；构建将相对导入转为 `.js`。`Bundler` 类型解析用于兼容 Cordis 当前发布包的声明文件。
+该命令运行类型检查、83 项 Node.js 测试及 ESM 构建。用户数据库还需单独配置 `FITNESS_TEST_PG_BIN` 后运行 `pnpm test:database`，验证真实 PostgreSQL 约束与备份恢复；不会将未运行的集成检查算作通过。源码使用 Node.js 原生 TypeScript 类型擦除；构建将相对导入转为 `.js`。`Bundler` 类型解析用于兼容 Cordis 当前发布包的声明文件。
 
 ```powershell
 # 在已安装视觉依赖的 Python 环境下执行六项几何测试
@@ -188,4 +209,4 @@ pnpm evaluate:videos "C:\videos" artifacts/evaluation-run-001
 
 [素材清单](examples/video-test-set.json)只记录人工查看后的运动类型和演示目标次数，没有逐次人工真值。未列入清单的视频只进行骨架提取，不猜测动作类型。批量结果包含每个视频的状态、周期数、评分、警告和耗时；不能把流程成功率当作识别准确率。
 
-本地运动证据放在忽略版本跟踪的 `artifacts/` 中，现有视频测试见 [MoveNet 验证记录](docs/movenet-validation.md)。用户数据库已作为可选插件实现，部署与验证见 [用户数据库说明](docs/user-database.md)；运动历史入库、网络上传、实时摄像头、手环和前端页面尚未实现。
+本地运动证据放在忽略版本跟踪的 `artifacts/` 中，现有视频测试见 [MoveNet 验证记录](docs/movenet-validation.md)。用户数据库已作为可选插件实现，部署与验证见 [用户数据库说明](docs/user-database.md)；HTTP 入口已按最小契约实现（只覆盖「视频 → 评分 → 建议」一条主流程），运动历史入库、网络上传、实时摄像头、手环和前端页面尚未实现。
