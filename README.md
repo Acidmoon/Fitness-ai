@@ -125,6 +125,7 @@ pnpm start video "C:\videos\push-up.mp4" --exercise push-up --target 5
 | [AssessmentPlugin](src/plugins/assessment.ts) | `fitnessAssessment`：运动记录评价 | 输入、评分和建议服务 |
 | [JsonReportPlugin](src/plugins/json-report.ts) | 结果 JSON 输出 | 完成事件 |
 | [CliPlugin](src/plugins/cli.ts) | `fitnessCli`：命令行入口 | JSON、视频与动作库能力 |
+| [WebPagePlugin](src/plugins/web-page.ts) | `fitnessWeb`：最小单页前端，向 `fitnessHttp` 注册 `GET /` | HTTP 入口插件 |
 
 提供方继承 Cordis `Service` 注册能力，消费方用 `static inject` 声明依赖。插件清单允许先写消费方，Cordis 根据依赖激活。结果分别通过 `fitness/pose-produced`、`fitness/motion-produced`、`fitness/assessment-completed` 和 `fitness/exercise-goal-scored` 广播；事件是同步通知，不存储或补发历史数据。
 
@@ -172,7 +173,7 @@ JSON 示例见 [examples/squat-session.json](examples/squat-session.json)。必�
 pnpm check
 ```
 
-该命令运行类型检查、73 项 Node.js 测试及 ESM 构建。用户数据库还需单独配置 `FITNESS_TEST_PG_BIN` 后运行 `pnpm test:database`，验证真实 PostgreSQL 约束与备份恢复；不会将未运行的集成检查算作通过。源码使用 Node.js 原生 TypeScript 类型擦除；构建将相对导入转为 `.js`。`Bundler` 类型解析用于兼容 Cordis 当前发布包的声明文件。
+该命令运行类型检查、77 项 Node.js 测试及 ESM 构建。用户数据库还需单独配置 `FITNESS_TEST_PG_BIN` 后运行 `pnpm test:database`，验证真实 PostgreSQL 约束与备份恢复；不会将未运行的集成检查算作通过。源码使用 Node.js 原生 TypeScript 类型擦除；构建将相对导入转为 `.js`。`Bundler` 类型解析用于兼容 Cordis 当前发布包的声明文件。
 
 ```powershell
 # 在已安装视觉依赖的 Python 环境下执行六项几何测试
@@ -188,4 +189,14 @@ pnpm evaluate:videos "C:\videos" artifacts/evaluation-run-001
 
 [素材清单](examples/video-test-set.json)只记录人工查看后的运动类型和演示目标次数，没有逐次人工真值。未列入清单的视频只进行骨架提取，不猜测动作类型。批量结果包含每个视频的状态、周期数、评分、警告和耗时；不能把流程成功率当作识别准确率。
 
-本地运动证据放在忽略版本跟踪的 `artifacts/` 中，现有视频测试见 [MoveNet 验证记录](docs/movenet-validation.md)。用户数据库已作为可选插件实现，部署与验证见 [用户数据库说明](docs/user-database.md)；运动历史入库、网络上传、实时摄像头、手环和前端页面尚未实现。
+本地运动证据放在忽略版本跟踪的 `artifacts/` 中，现有视频测试见 [MoveNet 验证记录](docs/movenet-validation.md)。用户数据库已作为可选插件实现，部署与验证见 [用户数据库说明](docs/user-database.md)；运动历史入库、网络上传、实时摄像头和手环尚未实现。
+
+## 最小可用 Web 前端
+
+当前放行的 Web 前端只有一页、一条流程：选一段**服务器本地**视频 → 分析 → 查看评分与建议。不做浏览器上传、不做登录、不做多页面，也不引入前端框架或构建工具链。
+
+页面本身是插件 `WebPagePlugin`（`src/plugins/web-page.ts`，服务名 `fitnessWeb`），HTML 单文件放在 `src/assets/index.html`，构建时由 `scripts/copy-web-assets.ts` 复制到 `dist/assets/`。插件只 `import` [HTTP 契约](src/http-contracts.ts) 的类型，通过 `fitnessHttp.register(...)` 注册 `GET /`，不 `import` HTTP 插件实现；插件卸载时注销该路由，因此不装载页面插件时 HTTP 入口仍可独立工作。
+
+页面渲染的数值全部来自后端响应，前端不重算评分：总分 `score.total`、分项 `score.dimensions[]`、数据质量 `score.quality`、建议 `advice.items[]`、运动摘要与警告 `motion.*`。非 2xx 响应按统一错误信封原样展示 `error.code` 与 `error.message`。同步推理可能耗时数十秒，页面提供等待态与已等待秒数。
+
+页面顶部固定标注：评分与建议来自未标定的演示规则，不代表体测标准，也不代表识别准确率（当前没有人工标注真值）。装载命令与接口清单见 [HTTP 入口契约](docs/http-api-contract.md)。

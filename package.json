@@ -13,7 +13,7 @@
     "demo": "node src/main.ts examples/squat-session.json",
     "evaluate:videos": "node scripts/evaluate-videos.ts",
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json && node scripts/copy-exercise-assets.ts && node scripts/copy-user-database-assets.ts",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-exercise-assets.ts && node scripts/copy-user-database-assets.ts && node scripts/copy-web-assets.ts",
     "test": "node --test tests/*.test.ts",
     "test:database": "pnpm build && node scripts/test-user-database.ts",
     "users:db": "node src/user-db-main.ts",
