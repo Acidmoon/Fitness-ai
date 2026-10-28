@@ -1,5 +1,6 @@
 import { FitnessError } from './contracts.ts';
 import { HttpApiPlugin, type HttpApiConfig } from './plugins/http-api.ts';
+import * as WebPagePlugin from './plugins/web-page.ts';
 import { AssessmentPlugin } from './plugins/assessment.ts';
 import { ExerciseLibraryPlugin } from './plugins/exercise-library.ts';
 import { JointMotionPlugin } from './plugins/joint-motion.ts';
@@ -38,7 +39,8 @@ try {
     },
   };
   await ctx.plugin(HttpApiPlugin, config).await();
-  // 最小前端页面插件在集成时追加于此；它只 import src/http-contracts.ts 注册 GET /。
+  // The page is a route contributor on the entry point above, not a service provider.
+  await ctx.plugin(WebPagePlugin).await();
   await new Promise<void>(resolveStop => {
     const stop = () => resolveStop();
     process.once('SIGINT', stop);
