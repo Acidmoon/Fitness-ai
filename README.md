@@ -43,7 +43,7 @@ JSON 示例仍输出 **78.81 / 100** 分。直接执行 `node src/main.ts exampl
 
 ## 用户数据库插件
 
-后端由多个能力插件组合，用户存储通过独立的 PostgreSQL、数据加密、用户管理三个插件提供。支持租户隔离、加密资料与登录身份、状态管理、版本控制、幂等写入、审计、事务 outbox 和在线资料删除；不依赖视频分析插件。
+后端由多个能力插件组合，用户存储通过独立的 PostgreSQL、数据加密、用户管理三个插件提供，运动历史的写入与查询由第四个插件提供。支持租户隔离、加密资料与登录身份、状态管理、版本控制、幂等写入、审计、事务 outbox 和在线资料删除；不依赖视频分析插件。
 
 默认不启用用户库。按 [用户数据库部署说明](docs/user-database.md) 配置独立迁移/运行账号、TLS 和密钥，显式迁移、授权及创建租户后，可设置 `FITNESS_USERS_ENABLED=true` 加入应用，也可单独装配 [userDatabasePlugins](src/user-app.ts)。配置字段见 [.env.example](.env.example)，服务契约见 [user-contracts.ts](src/user-contracts.ts)。
 
@@ -57,6 +57,8 @@ pnpm users:db check
 ```
 
 迁移步骤使用 `FITNESS_DATABASE_MIGRATION_URL`，普通业务只使用 `FITNESS_DATABASE_URL`。程序不自动加载 `.env`，可由部署系统注入环境或用 `node --env-file=.env src/user-db-main.ts ...`。数据库插件只提供可信后端服务接口，不承担登录、Token 或授权策略；登录、会话与令牌由独立的认证插件承担，见下文「账号与会话」。
+
+升级现有库时顺序必须是 `migrate` → `grant <运行角色>` → `check`。**漏掉 `grant` 时 `check` 报的是 `DATABASE_ROLE_UNSAFE`「用户表的租户隔离配置不完整」，而不是「缺表权限」**：按字面排查容易误判成 RLS 配错，实际只是运行角色还没拿到新表的 DML 权限。`check` 校验全部十张用户表的强制 RLS，任何一张被手工 `NO FORCE ROW LEVEL SECURITY` 都会启动失败，不会静默降级安全配置。
 
 ## 视频入口
 
@@ -106,7 +108,7 @@ pnpm start video "C:\videos\push-up.mp4" --exercise push-up --target 5
 
 ## HTTP 入口（最小可用前端）
 
-HTTP 入口是可选运行方式，只由 [http-main.ts](src/http-main.ts) 装载，不进入命令行清单，因此 CLI 模式不会被端口占住。入口提供 `fitnessHttp` 服务和五个内置路由；页面插件只 import [http-contracts.ts](src/http-contracts.ts) 注册 `GET /`，不 import 入口实现。
+HTTP 入口是可选运行方式，只由 [http-main.ts](src/http-main.ts) 装载，不进入命令行清单，因此 CLI 模式不会被端口占住。入口提供 `fitnessHttp` 服务和视频相关的五个内置路由（认证与历史路由见后两节，按服务依赖条件注册）；页面插件只 import [http-contracts.ts](src/http-contracts.ts) 注册 `GET /`，不 import 入口实现。
 
 ```powershell
 $env:FITNESS_VIDEO_ROOT = 'C:\videos'   # 必填，没有默认目录
@@ -122,13 +124,13 @@ pnpm serve
 
 - 只监听 `127.0.0.1:8787`，可用 `FITNESS_HTTP_HOST`、`FITNESS_HTTP_PORT` 覆盖；非回环地址会被直接拒绝，改绑需先经 owner 拍板。入口本身不做 CORS；登录与令牌由可选的认证插件提供，见下文「账号与会话」。
 - `FITNESS_VIDEO_ROOT` 必须显式配置，不设默认值；未配置时视频相关请求返回 503 `INPUT_IO`。`POST` 的 `path` 可以是相对根目录或绝对路径，解析（含符号链接）后必须仍在根目录内，否则返回 400。响应一律不含本机绝对路径。
-- 本轮只做同步请求，没有任务队列；一次真实视频评价通常数秒。失败统一返回 `{"error":{"code":"<FitnessErrorCode>","message":"..."}}`，状态码映射见主管维护的 HTTP 入口契约（集成后位于 `docs/http-api-contract.md`）。
+- 本轮只做同步请求，没有任务队列；一次真实视频评价通常数秒。失败统一返回 `{"error":{"code":"<FitnessErrorCode>","message":"..."}}`，状态码映射见 [HTTP 入口契约](docs/http-api-contract.md)。
 
 ## 账号与会话（可选装载）
 
 认证是独立插件 [AuthPlugin](src/plugins/auth.ts)，服务名 `fitnessAuth`，依赖 `fitnessDatabase`、`fitnessUsers`、`fitnessUserDataProtection`。**只有在装载它之后**，HTTP 入口才会贡献 `/api/auth/*` 路由；不装载时这些路径返回 404，视频模式照常工作。
 
-启用方式是设置 `FITNESS_USERS_ENABLED=true`：[http-main.ts](src/http-main.ts) 会依次装载用户库三件套、认证插件，最后才装载 HTTP 入口（认证路由靠服务依赖条件注册，顺序反了就不会出现）。除该开关外还需 `FITNESS_TENANT_ID`、`FITNESS_DATABASE_URL`、`FITNESS_DATABASE_TLS`（回环明文用 `local`）及 `FITNESS_USER_ENCRYPTION_KEYS`/`FITNESS_USER_LOOKUP_KEY`；缺任何一项都直接启动失败，不回退内存用户库。
+启用方式是设置 `FITNESS_USERS_ENABLED=true`：[http-main.ts](src/http-main.ts) 会依次装载用户库四件套（含 `WorkoutHistoryPlugin`）、认证插件，最后才装载 HTTP 入口（认证与历史路由都靠服务依赖条件注册，顺序反了就不会出现）。除该开关外还需 `FITNESS_TENANT_ID`、`FITNESS_DATABASE_URL`、`FITNESS_DATABASE_TLS`（回环明文用 `local`）及 `FITNESS_USER_ENCRYPTION_KEYS`/`FITNESS_USER_LOOKUP_KEY`；缺任何一项都直接启动失败，不回退内存用户库。
 
 | 方法 | 路径 | 认证 | 说明 |
 | --- | --- | --- | --- |
@@ -145,7 +147,7 @@ pnpm serve
 - **传输方式只用 `Authorization: Bearer`，不用 Cookie。** 理由：将来 Android 客户端可复用同一契约；不依赖浏览器同源策略与 Cookie 行为，也没有 CSRF 面需要额外防护。
 - 注册是**补偿式流程**：先建账号、再写凭据，失败则撤销账号；中间窗口可能短暂存在「有账号、无凭据」的记录，它无法登录，契约中已如实记录，未假装单事务。
 
-装载顺序：数据库三件套（`PostgresPlugin`、`UserDataProtectionPlugin`、`UserDatabasePlugin`）与 `AuthPlugin` 先于 `HttpApiPlugin`。
+装载顺序：数据库四件套（`PostgresPlugin`、`UserDataProtectionPlugin`、`UserDatabasePlugin`、`WorkoutHistoryPlugin`，清单见 [user-app.ts](src/user-app.ts)）与 `AuthPlugin` 先于 `HttpApiPlugin`。测试锁住了「清单中每个插件 `inject` 的服务都能在清单里找到提供者」，因此新增插件漏装配会先红在测试上，不会等到运行时路由静默不注册。
 
 ## 运动历史（可选装载）
 
@@ -187,6 +189,7 @@ pnpm serve
 | [HttpApiPlugin](src/plugins/http-api.ts) | `fitnessHttp`：`node:http` 监听、路由注册与错误映射 | 视频与动作库服务；仅由 `http-main.ts` 装载 |
 | [WebPagePlugin](src/plugins/web-page.ts) | 向 `fitnessHttp` 注册 `GET /`，提供最小单页前端 | HTTP 入口插件；不提供服务名 |
 | [AuthPlugin](src/plugins/auth.ts) | `fitnessAuth`：注册、登录、登出、令牌校验、改密、会话吊销 | 数据库、用户与数据保护服务；可选装载 |
+| [WorkoutHistoryPlugin](src/plugins/workout-history.ts) | `fitnessWorkoutHistory`：运动历史写入、游标分页、统计与删除 | 数据库与数据保护服务；可选装载 |
 
 提供方继承 Cordis `Service` 注册能力，消费方用 `static inject` 声明依赖。插件清单允许先写消费方，Cordis 根据依赖激活。结果分别通过 `fitness/pose-produced`、`fitness/motion-produced`、`fitness/assessment-completed` 和 `fitness/exercise-goal-scored` 广播；事件是同步通知，不存储或补发历史数据。
 
@@ -234,7 +237,7 @@ JSON 示例见 [examples/squat-session.json](examples/squat-session.json)。必�
 pnpm check
 ```
 
-该命令运行类型检查、100 项 Node.js 测试及 ESM 构建。用户数据库还需单独配置 `FITNESS_TEST_PG_BIN` 后运行 `pnpm test:database`，验证真实 PostgreSQL 约束与备份恢复；不会将未运行的集成检查算作通过。源码使用 Node.js 原生 TypeScript 类型擦除；构建将相对导入转为 `.js`。`Bundler` 类型解析用于兼容 Cordis 当前发布包的声明文件。
+该命令运行类型检查、110 项 Node.js 测试及 ESM 构建。用户数据库还需单独配置 `FITNESS_TEST_PG_BIN` 后运行 `pnpm test:database`，在隔离 PostgreSQL 实例上跑 35 项集成测试，验证真实约束、RLS、加密与备份恢复；不会将未运行的集成检查算作通过。源码使用 Node.js 原生 TypeScript 类型擦除；构建将相对导入转为 `.js`。`Bundler` 类型解析用于兼容 Cordis 当前发布包的声明文件。
 
 ```powershell
 # 在已安装视觉依赖的 Python 环境下执行六项几何测试
@@ -250,7 +253,7 @@ pnpm evaluate:videos "C:\videos" artifacts/evaluation-run-001
 
 [素材清单](examples/video-test-set.json)只记录人工查看后的运动类型和演示目标次数，没有逐次人工真值。未列入清单的视频只进行骨架提取，不猜测动作类型。批量结果包含每个视频的状态、周期数、评分、警告和耗时；不能把流程成功率当作识别准确率。
 
-本地运动证据放在忽略版本跟踪的 `artifacts/` 中，现有视频测试见 [MoveNet 验证记录](docs/movenet-validation.md)。用户数据库已作为可选插件实现，部署与验证见 [用户数据库说明](docs/user-database.md)；HTTP 入口与最小单页前端已按最小契约实现，认证插件与 `/api/auth/*` 已落地（**认证表迁移与真实数据库联调尚未完成**）；运动历史入库、网络上传、实时摄像头和手环尚未实现。
+本地运动证据放在忽略版本跟踪的 `artifacts/` 中，现有视频测试见 [MoveNet 验证记录](docs/movenet-validation.md)。用户数据库已作为可选插件实现，部署与验证见 [用户数据库说明](docs/user-database.md)；HTTP 入口与最小单页前端已按最小契约实现；认证插件、`/api/auth/*` 与运动历史 `/api/workouts*` 已落地，迁移 001–003 和这两条链路的真实表行为已在隔离 PostgreSQL 上验证（见 `pnpm test:database`）。网络上传、实时摄像头和手环尚未实现；单页前端仍未接入登录与历史，这两块目前只有后端接口。
 
 ## 最小可用 Web 前端
 

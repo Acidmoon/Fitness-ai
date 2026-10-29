@@ -26,7 +26,7 @@
 
 **`credentials` 与 `sessions` 归 `AuthPlugin` 所有，`workout_records` 归 `WorkoutHistoryPlugin` 所有。** 三个插件都通过 `fitnessDatabase` 在自己的事务里读写自己的表，共用 `fitness_users` 模式与同一套 RLS 策略。
 
-为什么不让 `fitnessUsers` 顺带存凭据：现有 `UserDatabasePlugin` 的幂等回执、审计事件、outbox 是一套经过 21 项集成测试验证的机制，往里加凭据要同时扩 `UserChangeKind`、审计表约束、回执字段，改动面大且风险高；而「数据库插件不承担密码校验」本身就是硬规则，凭据存储放在认证插件侧更贴合边界。
+为什么不让 `fitnessUsers` 顺带存凭据：现有 `UserDatabasePlugin` 的幂等回执、审计事件、outbox 是一套经过集成测试覆盖的机制，往里加凭据要同时扩 `UserChangeKind`、审计表约束、回执字段，改动面大且风险高；而「数据库插件不承担密码校验」本身就是硬规则，凭据存储放在认证插件侧更贴合边界。
 
 **注册不是单事务，而是补偿式流程**，这一点必须诚实记录：
 
@@ -156,7 +156,7 @@ CREATE INDEX workout_records_user_time ON fitness_users.workout_records(tenant_i
 
 要点：
 
-- 两张表的 `credentials`、`sessions`、`workout_records` 都**必须** `ENABLE` + `FORCE ROW LEVEL SECURITY`，策略与其他用户表一致的租户隔离。
+- `credentials`、`sessions`、`workout_records` 三张表都**必须** `ENABLE` + `FORCE ROW LEVEL SECURITY`，策略与其他用户表一致的租户隔离。
 - **运动历史的 `score` 与 `advice` 明细整体加密**存进 `sealed_detail`（AAD 含 `tenantId`、`userId`、记录 `id`）。明文列只保留可索引的聚合值：动作、目标次数、观测次数、总分、来源、时间。理由：健康数据属于个人数据，不落明文。
 - `total_score` 必须先校验与 `score.total` 一致，不允许两处不同。
 - 运行账号权限：`GRANT SELECT, INSERT, UPDATE, DELETE ON fitness_users.credentials, fitness_users.sessions, fitness_users.workout_records`。
