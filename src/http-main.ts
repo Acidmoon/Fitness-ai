@@ -1,6 +1,7 @@
 import { FitnessError } from './contracts.ts';
 import { HttpApiPlugin, type HttpApiConfig } from './plugins/http-api.ts';
 import * as WebPagePlugin from './plugins/web-page.ts';
+import { AuthPlugin } from './plugins/auth.ts';
 import { AssessmentPlugin } from './plugins/assessment.ts';
 import { ExerciseLibraryPlugin } from './plugins/exercise-library.ts';
 import { JointMotionPlugin } from './plugins/joint-motion.ts';
@@ -12,10 +13,12 @@ import { RuleScoringPlugin } from './plugins/rule-scoring.ts';
 import { VideoAssessmentPlugin } from './plugins/video-assessment.ts';
 import { WorkoutInputPlugin } from './plugins/workout-input.ts';
 import { createRuntime, mountPlugins } from './runtime.ts';
+import { userDatabasePlugins } from './user-app.ts';
 
 /**
  * HTTP 运行方式的应用清单：运动分析业务插件，不含命令行入口、JSON 报告和用户数据库。
  * 业务能力全部是插件；HTTP 入口只在这里装载，避免命令行模式被端口占住。
+ * 用户库与认证是可选能力：未启用时视频流程照常运行，认证路由不注册。
  */
 export const businessPlugins = [
   AssessmentPlugin,
@@ -33,6 +36,11 @@ export const businessPlugins = [
 const ctx = createRuntime();
 try {
   await mountPlugins(ctx, businessPlugins);
+  if (process.env.FITNESS_USERS_ENABLED === 'true') {
+    // Database trio first: the auth plugin injects all three, and HTTP registers auth routes only when it is up.
+    await mountPlugins(ctx, userDatabasePlugins);
+    await ctx.plugin(AuthPlugin).await();
+  }
   const config: HttpApiConfig = {
     onListening: ({ host, port }) => {
       process.stdout.write(`Fitness AI HTTP 服务已启动：http://${host}:${port}\n`);

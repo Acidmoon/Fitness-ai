@@ -1,7 +1,40 @@
 import type { Disposable } from 'cordis';
+import type { AuthPrincipal, AuthSession } from './auth-contracts.ts';
 import type { AdviceResult, ScoreResult } from './contracts.ts';
+import type { WorkoutPage, WorkoutRecord, WorkoutRecordInput, WorkoutStatistics, WorkoutSummary } from './history-contracts.ts';
+import type { UserAccount, UserProfile } from './user-contracts.ts';
 
-export type { Disposable };
+export type {
+  Disposable, AuthPrincipal, AuthSession, WorkoutPage, WorkoutRecord, WorkoutRecordInput, WorkoutStatistics, WorkoutSummary,
+};
+
+/**
+ * `POST /api/workouts` 的请求体：`schemaVersion` 由入口补齐，租户与用户只取自会话，
+ * 客户端提交的 `tenantId`/`userId`/`actorId`/`verified` 一律 400。
+ */
+export type WorkoutRecordBody = Omit<WorkoutRecordInput, 'schemaVersion'>;
+
+/** `POST /api/auth/register` 的请求体；`tenantId`、`userId` 一律不接受。 */
+export interface RegisterBody {
+  readonly identity: { readonly provider: string; readonly subject: string };
+  readonly password: string;
+  readonly profile: UserProfile;
+}
+
+/** `POST /api/auth/login` 的请求体。 */
+export interface LoginBody {
+  readonly identity: { readonly provider: string; readonly subject: string };
+  readonly password: string;
+}
+
+/** `POST /api/auth/password` 的请求体。 */
+export interface ChangePasswordBody {
+  readonly currentPassword: string;
+  readonly newPassword: string;
+}
+
+/** 注册与登录的成功响应；令牌只在此处出现一次，数据库只存指纹。 */
+export type AuthSessionResponse = AuthSession;
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 

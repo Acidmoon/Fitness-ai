@@ -5,9 +5,12 @@ import type { AddressInfo } from 'node:net';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Service, type Context } from 'cordis';
 import { FitnessError, type FitnessErrorCode } from '../contracts.ts';
+import type { FitnessAuth } from '../auth-contracts.ts';
+import type { FitnessUsers } from '../user-contracts.ts';
+import type { FitnessWorkoutHistory, WorkoutQuery } from '../history-contracts.ts';
 import type { ExerciseQuery } from '../exercise-contracts.ts';
 import {
-  jsonResponse, type AssessmentResponse, type Disposable, type ErrorBody, type FitnessHttp,
+  jsonResponse, type AssessmentResponse, type AuthPrincipal, type Disposable, type ErrorBody, type FitnessHttp,
   type HealthResponse, type HttpMethod, type HttpRequest, type HttpResponse, type HttpRoute,
   type VideoListItem, type VideoListResponse,
 } from '../http-contracts.ts';
@@ -28,6 +31,9 @@ const BODY_LIMIT = 1024 * 1024;
 const MAX_RELATIVE_LENGTH = 4096;
 const SCAN_BUDGET = 2000;
 const SCAN_DEPTH = 4;
+/** Record ids are UUIDs; a malformed id is a request error, not a lookup miss. */
+const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const HISTORY_QUERY_KEYS: readonly string[] = ['limit', 'after', 'exercise', 'from', 'to'];
 
 /**
  * Status codes are part of the frozen HTTP contract. `INPUT_IO` maps to 404 for a
@@ -39,8 +45,16 @@ const STATUS_BY_CODE: Readonly<Partial<Record<FitnessErrorCode, number>>> = {
   UNSUPPORTED_EXERCISE: 400,
   INVALID_EXERCISE_DATA: 400,
   VIDEO_INVALID: 400,
+  USER_INVALID: 400,
+  WORKOUT_INVALID: 400,
+  AUTH_INVALID_CREDENTIALS: 401,
+  AUTH_UNAUTHENTICATED: 401,
+  WORKOUT_NOT_FOUND: 404,
   INPUT_IO: 404,
+  AUTH_CONFLICT: 409,
+  USER_CONFLICT: 409,
   INSUFFICIENT_DATA: 422,
+  AUTH_LOCKED: 429,
   INFERENCE_BUSY: 503,
   MODEL_UNAVAILABLE: 503,
   INFERENCE_FAILED: 500,
@@ -256,6 +270,8 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
     }
     if (!Number.isInteger(rawPort) || rawPort < 0 || rawPort > 65535) throw new Error('FITNESS_HTTP_PORT 必须是 0–65535 的整数');
     this.builtins();
+    this.authRoutes();
+    this.historyRoutes();
     const address = await this.listen(host, rawPort);
     this.config.onListening?.(address);
   }
@@ -351,6 +367,12 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
   private write(response: ServerResponse, result: HttpResponse): void {
     if (response.headersSent || response.writableEnded) return;
     const headers: Record<string, string> = { ...result.headers };
+    // 204 must not carry a body or framing headers for one.
+    if (result.status === 204) {
+      response.writeHead(204, headers);
+      response.end();
+      return;
+    }
     const body = result.body;
     const payload = typeof body === 'string' ? Buffer.from(body, 'utf8') : Buffer.from(body);
     headers['content-type'] ??= typeof body === 'string' ? 'text/plain; charset=utf-8' : 'application/octet-stream';
@@ -543,6 +565,160 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
       advice: assessment.advice,
     });
     return jsonResponse(200, response);
+  }
+
+  /** `Authorization: Bearer` is the only accepted transport in this round. */
+  private bearer(context: HttpRequest): string {
+    const header = context.headers['authorization'];
+    const match = typeof header === 'string' ? /^Bearer ([A-Za-z0-9_-]{1,512})$/i.exec(header) : null;
+    if (!match) throw new HttpError(401, 'AUTH_UNAUTHENTICATED', '缺少有效的 Bearer 令牌');
+    return match[1]!;
+  }
+
+  private jsonObject(context: HttpRequest): Record<string, unknown> {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(context.body);
+    } catch {
+      throw new HttpError(400, 'INVALID_ARGUMENTS', '请求体必须是合法 JSON');
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new HttpError(400, 'INVALID_ARGUMENTS', '请求体必须是 JSON 对象');
+    }
+    return parsed as Record<string, unknown>;
+  }
+
+  private async authenticated(auth: FitnessAuth, context: HttpRequest): Promise<{ token: string; principal: AuthPrincipal }> {
+    const token = this.bearer(context);
+    try {
+      return { token, principal: await auth.authenticate(token) };
+    } catch (error) {
+      // Protected routes never reveal whether the resource exists before authentication.
+      if (error instanceof FitnessError && error.code === 'AUTH_UNAUTHENTICATED') {
+        throw new HttpError(401, 'AUTH_UNAUTHENTICATED', '令牌无效、已过期或已吊销');
+      }
+      throw error;
+    }
+  }
+
+  private async authRegister(auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    return jsonResponse(201, await auth.register({ ...this.jsonObject(context), schemaVersion: '1.0' }));
+  }
+
+  private async authLogin(auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    return jsonResponse(200, await auth.login({ ...this.jsonObject(context), schemaVersion: '1.0' }));
+  }
+
+  private async authLogout(auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { token } = await this.authenticated(auth, context);
+    await auth.logout(token);
+    return { status: 204, body: '' };
+  }
+
+  private async authMe(auth: FitnessAuth, users: FitnessUsers, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    const user = await users.get(principal.tenantId, principal.userId);
+    // A session whose account vanished is treated as unauthenticated, not as a 404.
+    if (!user) throw new HttpError(401, 'AUTH_UNAUTHENTICATED', '会话对应的账号不可用');
+    return jsonResponse(200, user);
+  }
+
+  private async authPassword(auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    await auth.changePassword(principal, { ...this.jsonObject(context), schemaVersion: '1.0' });
+    return { status: 204, body: '' };
+  }
+
+  /** Identity fields are taken from the session only; refusing them here keeps the boundary explicit. */
+  private clientBody(context: HttpRequest): Record<string, unknown> {
+    const body = this.jsonObject(context);
+    for (const key of ['tenantId', 'userId', 'actorId', 'verified', 'principal'] as const) {
+      if (key in body) throw new HttpError(400, 'INVALID_ARGUMENTS', `请求体不得包含身份字段：${key}`);
+    }
+    return body;
+  }
+
+  private recordId(context: HttpRequest): string {
+    const id = context.params['id'] ?? '';
+    if (!RECORD_ID.test(id)) throw new HttpError(400, 'INVALID_ARGUMENTS', 'id 必须是 UUID');
+    return id;
+  }
+
+  private historyQuery(context: HttpRequest): WorkoutQuery {
+    for (const key of context.query.keys()) {
+      if (!HISTORY_QUERY_KEYS.includes(key)) bad(`未知查询参数：${key}`);
+    }
+    const query: { limit: number; after?: string; exercise?: string; from?: string; to?: string } = {
+      limit: integerParam(context.query.get('limit'), 20, 1, 100),
+    };
+    // Filters are forwarded verbatim: the history service owns cursor decoding and timestamp validation.
+    for (const key of ['after', 'exercise', 'from', 'to'] as const) {
+      const value = context.query.get(key);
+      if (value !== null) query[key] = text(value, key, 512);
+    }
+    return query;
+  }
+
+  private async workoutList(history: FitnessWorkoutHistory, auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    return jsonResponse(200, await history.list(principal, this.historyQuery(context)));
+  }
+
+  private async workoutRecord(history: FitnessWorkoutHistory, auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    return jsonResponse(201, await history.record(principal, { ...this.clientBody(context), schemaVersion: '1.0' }));
+  }
+
+  private async workoutGet(history: FitnessWorkoutHistory, auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    const record = await history.get(principal, this.recordId(context));
+    // A missing record and someone else's record must be the same answer, never distinguished.
+    if (!record) throw new HttpError(404, 'WORKOUT_NOT_FOUND', '运动记录不存在');
+    return jsonResponse(200, record);
+  }
+
+  private async workoutRemove(history: FitnessWorkoutHistory, auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    await history.remove(principal, this.recordId(context));
+    return { status: 204, body: '' };
+  }
+
+  private async workoutStatistics(history: FitnessWorkoutHistory, auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    return jsonResponse(200, await history.statistics(principal));
+  }
+
+  /**
+   * History routes need a session and the history service, so they exist only when the
+   * user database and the history plugin are mounted. The static `statistics` pattern is
+   * registered separately: routing prefers static segments, so it can never be read as an id.
+   */
+  private historyRoutes(): void {
+    this.ctx.inject(['fitnessAuth', 'fitnessWorkoutHistory'], ctx => {
+      const auth = ctx.fitnessAuth;
+      const history = ctx.fitnessWorkoutHistory;
+      ctx.effect(() => this.register({ method: 'GET', path: '/api/workouts', handler: context => this.workoutList(history, auth, context) }));
+      ctx.effect(() => this.register({ method: 'POST', path: '/api/workouts', handler: context => this.workoutRecord(history, auth, context) }));
+      ctx.effect(() => this.register({ method: 'GET', path: '/api/workouts/statistics', handler: context => this.workoutStatistics(history, auth, context) }));
+      ctx.effect(() => this.register({ method: 'GET', path: '/api/workouts/{id}', handler: context => this.workoutGet(history, auth, context) }));
+      ctx.effect(() => this.register({ method: 'DELETE', path: '/api/workouts/{id}', handler: context => this.workoutRemove(history, auth, context) }));
+    });
+  }
+
+  /**
+   * Account routes are contributed only when the auth plugin is present, so the
+   * video-only entry point keeps working without a database.
+   */
+  private authRoutes(): void {
+    this.ctx.inject(['fitnessAuth', 'fitnessUsers'], ctx => {
+      const auth = ctx.fitnessAuth;
+      const users = ctx.fitnessUsers;
+      ctx.effect(() => this.register({ method: 'POST', path: '/api/auth/register', handler: context => this.authRegister(auth, context) }));
+      ctx.effect(() => this.register({ method: 'POST', path: '/api/auth/login', handler: context => this.authLogin(auth, context) }));
+      ctx.effect(() => this.register({ method: 'POST', path: '/api/auth/logout', handler: context => this.authLogout(auth, context) }));
+      ctx.effect(() => this.register({ method: 'GET', path: '/api/auth/me', handler: context => this.authMe(auth, users, context) }));
+      ctx.effect(() => this.register({ method: 'POST', path: '/api/auth/password', handler: context => this.authPassword(auth, context) }));
+    });
   }
 
   /** Built-in routes are registered through the same mechanism external plugins use. */

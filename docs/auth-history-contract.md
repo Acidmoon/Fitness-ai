@@ -84,6 +84,19 @@
 - 成功登录清零 `failed_attempts` 与 `locked_until`。
 - 锁定期间即使密码正确也返回 `AUTH_LOCKED`。
 
+### 实现确认的补充语义（接口线维护）
+
+以下几处冻结时没有写细，实现时按此执行，已由测试覆盖：
+
+- **密码长度常量导出**：`src/auth-contracts.ts` 导出 `AUTH_PASSWORD_MIN_CODEPOINTS = 10`、`AUTH_PASSWORD_MAX_CODEPOINTS = 128`，客户端与插件共用同一份，不在页面里另写一份。
+- **`logout` 幂等**：未知、格式不合法或已吊销的令牌都视为成功，不报错、不回显任何状态，避免用登出接口探测令牌是否存在。
+- **`changePassword` 的失败路径**：当前密码不匹配返回 `AUTH_INVALID_CREDENTIALS`，**不计入**登录失败锁定次数（否则改密接口会变成一条可触发锁定的路径）；成功时只吊销该用户其他会话，`principal.sessionId` 保持可用。
+- **`authenticate` 要求账号 `active`**：停用（`suspended`）或已删除（`deleted`）账号的旧令牌一律 `AUTH_UNAUTHENTICATED`，不返回账号状态细节。
+- **`revokeAll` 是单租户操作**：传入非配置租户返回 `TENANT_NOT_FOUND`，不做跨租户批量吊销。
+- **锁定是「连续失败」计数**：`locked_until` 到期后下一次失败先把 `failed_attempts` 归零再计 1，用户重新获得 `FITNESS_AUTH_MAX_ATTEMPTS` 次尝试，而不是每个锁定周期只剩一次机会。锁定期间凭据不受影响，登录入口在密码校验前就返回 `AUTH_LOCKED`。
+- **认证路由是可选的**：只有装载 `fitnessAuth` 时 HTTP 入口才注册 `/api/auth/*`；未装载时这些路径为 404，视频模式不依赖数据库。`204` 响应不带响应体与 framing 头。
+- **历史路由已实现（5 条）**：同样只在 `fitnessAuth` 与 `fitnessWorkoutHistory` 都装载时才注册，未装载时 `/api/workouts*` 为 404。路由层只做边界校验：查询参数白名单（未知参数 400）、`limit` 1–100 默认 20、`id` 必须是 UUID（格式错 400，查不到 404 `WORKOUT_NOT_FOUND`）、请求体拒绝 `tenantId`/`userId`/`actorId`/`verified`、`schemaVersion` 由服务端补齐。`after` 游标原样转发，解码、过期与篡改判定归历史服务。
+
 ## 数据库模式（迁移 002 与 003）
 
 均由**数据线**在 `src/data/user-database/` 下新建，并在 `src/user-migrations.ts` 的迁移列表中按序追加。已应用的迁移不改。
