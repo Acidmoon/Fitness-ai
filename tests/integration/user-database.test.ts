@@ -7,13 +7,17 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test, { before, after } from 'node:test';
 import { Service, type Context } from 'cordis';
 import { Client } from 'pg';
-import { FitnessError } from '../../src/contracts.ts';
+import { FitnessError, type AdviceResult, type ScoreResult } from '../../src/contracts.ts';
 import { DatabaseQueryError, type DatabaseRow, type DatabaseSession, type FitnessDatabase } from '../../src/database-contracts.ts';
+import type { AuthPrincipal } from '../../src/auth-contracts.ts';
+import type { WorkoutRecordInput } from '../../src/history-contracts.ts';
 import type { UserProfile, UserMutationContext } from '../../src/user-contracts.ts';
-import { createRuntime } from '../../src/runtime.ts';
+import { createRuntime, mountPlugins } from '../../src/runtime.ts';
+import { userDatabasePlugins } from '../../src/user-app.ts';
 import { PostgresPlugin } from '../../src/plugins/postgres.ts';
 import { UserDataProtectionPlugin } from '../../src/plugins/user-data-protection.ts';
 import { UserDatabasePlugin } from '../../src/plugins/user-database.ts';
+import { WorkoutHistoryPlugin } from '../../src/plugins/workout-history.ts';
 import { grantUserDatabaseAccess, initializeUserLookupKey, migrateUserDatabase, provisionUserTenant, userMigrations } from '../../src/user-migrations.ts';
 
 const adminUrl = process.env.FITNESS_TEST_ADMIN_DATABASE_URL;
@@ -38,6 +42,7 @@ async function boot(connectionString=runtimeUrl!,config=cryptoConfig) {
     await ctx.plugin(PostgresPlugin,{ connectionString,tls:'local' }).await();
     await ctx.plugin(UserDataProtectionPlugin,config).await();
     await ctx.plugin(UserDatabasePlugin).await();
+    await ctx.plugin(WorkoutHistoryPlugin).await();
     return ctx;
   } catch (error) { await ctx.fiber.dispose(); throw error; }
 }
@@ -46,12 +51,38 @@ async function create(tenantId: string=tenantA,extra: Record<string,unknown>={})
   return app.fitnessUsers.create({ schemaVersion:'1.0',tenantId,profile,mutation:mutation(),...extra });
 }
 const versionRequest=(tenantId: string,userId: string,expectedVersion: number) => ({ schemaVersion:'1.0',tenantId,userId,expectedVersion,mutation:mutation() });
+const principalFor=(tenantId: string,userId: string): AuthPrincipal => ({ schemaVersion:'1.0',tenantId,userId,sessionId:randomUUID() });
+const scoreOf=(total: number): ScoreResult => ({
+  policy:{ id:'demo-workout-scoring',version:'0.1.0',kind:'heuristic' },
+  standard:{ exerciseId:'bodyweight-squat',sourceRevision:'demo-standard@0.1.0' },
+  total,
+  dimensions:[
+    { key:'completion',label:'可评估次数完成度',value:0.8,weight:0.5,points:40 },
+    { key:'rangeOfMotion',label:'动作幅度',value:0.9,weight:0.2,points:18 },
+    { key:'stability',label:'稳定性',value:0.85,weight:0.2,points:17 },
+    { key:'tempo',label:'节奏',value:0.65,weight:0.1,points:6.5 },
+  ],
+  quality:{ observedRepetitions:5,evaluatedRepetitions:4,excludedRepetitions:1 },
+});
+const adviceOf=(): AdviceResult => ({
+  policy:{ id:'demo-workout-advice',version:'0.1.0',kind:'heuristic' },
+  items:[{ code:'maintain',message:'本次数据满足当前演示规则；保持动作质量，并根据后续记录观察变化。' }],
+});
+const workoutInput=(patch: Partial<WorkoutRecordInput> = {}): WorkoutRecordInput => ({
+  schemaVersion:'1.0',sessionId:`assessment-${randomUUID()}`,exercise:'bodyweight-squat',
+  targetRepetitions:5,observedRepetitions:5,score:scoreOf(81.5),advice:adviceOf(),source:'video',...patch,
+});
+const uuidBytes=(id: string): Buffer => Buffer.from(id.replace(/-/g,''),'hex');
+const recordOrder=(left: { capturedAt: string; id: string },right: { capturedAt: string; id: string }): number => {
+  if (left.capturedAt !== right.capturedAt) return left.capturedAt < right.capturedAt ? 1 : -1;
+  return Buffer.compare(uuidBytes(right.id),uuidBytes(left.id));
+};
 
 before(async () => {
   owner=createRuntime();
   await owner.plugin(PostgresPlugin,{ connectionString:adminUrl!,tls:'local' }).await();
   await owner.plugin(UserDataProtectionPlugin,cryptoConfig).await();
-  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:1,version:1 });
+  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:3,version:3 });
   await grantUserDatabaseAccess(owner.fitnessDatabase,'fitness_users_runtime');
   await initializeUserLookupKey(owner.fitnessDatabase,owner.fitnessUserDataProtection);
   await provisionUserTenant(owner.fitnessDatabase,tenantA,'Tenant A');
@@ -61,11 +92,79 @@ before(async () => {
 after(async () => { if (app) await app.fiber.dispose(); if (owner) await owner.fiber.dispose(); });
 
 test('checksummed migrations are repeatable and reject changed applied SQL',async () => {
-  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:0,version:1 });
-  const checksum=(await userMigrations())[0]!.checksum;
-  await owner.fitnessDatabase.transaction(tx => tx.query('UPDATE fitness_users.schema_migrations SET checksum=$1 WHERE version=1',['0'.repeat(64)]));
+  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:0,version:3 });
+  const migrations=await userMigrations();
+  assert.deepEqual(migrations.map(migration => [migration.version,migration.name]),[[1,'users'],[2,'auth'],[3,'workout-history']]);
+  const history=await owner.fitnessDatabase.transaction(tx => tx.query<{ version:number; name:string; checksum:string }>(
+    'SELECT version,name,checksum FROM fitness_users.schema_migrations ORDER BY version'));
+  assert.deepEqual(history.rows.map(row => [row.version,row.name,row.checksum]),migrations.map(migration => [migration.version,migration.name,migration.checksum]));
+  const tables=await owner.fitnessDatabase.transaction(tx => tx.query<{ relname:string; relrowsecurity:boolean; relforcerowsecurity:boolean }>(`SELECT relname,relrowsecurity,relforcerowsecurity
+    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='fitness_users'
+    AND c.relname IN ('credentials','sessions','workout_records') ORDER BY relname`));
+  assert.deepEqual(tables.rows.map(row => [row.relname,row.relrowsecurity,row.relforcerowsecurity]),
+    [['credentials',true,true],['sessions',true,true],['workout_records',true,true]]);
+  const checksum=migrations[1]!.checksum;
+  await owner.fitnessDatabase.transaction(tx => tx.query('UPDATE fitness_users.schema_migrations SET checksum=$1 WHERE version=2',['0'.repeat(64)]));
   try { await assert.rejects(migrateUserDatabase(owner.fitnessDatabase),hasCode('DATABASE_MIGRATION')); }
-  finally { await owner.fitnessDatabase.transaction(tx => tx.query('UPDATE fitness_users.schema_migrations SET checksum=$1 WHERE version=1',[checksum])); }
+  finally { await owner.fitnessDatabase.transaction(tx => tx.query('UPDATE fitness_users.schema_migrations SET checksum=$1 WHERE version=2',[checksum])); }
+  await owner.fitnessDatabase.transaction(tx => tx.query('ALTER TABLE fitness_users.credentials NO FORCE ROW LEVEL SECURITY'));
+  try { await assert.rejects(boot(),hasCode('DATABASE_ROLE_UNSAFE')); }
+  finally { await owner.fitnessDatabase.transaction(tx => tx.query('ALTER TABLE fitness_users.credentials FORCE ROW LEVEL SECURITY')); }
+  const restored=await boot();
+  try { assert.ok(restored.fitnessUsers); assert.ok(restored.fitnessWorkoutHistory); }
+  finally { await restored.fiber.dispose(); }
+});
+
+test('a failed migration rolls back completely and a retry applies every version',async () => {
+  const name=`fitness_users_migration_probe_${Date.now()}`;
+  const admin=new Client({ connectionString:adminUrl!,ssl:false });
+  await admin.connect();
+  try {
+    await admin.query(`CREATE DATABASE "${name}"`);
+    const target=new URL(adminUrl!); target.pathname=`/${name}`;
+    const ctx=createRuntime();
+    try {
+      await ctx.plugin(PostgresPlugin,{ connectionString:target.toString(),tls:'local' }).await();
+      await ctx.fitnessDatabase.transaction(tx => tx.query('CREATE SCHEMA fitness_users; CREATE TABLE fitness_users.key_registry(id integer)'));
+      await assert.rejects(migrateUserDatabase(ctx.fitnessDatabase),
+        error => error instanceof DatabaseQueryError && error.sqlState==='42P07');
+      const present=await ctx.fitnessDatabase.transaction(tx => tx.query<{ name:string|null }>("SELECT to_regclass('fitness_users.schema_migrations') AS name"));
+      assert.equal(present.rows[0]?.name,null);
+      await ctx.fitnessDatabase.transaction(tx => tx.query('DROP SCHEMA fitness_users CASCADE'));
+      assert.deepEqual(await migrateUserDatabase(ctx.fitnessDatabase),{ applied:3,version:3 });
+      const count=await ctx.fitnessDatabase.transaction(tx => tx.query<{ count:number }>('SELECT count(*)::integer AS count FROM fitness_users.schema_migrations'));
+      assert.equal(count.rows[0]!.count,3);
+    } finally { await ctx.fiber.dispose(); }
+  } finally {
+    await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`).catch(() => undefined);
+    await admin.end();
+  }
+});
+
+test('the application manifest mounts the workout history service',async () => {
+  const keys=['FITNESS_DATABASE_URL','FITNESS_DATABASE_TLS','FITNESS_USER_ENCRYPTION_KEYS','FITNESS_USER_ENCRYPTION_ACTIVE_KEY','FITNESS_USER_LOOKUP_KEY'] as const;
+  const saved=keys.map(key => process.env[key]);
+  process.env.FITNESS_DATABASE_URL=runtimeUrl!;
+  process.env.FITNESS_DATABASE_TLS='local';
+  process.env.FITNESS_USER_ENCRYPTION_KEYS=JSON.stringify(cryptoConfig.keys);
+  process.env.FITNESS_USER_ENCRYPTION_ACTIVE_KEY=cryptoConfig.activeKeyId;
+  process.env.FITNESS_USER_LOOKUP_KEY=lookupKey;
+  const ctx=createRuntime();
+  try {
+    await mountPlugins(ctx,userDatabasePlugins);
+    assert.ok(ctx.fitnessDatabase);
+    assert.ok(ctx.fitnessUserDataProtection);
+    assert.ok(ctx.fitnessUsers);
+    assert.ok(ctx.fitnessWorkoutHistory);
+    assert.deepEqual((await ctx.fitnessWorkoutHistory.list(principalFor(tenantA,randomUUID()))).items,[]);
+  } finally {
+    await ctx.fiber.dispose();
+    keys.forEach((key,index) => {
+      const value=saved[index];
+      if (value===undefined) delete process.env[key];
+      else process.env[key]=value;
+    });
+  }
 });
 
 test('creates encrypted user data, exposes safe DTOs, and resolves normalized identities',async () => {
@@ -412,4 +511,143 @@ test('a real custom-format backup restores encrypted user data, constraints, and
       assert.equal(await restored.fitnessUsers.get(tenantB,sentinel.user.id),null);
     } finally { await restored.fiber.dispose(); }
   } finally { await log.close(); }
+});
+
+test('credentials and sessions enforce hashing and token constraints in the database',async () => {
+  const t=await tenant(); const created=await create(t);
+  const insert=async (sql: string,values: readonly unknown[]) => app.fitnessDatabase.transaction(async tx => {
+    await tx.query("SELECT set_config('fitness.tenant_id',$1,true)",[t]);
+    return tx.query(sql,values);
+  });
+  const credential='INSERT INTO fitness_users.credentials(tenant_id,user_id,password_hash) VALUES ($1,$2,$3)';
+  await assert.rejects(insert(credential,[t,created.user.id,'md5$0123456789abcdef']),sqlState('23514'));
+  await assert.rejects(insert(credential,[t,created.user.id,`scrypt$16384$8$1$${'a'.repeat(520)}`]),sqlState('23514'));
+  await assert.rejects(insert(credential,[t,randomUUID(),'scrypt$16384$8$1$c2FsdA$aGFzaA']),sqlState('23503'));
+  const hash='scrypt$16384$8$1$c2FsdA$aGFzaA';
+  await insert(credential,[t,created.user.id,hash]);
+  await assert.rejects(insert(credential,[t,created.user.id,hash]),sqlState('23505'));
+  const session='INSERT INTO fitness_users.sessions(tenant_id,id,user_id,token_lookup,expires_at) VALUES ($1,$2,$3,$4,$5)';
+  const tokenLookup='c'.repeat(64); const expiresAt=new Date(Date.now()+3600_000).toISOString();
+  await insert(session,[t,randomUUID(),created.user.id,tokenLookup,expiresAt]);
+  await assert.rejects(insert(session,[t,randomUUID(),created.user.id,tokenLookup,expiresAt]),sqlState('23505'));
+  await assert.rejects(insert(session,[t,randomUUID(),created.user.id,'C'.repeat(64),expiresAt]),sqlState('23514'));
+  await assert.rejects(insert(session,[t,randomUUID(),created.user.id,'abc',expiresAt]),sqlState('23514'));
+});
+
+test('workout detail is sealed with bound context and fails closed when tampered',async () => {
+  const t=await tenant(); const created=await create(t); const principal=principalFor(t,created.user.id);
+  const record=await app.fitnessWorkoutHistory.record(principal,workoutInput({ capturedAt:'2026-10-29T03:20:00.000Z' }));
+  assert.equal(record.total,81.5); assert.equal(record.score.total,81.5);
+  assert.equal(record.capturedAt,'2026-10-29T03:20:00.000Z');
+  const stored=await owner.fitnessDatabase.transaction(tx => tx.query<{ sealed_detail:string; session_id:string; exercise:string; total_score:string }>(
+    'SELECT sealed_detail,session_id,exercise,total_score FROM fitness_users.workout_records WHERE tenant_id=$1 AND id=$2',[t,record.id]));
+  const row=stored.rows[0]!;
+  assert.ok(row.sealed_detail.startsWith('v1.key1.'));
+  assert.equal(row.session_id,record.sessionId);
+  assert.equal(row.exercise,'bodyweight-squat');
+  assert.equal(Number(row.total_score),81.5);
+  assert.equal(JSON.stringify(row).includes('本次数据满足'),false);
+  assert.equal(JSON.stringify(row).includes('动作幅度'),false);
+  const fetched=await app.fitnessWorkoutHistory.get(principal,record.id);
+  assert.ok(fetched);
+  assert.deepEqual(fetched.score,record.score);
+  assert.deepEqual(fetched.advice,record.advice);
+  assert.ok(Object.isFrozen(fetched.score.dimensions));
+  const parts=row.sealed_detail.split('.'); const ciphertext=Buffer.from(parts[3]!,'base64url');
+  ciphertext[0]=ciphertext[0]!^1; parts[3]=ciphertext.toString('base64url');
+  await owner.fitnessDatabase.transaction(tx => tx.query('UPDATE fitness_users.workout_records SET sealed_detail=$3 WHERE tenant_id=$1 AND id=$2',[t,record.id,parts.join('.')]));
+  try { await assert.rejects(app.fitnessWorkoutHistory.get(principal,record.id),hasCode('DATA_PROTECTION_FAILED')); }
+  finally { await owner.fitnessDatabase.transaction(tx => tx.query('UPDATE fitness_users.workout_records SET sealed_detail=$3 WHERE tenant_id=$1 AND id=$2',[t,record.id,row.sealed_detail])); }
+  await owner.fitnessDatabase.transaction(tx => tx.query('UPDATE fitness_users.workout_records SET total_score=40 WHERE tenant_id=$1 AND id=$2',[t,record.id]));
+  await assert.rejects(app.fitnessWorkoutHistory.get(principal,record.id),hasCode('WORKOUT_INVALID'));
+});
+
+test('workout records are isolated by tenant and by user',async () => {
+  const tenantA=await tenant(); const tenantB=await tenant();
+  const a=await create(tenantA); const b=await create(tenantB); const other=await create(tenantB);
+  const principalA=principalFor(tenantA,a.user.id); const principalB=principalFor(tenantB,b.user.id);
+  const record=await app.fitnessWorkoutHistory.record(principalB,workoutInput());
+  await assert.rejects(app.fitnessWorkoutHistory.get(principalA,record.id),hasCode('WORKOUT_NOT_FOUND'));
+  await assert.rejects(app.fitnessWorkoutHistory.remove(principalA,record.id),hasCode('WORKOUT_NOT_FOUND'));
+  await assert.rejects(app.fitnessWorkoutHistory.get(principalFor(tenantB,other.user.id),record.id),hasCode('WORKOUT_NOT_FOUND'));
+  assert.deepEqual((await app.fitnessWorkoutHistory.list(principalA)).items,[]);
+  const hidden=await app.fitnessDatabase.transaction(async tx => {
+    await tx.query("SELECT set_config('fitness.tenant_id',$1,true)",[tenantA]);
+    return tx.query('SELECT id FROM fitness_users.workout_records WHERE tenant_id=$1',[tenantB]);
+  });
+  assert.equal(hidden.rowCount,0);
+  await assert.rejects(app.fitnessDatabase.transaction(async tx => {
+    await tx.query("SELECT set_config('fitness.tenant_id',$1,true)",[tenantA]);
+    await tx.query(`INSERT INTO fitness_users.workout_records
+      (tenant_id,id,user_id,session_id,exercise,target_repetitions,observed_repetitions,total_score,sealed_detail,source,captured_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,clock_timestamp())`,
+      [tenantB,randomUUID(),b.user.id,'cross-tenant','bodyweight-squat',5,5,80,'v1.key1.aaaa.bbbb.cccc','video']);
+  }),sqlState('42501'));
+  await assert.rejects(app.fitnessWorkoutHistory.record(principalFor(tenantA,b.user.id),workoutInput()),hasCode('WORKOUT_INVALID'));
+  await app.fitnessWorkoutHistory.remove(principalB,record.id);
+  await assert.rejects(app.fitnessWorkoutHistory.get(principalB,record.id),hasCode('WORKOUT_NOT_FOUND'));
+});
+
+test('workout history pages by capturedAt and id without gaps or duplicates',async () => {
+  const t=await tenant(); const user=await create(t); const principal=principalFor(t,user.user.id);
+  const base=Date.parse('2026-01-01T00:00:00.000Z');
+  const created=[];
+  for (const [index,minute] of [0,1,2,2,3,4].entries()) {
+    created.push(await app.fitnessWorkoutHistory.record(principal,workoutInput({
+      capturedAt:new Date(base+minute*60_000).toISOString(),exercise:index===5?'push-up':'bodyweight-squat',observedRepetitions:index,
+    })));
+  }
+  const all=[];
+  let after: string | undefined;
+  for (let page=0;page<10;page++) {
+    const result=await app.fitnessWorkoutHistory.list(principal,{ limit:2,...(after===undefined?{}:{ after }) });
+    assert.ok(result.items.length<=2);
+    all.push(...result.items);
+    if (!result.nextCursor) break;
+    after=result.nextCursor;
+  }
+  assert.equal(all.length,6);
+  assert.equal(new Set(all.map(item => item.id)).size,6);
+  const expected=created.map(item => ({ capturedAt:item.capturedAt,id:item.id })).sort(recordOrder);
+  assert.deepEqual(all.map(item => ({ capturedAt:item.capturedAt,id:item.id })),expected);
+  const pushups=await app.fitnessWorkoutHistory.list(principal,{ exercise:'push-up' });
+  assert.deepEqual(pushups.items.map(item => item.id),[created[5]!.id]);
+  const window=await app.fitnessWorkoutHistory.list(principal,{ from:new Date(base+60_000).toISOString(),to:new Date(base+180_000).toISOString() });
+  assert.equal(window.items.length,4);
+  await assert.rejects(app.fitnessWorkoutHistory.list(principal,{ after:'not-a-cursor' }),hasCode('WORKOUT_INVALID'));
+  await assert.rejects(app.fitnessWorkoutHistory.list(principal,{ limit:101 }),hasCode('WORKOUT_INVALID'));
+});
+
+test('workout statistics aggregate per exercise with rounded averages',async () => {
+  const t=await tenant(); const user=await create(t); const principal=principalFor(t,user.user.id);
+  assert.deepEqual(await app.fitnessWorkoutHistory.statistics(principal),
+    { schemaVersion:'1.0',totalWorkouts:0,totalObservedRepetitions:0,lastCapturedAt:null,byExercise:[] });
+  await app.fitnessWorkoutHistory.record(principal,workoutInput({ exercise:'bodyweight-squat',observedRepetitions:5,score:scoreOf(80),capturedAt:'2026-02-01T00:00:00.000Z' }));
+  await app.fitnessWorkoutHistory.record(principal,workoutInput({ exercise:'bodyweight-squat',observedRepetitions:4,score:scoreOf(91),capturedAt:'2026-02-02T00:00:00.000Z' }));
+  await app.fitnessWorkoutHistory.record(principal,workoutInput({ exercise:'push-up',observedRepetitions:3,score:scoreOf(70),capturedAt:'2026-02-03T00:00:00.000Z' }));
+  const stats=await app.fitnessWorkoutHistory.statistics(principal);
+  assert.equal(stats.totalWorkouts,3);
+  assert.equal(stats.totalObservedRepetitions,12);
+  assert.equal(stats.lastCapturedAt,'2026-02-03T00:00:00.000Z');
+  assert.deepEqual(stats.byExercise,[
+    { exercise:'bodyweight-squat',workouts:2,averageScore:85.5 },
+    { exercise:'push-up',workouts:1,averageScore:70 },
+  ]);
+  const other=await create(t);
+  assert.equal((await app.fitnessWorkoutHistory.statistics(principalFor(t,other.user.id))).totalWorkouts,0);
+});
+
+test('capturedAt defaults to the write time and removal is tenant-scoped',async () => {
+  const t=await tenant(); const user=await create(t); const principal=principalFor(t,user.user.id);
+  const before=Date.now();
+  const record=await app.fitnessWorkoutHistory.record(principal,workoutInput());
+  const captured=Date.parse(record.capturedAt);
+  assert.ok(captured>=before-1000 && captured<=Date.now()+1000);
+  assert.equal(record.sessionId.startsWith('assessment-'),true);
+  await app.fitnessWorkoutHistory.remove(principal,record.id);
+  await assert.rejects(app.fitnessWorkoutHistory.get(principal,record.id),hasCode('WORKOUT_NOT_FOUND'));
+  await assert.rejects(app.fitnessWorkoutHistory.remove(principal,record.id),hasCode('WORKOUT_NOT_FOUND'));
+  assert.deepEqual((await app.fitnessWorkoutHistory.list(principal)).items,[]);
+  await assert.rejects(app.fitnessWorkoutHistory.get(principal,'not-a-uuid'),hasCode('WORKOUT_INVALID'));
+  await assert.rejects(app.fitnessWorkoutHistory.record(principal,workoutInput({ score:scoreOf(81.555) })),hasCode('WORKOUT_INVALID'));
 });
