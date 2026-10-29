@@ -159,7 +159,7 @@ CREATE INDEX workout_records_user_time ON fitness_users.workout_records(tenant_i
 - **运动历史的 `score` 与 `advice` 明细整体加密**存进 `sealed_detail`（AAD 含 `tenantId`、`userId`、记录 `id`）。明文列只保留可索引的聚合值：动作、目标次数、观测次数、总分、来源、时间。理由：健康数据属于个人数据，不落明文。
 - `total_score` 必须先校验与 `score.total` 一致，不允许两处不同。
 - 运行账号权限：`GRANT SELECT, INSERT, UPDATE, DELETE ON fitness_users.credentials, fitness_users.sessions, fitness_users.workout_records`。
-- `assertUserDatabase` 的表数与强制 RLS 检查从 7 张更新为 9 张。
+- `assertUserDatabase` 的表数与强制 RLS 检查从 7 张更新为 10 张：`tenants`、`accounts`、`profiles`、`identities`、`mutation_receipts`、`audit_events`、`outbox`、`credentials`、`sessions`、`workout_records`。启动时校验全部 10 张都必须强制 RLS，少一张就拒绝启动。
 
 ## HTTP 路由（新增，接口线实现）
 
@@ -184,6 +184,7 @@ CREATE INDEX workout_records_user_time ON fitness_users.workout_records(tenant_i
 - `/api/workouts/statistics` 必须注册在 `/api/workouts/{id}` 之前或靠静态段优先规则生效，不能把 `statistics` 当 id。
 - `POST /api/assessments` 本轮**不自动写历史**：现有契约没有身份，擅自改它的语义会破坏既有调用方。改为新增可选字段不建议——留到下一轮由 owner 决定。历史由 `POST /api/workouts` 显式写入。
 - 未认证的受保护路由一律 401 `AUTH_UNAUTHENTICATED`，不泄漏资源是否存在。
+- `GET /api/workouts/{id}` 与 `DELETE /api/workouts/{id}` 在记录不存在、属于其他租户或其他用户时一律返回 404 `WORKOUT_NOT_FOUND`；`FitnessWorkoutHistory.get` 返回非可空记录，不返回 `null`，同一错误码覆盖「不存在」与「不可见」，调用方无法据此区分记录是否存在。
 
 ## 不做什么（本轮明确排除）
 
