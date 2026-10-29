@@ -274,7 +274,11 @@ export class AuthPlugin extends Service implements FitnessAuth {
     const identity = clientInput(() => validateIdentity(data.identity, false));
     const passwordValue = typeof data.password === 'string' ? data.password : invalid('password 必须是字符串');
 
-    const user = await this.ctx.fitnessUsers.findByIdentity(this.tenantId, identity);
+    // The user service validates a lookup identity without `verified`, so drop it here:
+    // forwarding the flagged shape would be rejected as an undeclared field on a real database.
+    const user = await this.ctx.fitnessUsers.findByIdentity(this.tenantId, {
+      provider: identity.provider, subject: identity.subject,
+    });
     const credential = user ? await this.credential(user.id) : undefined;
     // A missing account still pays for one scrypt run so rejects look alike in timing.
     if (this.locked(credential)) throw new FitnessError('AUTH_LOCKED', '登录失败次数过多，请稍后再试');

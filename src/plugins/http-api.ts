@@ -610,8 +610,9 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
   }
 
   private async authLogout(auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
-    const { token } = await this.authenticated(auth, context);
-    await auth.logout(token);
+    // Logout is idempotent: a revoked or unknown token is already logged out, so retrying
+    // is not an error. Only a missing or malformed bearer header is rejected.
+    await auth.logout(this.bearer(context));
     return { status: 204, body: '' };
   }
 

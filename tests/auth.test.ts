@@ -165,6 +165,10 @@ class FakeUsers extends Service implements FitnessUsers {
     });
   }
   async findByIdentity(tenantId: string, identity: { provider: string; subject: string }): Promise<UserAccount | null> {
+    // The real user service accepts a lookup identity without `verified` only; model that strictly.
+    if (Object.keys(identity).some(key => !['provider', 'subject'].includes(key))) {
+      throw new FitnessError('USER_INVALID', '输入包含未声明字段');
+    }
     const id = this.store.identities.get(`${identity.provider}\u0000${identity.subject}`);
     if (!id) return null;
     const record = this.store.accounts.get(id);

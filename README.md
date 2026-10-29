@@ -134,7 +134,7 @@ pnpm serve
 | --- | --- | --- | --- |
 | `POST` | `/api/auth/register` | 否 | `{ identity, password, profile }` → `201 { token, expiresAt, user }` |
 | `POST` | `/api/auth/login` | 否 | `{ identity, password }` → `200 { token, expiresAt, user }` |
-| `POST` | `/api/auth/logout` | 是 | 吊销当前会话，`204` |
+| `POST` | `/api/auth/logout` | 是 | 吊销当前会话，`204`；已吊销或未知令牌重复登出仍是 `204` |
 | `GET` | `/api/auth/me` | 是 | 当前 `UserAccount` |
 | `POST` | `/api/auth/password` | 是 | `{ currentPassword, newPassword }`，`204`，并吊销其他会话 |
 

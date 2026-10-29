@@ -65,7 +65,7 @@ try {
   } finally { await connected.end(); }
   const databaseUrl = (user: string,secret: string) => `postgresql://${user}:${secret}@127.0.0.1:${port}/fitness_users_test`;
   process.stdout.write(`Temporary PostgreSQL ready; artifacts: ${directory}\n`);
-  const code = await wait(spawn(process.execPath,['--test','--test-concurrency=1','tests/integration/user-database.test.ts'],{
+  const code = await wait(spawn(process.execPath,['--test','--test-concurrency=1','tests/integration/user-database.test.ts','tests/integration/http-auth.test.ts'],{
     cwd:root,windowsHide:true,stdio:'inherit',env:{ ...process.env,
       FITNESS_TEST_ADMIN_DATABASE_URL:databaseUrl('fitness_test_admin',credential),
       FITNESS_TEST_DATABASE_URL:databaseUrl('fitness_users_runtime',runtimeCredential),
