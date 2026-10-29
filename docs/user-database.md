@@ -10,9 +10,9 @@
 | [UserDataProtectionPlugin](../src/plugins/user-data-protection.ts) | `fitnessUserDataProtection` | 个人资料与身份标识的 AES-256-GCM 加解密、独立 HMAC 检索指纹、密钥版本 |
 | [UserDatabasePlugin](../src/plugins/user-database.ts) | `fitnessUsers` | 租户内用户资料、登录身份、状态、版本、幂等回执、审计与事务 outbox |
 
-[用户契约](../src/user-contracts.ts)与[数据库契约](../src/database-contracts.ts)是消费边界。消费方依赖服务名称，不导入具体提供方。当前没有用户 HTTP 路由、密码登录、JWT、权限管理或支付功能；该服务面向受信任的后端插件，不能直接暴露给客户端。
+[用户契约](../src/user-contracts.ts)与[数据库契约](../src/database-contracts.ts)是消费边界。消费方依赖服务名称，不导入具体提供方。用户数据库服务本身不提供 HTTP 路由、密码登录、JWT 或权限管理；认证与 HTTP 由认证插件和 HTTP 插件另行提供，它们只通过服务契约调用，不直接访问数据库。该服务面向受信任的后端插件，不能直接暴露给客户端。
 
-[独立装配清单](../src/user-app.ts)可以单独挂载。现有应用只有显式设置 `FITNESS_USERS_ENABLED=true` 才加入这三个插件；否则既有视频/JSON 流程保持可独立使用。启用后，缺少配置、迁移、合适的运行角色或正确密钥会阻止服务启动，不回退为内存用户库。
+[独立装配清单](../src/user-app.ts)可以单独挂载。现有应用只有显式设置 `FITNESS_USERS_ENABLED=true` 才加入这组插件（PostgreSQL、数据保护、用户数据库、运动历史）；否则既有视频/JSON 流程保持可独立使用。启用后，缺少配置、迁移、合适的运行角色或正确密钥会阻止服务启动，不回退为内存用户库。
 
 ## 数据模型
 
@@ -26,6 +26,9 @@ erDiagram
   accounts ||--o{ mutation_receipts : deduplicates
   accounts ||--o{ audit_events : records
   audit_events ||--|| outbox : delivers
+  accounts ||--o| credentials : authenticates
+  accounts ||--o{ sessions : authenticates
+  accounts ||--o{ workout_records : records
 ```
 
 | 表 | 内容与约束 |
@@ -37,10 +40,23 @@ erDiagram
 | `mutation_receipts` | `operationId`、HMAC 请求摘要、用户与应用版本、相关身份 ID；没有原始请求、姓名、邮件或电话快照 |
 | `audit_events` | 仅记录事件类型、用户 ID、版本、操作主体 ID、操作 ID 和时间；运行账号只有追加与查询权限 |
 | `outbox` | 与审计事件同事务创建；租约拥有者、随机 token、过期时间与确认时间，用于可靠投递 |
+| `credentials` | 密码哈希（只接受 `scrypt$` 前缀、总长不超过 512 字节）、连续失败次数、锁定到期时间；主键为租户 + 用户，归 `fitnessAuth` 认证插件所有 |
+| `sessions` | 会话 UUID、令牌 HMAC 指纹（不存令牌原文）、创建/到期/吊销时间；租户 + 指纹唯一，归 `fitnessAuth` 认证插件所有 |
+| `workout_records` | 运动历史可索引聚合值（动作、目标/观测次数、总分、来源、捕获时间）；评分与建议明细整体加密存 `sealed_detail`，归 `WorkoutHistoryPlugin`（`fitnessWorkoutHistory`）所有 |
 | `key_registry` | 独立检索密钥的固定校验值，启动时检测错误更换密钥；不保存密钥原文 |
 | `schema_migrations` | 有序版本、名称、SQL SHA-256、应用时间；运行账号只能查询 |
 
 `accounts` 及其子表使用包含租户 ID 的复合主/外键，数据库因此拒绝将 A 租户的身份或资料挂到 B 租户账号。身份唯一性在数据库中执行，两个进程同时注册相同身份时，失败方的账号、资料、回执与事件一起回滚。同一邮箱可存在于不同租户，它们是独立账号；当前没有跨租户账号合并功能。
+
+`credentials`、`sessions` 与 `workout_records` 复用同一模式与同一套强制 RLS 策略，但归属各自的插件；三者都通过 `fitnessDatabase` 在自己的事务里读写各自的表，不新增第二个写同一张表的插件。
+
+## 凭据、会话与运动历史
+
+`credentials` 与 `sessions` 归认证插件（服务名 `fitnessAuth`，见[认证与历史契约](auth-history-contract.md)）所有。**数据库插件只存不校验**：它不参与密码哈希校验、会话令牌签发、失败计数或锁定判定，这些都发生在认证插件里，认证插件再通过服务契约把租户内的用户资料交给 `fitnessUsers`。
+
+密码只以单向 `scrypt` 哈希落库，列约束要求 `scrypt$` 前缀且总长不超过 512 字节，明文与可逆密文都不会写入。会话令牌只存独立 HMAC 指纹（64 位十六进制），令牌原文在签发时返回一次、之后不可恢复；`expires_at` 与 `revoked_at` 决定会话是否可用，过期或吊销后一律视为未认证。两表都强制 RLS，跨租户读写由数据库拒绝。
+
+`workout_records` 归运动历史插件（服务名 `fitnessWorkoutHistory`）所有。明文列只保留可索引的聚合值：动作、目标次数、观测次数、总分、来源与捕获时间；评分维度与建议条目整体加密写入 `sealed_detail`，AAD 绑定租户、用户与记录 ID，因此复制密文到其他记录或用户会认证失败，解密失败时不返回半截数据。写入时先校验 `total_score` 与明细中的总分一致，读取时再次核对，不允许两处不同。记录不存在、属于其他租户或其他用户时统一返回 `WORKOUT_NOT_FOUND`，调用方无法区分；分页使用不透明游标，不接受偏移量或裸 SQL。
 
 ## 租户与访问边界
 
@@ -150,9 +166,9 @@ pnpm test:database
 
 该命令生成随机临时凭据，在忽略版本跟踪的 `artifacts/` 内初始化仅监听 loopback 的 PostgreSQL 集群，用随机空闲端口和 SCRAM 认证运行集成测试，最后停止该集群；不连接或改动本机已有数据库。测试数据库文件、日志及虚构资料的备份留作证据。没有 PostgreSQL 二进制时明确失败，不把跳过集成测试计为通过。
 
-已执行最终 `pnpm check`：类型检查、73 项 Node.js 测试、ESM 构建通过，包含既有动作/视频契约回归、用户输入配置与 14 项加密测试。
+已执行最终 `pnpm check`：类型检查、91 项 Node.js 测试、ESM 构建通过，包含既有动作/视频契约回归、用户输入配置、14 项加密测试与 4 项运动历史校验测试。
 
-已执行最终 `pnpm test:database`：PostgreSQL 18.2 隔离实例中的 **21 项真实集成测试全部通过**，包含源码和编译后管理命令，覆盖迁移校验和、密文存储、跨租户读写/外键、运行角色权限、并发唯一身份、幂等、并发版本、身份归属、擦除、分页、outbox 竞争及过期、审计失败回滚、密钥轮换、会话/超时/卸载与提供方重挂。
+已执行最终 `pnpm test:database`：PostgreSQL 18.2 隔离实例中的 **28 项真实集成测试全部通过**，包含源码和编译后管理命令，覆盖迁移校验和、空库顺序应用 001–003、迁移失败回滚与重试、密文存储、跨租户读写/外键、运行角色权限、并发唯一身份、幂等、并发版本、身份归属、擦除、分页、outbox 竞争及过期、审计失败回滚、密钥轮换、会话/超时/卸载与提供方重挂，以及新增的认证凭据与会话表约束、运动历史 RLS 跨租户隔离、历史明细加解密与篡改失败、总分一致性、分页游标、统计聚合。
 
 自审发现并修复了连接借出后的 error 监听、提交不确定时连接销毁、COMMIT 返回 ROLLBACK 标签、身份查找双查询快照和孤立 surrogate 输入五项边界。回归实际调用 `pg_terminate_backend` 中断在途查询及延迟约束触发器执行期间的 COMMIT，验证受控错误/UNKNOWN、进程继续运行、后续新连接健康。另确定性交错身份查找与解绑，验证单语句快照。
 

@@ -81,7 +81,12 @@ export interface WorkoutStatistics {
 export interface FitnessWorkoutHistory {
   record(principal: AuthPrincipal, value: unknown): Promise<WorkoutRecord>;
   list(principal: AuthPrincipal, query?: WorkoutQuery): Promise<WorkoutPage>;
-  get(principal: AuthPrincipal, id: string): Promise<WorkoutRecord | null>;
+  /**
+   * Reads one record. A record belonging to another tenant or user is
+   * indistinguishable from a missing one: both reject with `WORKOUT_NOT_FOUND`.
+   */
+  get(principal: AuthPrincipal, id: string): Promise<WorkoutRecord>;
+  /** Deletes one record; a missing or foreign record rejects with `WORKOUT_NOT_FOUND`. */
   remove(principal: AuthPrincipal, id: string): Promise<void>;
   statistics(principal: AuthPrincipal): Promise<WorkoutStatistics>;
 }
