@@ -50,6 +50,11 @@ export interface HttpRequest {
   readonly headers: Readonly<Record<string, string>>;
   /** 原始请求体；没有请求体时是空串。 */
   readonly body: string;
+  /**
+   * 仅 encoding:'binary' 的路由有值；此时 body 为空串。
+   * 逐块读取，不缓冲整块，上限由路由声明与服务层双重校验。
+   */
+  readonly bodyStream?: AsyncIterable<Uint8Array>;
 }
 
 export interface HttpResponse {
@@ -66,6 +71,18 @@ export interface HttpRoute {
   /** 精确路径，或含 `{name}` 路径参数的模式，如 `/api/exercises/{id}/standard`。 */
   readonly path: string;
   readonly handler: HttpRouteHandler;
+  /**
+   * 缺省等于 encoding:'utf8'、1 MiB 上限，即既有行为。
+   * encoding:'binary' 时 handler 通过 bodyStream 消费，body 为空串。
+   */
+  readonly body?: HttpBodyPolicy;
+}
+
+/** 请求体读取策略。路由声明需求，入口层遵守。 */
+export interface HttpBodyPolicy {
+  readonly encoding: 'binary';
+  /** 字节上限；入口在读 body 前按 Content-Length 预检，实写时再校验一次。 */
+  readonly limitBytes: number;
 }
 
 export interface FitnessHttp {

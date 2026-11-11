@@ -221,3 +221,69 @@ advice: { policy, items[] }
 - 页面调用 `GET /api/videos` 列出可选视频（`path` 为相对根目录的路径），提交时原样回传 `path`。
 - 页面调用 `GET /api/exercises` 与 `GET /api/exercises/{id}/standard` 展示动作目录信息（可选）。
 - 错误展示：非 2xx 时读 `error.code` 与 `error.message` 原样展示，不吞错误、不伪造成功。
+
+## 数据面路由（`feat/data-plane` 追加）
+
+这一节的契约全文见 [数据面契约](data-plane-contract.md)。这里只列对外形状。
+
+### `POST /api/uploads`
+
+上传一段视频字节流，返回的 `path` 可直接作为 `POST /api/assessments` 的 `path`。
+
+| 项 | 说明 |
+| --- | --- |
+| 请求体 | 原始二进制，**不是** JSON、不是 multipart |
+| `Content-Type` | 唯一扩展名来源：`video/mp4` `.mp4`、`video/quicktime` `.mov`、`video/x-m4v` `.m4v`、`video/x-msvideo` `.avi`、`video/webm` `.webm`；认不出即 400 |
+| `Content-Length` | 必填；缺失 411，超过上限预检即 413 |
+| 上限 | `FITNESS_UPLOAD_MAX_BYTES`，默认 512 MiB，硬上限 1 GiB |
+| 认证 | `FITNESS_UPLOAD_REQUIRE_AUTH=true`（默认）时须带 `Authorization: Bearer` |
+
+响应 201 `UploadReceipt`：`schemaVersion, id, path, name, extension, bytes, sha256, anonymous, contentType, expiresAt`。
+
+`sha256` 是内容指纹：同一条 `path` 若被覆盖，哈希能证明内容变过。
+
+### `DELETE /api/uploads/{id}`
+
+删除自己的暂存文件。不存在、已过期、属于别的租户或用户，一律 404 `UPLOAD_NOT_FOUND`。成功 204。
+
+### `POST /api/health-metrics`
+
+批量写入生理指标。须 `Authorization: Bearer`。
+
+请求体 `{ schemaVersion:'1.0', samples: MetricSample[] }`，单批上限 500 条，整批一个事务——任一条不合法则整批回滚。
+
+响应 201 `{ schemaVersion, accepted, duplicates, ids[] }`。`duplicates` 是唯一约束命中的条数，重复上报是正常情况。
+
+### `GET /api/health-metrics`
+
+查询参数：`kind`、`from`、`to`、`limit`（1–5000，默认 500）、`after`。未知参数 400。时间窗上限 31 天。
+
+响应 200 `{ schemaVersion, items[], nextCursor }`。`value` 是解密后的明文数值，只出现在响应里。
+
+### `GET /api/health-metrics/summary`
+
+查询参数：`kind`（**必填**）、`from`、`to`、`bucket=hour|day`（默认 `day`）。
+
+响应 200 `{ schemaVersion, kind, unit, bucket, buckets[{ bucketStart, count, min, max, average }] }`。桶按 **UTC** 边界切分，时区换算交给客户端。
+
+### `DELETE /api/health-metrics/{id}`
+
+删除一条样本。不存在或不属于该用户一律 404 `METRIC_NOT_FOUND`。成功 204。
+
+### 指标种类与单位
+
+| `kind` | `unit` | 范围 |
+| --- | --- | --- |
+| `heart-rate` | `bpm` | 20–250 |
+| `spo2` | `percent` | 50–100 |
+| `steps` | `count` | 0–200000 |
+| `cadence` | `spm` | 0–300 |
+| `energy` | `kcal` | 0–20000 |
+
+种类与单位绑定校验：`{kind:'heart-rate', unit:'percent'}` 是 400 `METRIC_INVALID`。
+
+### 与 `POST /api/assessments` 的关系
+
+评估接口**一行未改**。上传面通过「返回一个符合既有 `path` 契约的相对路径」与它对接，因此两者都不需要知道对方的存在。
+
+`GET /api/videos` 会跳过以 `_` 开头的目录，所以上传暂存区不会污染调试用清单。
