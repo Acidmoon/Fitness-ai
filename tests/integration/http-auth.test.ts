@@ -157,7 +157,7 @@ before(async () => {
   try {
     await owner.plugin(PostgresPlugin, { connectionString: adminDatabaseUrl, tls: 'local' }).await();
     await owner.plugin(UserDataProtectionPlugin, cryptoConfig).await();
-    assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase), { applied: 3, version: 3 });
+    assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase), { applied: 4, version: 4 });
     await grantUserDatabaseAccess(owner.fitnessDatabase, RUNTIME_ROLE);
     await initializeUserLookupKey(owner.fitnessDatabase, owner.fitnessUserDataProtection);
     await provisionUserTenant(owner.fitnessDatabase, TENANT, 'HTTP auth integration tenant');

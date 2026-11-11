@@ -82,7 +82,7 @@ before(async () => {
   owner=createRuntime();
   await owner.plugin(PostgresPlugin,{ connectionString:adminUrl!,tls:'local' }).await();
   await owner.plugin(UserDataProtectionPlugin,cryptoConfig).await();
-  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:3,version:3 });
+  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:4,version:4 });
   await grantUserDatabaseAccess(owner.fitnessDatabase,'fitness_users_runtime');
   await initializeUserLookupKey(owner.fitnessDatabase,owner.fitnessUserDataProtection);
   await provisionUserTenant(owner.fitnessDatabase,tenantA,'Tenant A');
@@ -92,17 +92,17 @@ before(async () => {
 after(async () => { if (app) await app.fiber.dispose(); if (owner) await owner.fiber.dispose(); });
 
 test('checksummed migrations are repeatable and reject changed applied SQL',async () => {
-  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:0,version:3 });
+  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:0,version:4 });
   const migrations=await userMigrations();
-  assert.deepEqual(migrations.map(migration => [migration.version,migration.name]),[[1,'users'],[2,'auth'],[3,'workout-history']]);
+  assert.deepEqual(migrations.map(migration => [migration.version,migration.name]),[[1,'users'],[2,'auth'],[3,'workout-history'],[4,'wearable']]);
   const history=await owner.fitnessDatabase.transaction(tx => tx.query<{ version:number; name:string; checksum:string }>(
     'SELECT version,name,checksum FROM fitness_users.schema_migrations ORDER BY version'));
   assert.deepEqual(history.rows.map(row => [row.version,row.name,row.checksum]),migrations.map(migration => [migration.version,migration.name,migration.checksum]));
   const tables=await owner.fitnessDatabase.transaction(tx => tx.query<{ relname:string; relrowsecurity:boolean; relforcerowsecurity:boolean }>(`SELECT relname,relrowsecurity,relforcerowsecurity
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='fitness_users'
-    AND c.relname IN ('credentials','sessions','workout_records') ORDER BY relname`));
+    AND c.relname IN ('credentials','sessions','workout_records','wearable_samples') ORDER BY relname`));
   assert.deepEqual(tables.rows.map(row => [row.relname,row.relrowsecurity,row.relforcerowsecurity]),
-    [['credentials',true,true],['sessions',true,true],['workout_records',true,true]]);
+    [['credentials',true,true],['sessions',true,true],['wearable_samples',true,true],['workout_records',true,true]]);
   const checksum=migrations[1]!.checksum;
   await owner.fitnessDatabase.transaction(tx => tx.query('UPDATE fitness_users.schema_migrations SET checksum=$1 WHERE version=2',['0'.repeat(64)]));
   try { await assert.rejects(migrateUserDatabase(owner.fitnessDatabase),hasCode('DATABASE_MIGRATION')); }
@@ -131,9 +131,9 @@ test('a failed migration rolls back completely and a retry applies every version
       const present=await ctx.fitnessDatabase.transaction(tx => tx.query<{ name:string|null }>("SELECT to_regclass('fitness_users.schema_migrations') AS name"));
       assert.equal(present.rows[0]?.name,null);
       await ctx.fitnessDatabase.transaction(tx => tx.query('DROP SCHEMA fitness_users CASCADE'));
-      assert.deepEqual(await migrateUserDatabase(ctx.fitnessDatabase),{ applied:3,version:3 });
+      assert.deepEqual(await migrateUserDatabase(ctx.fitnessDatabase),{ applied:4,version:4 });
       const count=await ctx.fitnessDatabase.transaction(tx => tx.query<{ count:number }>('SELECT count(*)::integer AS count FROM fitness_users.schema_migrations'));
-      assert.equal(count.rows[0]!.count,3);
+      assert.equal(count.rows[0]!.count,4);
     } finally { await ctx.fiber.dispose(); }
   } finally {
     await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`).catch(() => undefined);

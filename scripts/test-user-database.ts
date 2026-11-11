@@ -16,6 +16,9 @@ const directory = join(artifactsRoot,`user-database-test-${Date.now()}-${randomU
 if (!directory.startsWith(artifactsRoot + sep)) throw new Error('Unexpected test directory');
 await mkdir(directory,{ recursive:true });
 const log = await open(join(directory,'postgres.log'),'wx');
+// Unix domain socket 放进集群目录，不依赖宿主机的 /var/run/postgresql 权限。
+const socketDirectory = join(directory,'socket');
+await mkdir(socketDirectory,{ recursive:true });
 const credential = randomBytes(32).toString('hex');
 const credentialFile = join(directory,'initial-credential.tmp');
 await writeFile(credentialFile,credential,{ encoding:'utf8', flag:'wx', mode:0o600 });
@@ -48,7 +51,7 @@ try {
   await command(binary('initdb'),['-D',join(directory,'cluster'),'-U','fitness_test_admin',`--pwfile=${credentialFile}`,'--auth-host=scram-sha-256','--auth-local=scram-sha-256','--locale=C','--encoding=UTF8','--no-instructions']);
   if (resolve(credentialFile) !== join(directory,'initial-credential.tmp')) throw new Error('Unexpected credential file');
   await unlink(credentialFile);
-  server = spawn(binary('postgres'),['-D',join(directory,'cluster'),'-h','127.0.0.1','-p',String(port)],{ cwd:root, env:environment, windowsHide:true, stdio:['ignore',log.fd,log.fd] });
+  server = spawn(binary('postgres'),['-D',join(directory,'cluster'),'-h','127.0.0.1','-p',String(port),'-k',socketDirectory],{ cwd:root, env:environment, windowsHide:true, stdio:['ignore',log.fd,log.fd] });
   server.on('error',() => {});
   let connected: Client | undefined;
   for (let attempt=0;attempt<50;attempt++) {
@@ -65,7 +68,7 @@ try {
   } finally { await connected.end(); }
   const databaseUrl = (user: string,secret: string) => `postgresql://${user}:${secret}@127.0.0.1:${port}/fitness_users_test`;
   process.stdout.write(`Temporary PostgreSQL ready; artifacts: ${directory}\n`);
-  const code = await wait(spawn(process.execPath,['--test','--test-concurrency=1','tests/integration/user-database.test.ts','tests/integration/http-auth.test.ts'],{
+  const code = await wait(spawn(process.execPath,['--test','--test-concurrency=1','tests/integration/user-database.test.ts','tests/integration/http-auth.test.ts','tests/integration/wearable.test.ts'],{
     cwd:root,windowsHide:true,stdio:'inherit',env:{ ...process.env,
       FITNESS_TEST_ADMIN_DATABASE_URL:databaseUrl('fitness_test_admin',credential),
       FITNESS_TEST_DATABASE_URL:databaseUrl('fitness_users_runtime',runtimeCredential),
