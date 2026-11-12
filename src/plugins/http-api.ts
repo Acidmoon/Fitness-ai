@@ -9,6 +9,9 @@ import type { FitnessAuth } from '../auth-contracts.ts';
 import type { FitnessUsers } from '../user-contracts.ts';
 import type { FitnessWorkoutHistory, WorkoutQuery } from '../history-contracts.ts';
 import type { ExerciseQuery } from '../exercise-contracts.ts';
+import type { FitnessUploads } from '../upload-contracts.ts';
+import { extensionFor } from '../upload-contracts.ts';
+import type { FitnessWearables, MetricQuery, MetricSummaryQuery } from '../wearable-contracts.ts';
 import {
   jsonResponse, type AssessmentResponse, type AuthPrincipal, type Disposable, type ErrorBody, type FitnessHttp,
   type HealthResponse, type HttpMethod, type HttpRequest, type HttpResponse, type HttpRoute,
@@ -28,6 +31,8 @@ export interface HttpApiConfig {
 const METHODS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
 const EXERCISES = ['squat', 'push-up'] as const;
 const BODY_LIMIT = 1024 * 1024;
+/** 上传流上限；与服务层的 FITNESS_UPLOAD_MAX_BYTES 是两道独立的闸。 */
+const UPLOAD_LIMIT_BYTES = 1024 ** 3;
 const MAX_RELATIVE_LENGTH = 4096;
 const SCAN_BUDGET = 2000;
 const SCAN_DEPTH = 4;
@@ -59,6 +64,13 @@ const STATUS_BY_CODE: Readonly<Partial<Record<FitnessErrorCode, number>>> = {
   MODEL_UNAVAILABLE: 503,
   INFERENCE_FAILED: 500,
   POSE_INVALID: 500,
+  UPLOAD_INVALID: 400,
+  UPLOAD_TOO_LARGE: 413,
+  UPLOAD_NOT_FOUND: 404,
+  UPLOAD_UNAVAILABLE: 503,
+  METRIC_INVALID: 400,
+  METRIC_NOT_FOUND: 404,
+  METRIC_UNAVAILABLE: 503,
 };
 
 /**
@@ -197,6 +209,24 @@ function readBody(request: IncomingMessage): Promise<string> {
   });
 }
 
+/**
+ * 二进制请求体：逐块交给 handler，不整块缓冲。上限在这里先挡一次，服务层落盘时
+ * 再按实际字节挡一次——声明的 Content-Length 只是预检，不能当作事实。
+ */
+async function* streamBody(request: IncomingMessage, limitBytes: number): AsyncIterable<Uint8Array> {
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = chunk as Buffer;
+    size += buffer.byteLength;
+    if (size > limitBytes) {
+      // 中断读取并排空连接；半成品由服务层负责删除。
+      request.destroy();
+      throw new HttpError(413, 'UPLOAD_TOO_LARGE', `请求体超过 ${limitBytes} 字节限制`);
+    }
+    yield buffer;
+  }
+}
+
 function readHeaders(request: IncomingMessage): Readonly<Record<string, string>> {
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(request.headers)) {
@@ -272,6 +302,8 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
     this.builtins();
     this.authRoutes();
     this.historyRoutes();
+    this.uploadRoutes();
+    this.wearableRoutes();
     const address = await this.listen(host, rawPort);
     this.config.onListening?.(address);
   }
@@ -333,7 +365,10 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
       }
       const selected = candidates.reduce((best, item) => (preceeds(item, best) ? item : best));
       const params = matches(selected, path) ?? {};
-      const body = method === 'GET' ? '' : await readBody(request);
+      // 二进制路由不缓冲请求体：handler 直接消费流，body 保持空串。
+      const policy = selected.route.body;
+      const binary = policy?.encoding === 'binary';
+      const body = method === 'GET' || binary ? '' : await readBody(request);
       const context: HttpRequest = {
         method: selected.route.method,
         path: url.pathname,
@@ -342,8 +377,14 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
         query: url.searchParams,
         body,
         headers: readHeaders(request),
+        ...(binary ? { bodyStream: streamBody(request, (policy as { limitBytes: number }).limitBytes) } : {}),
       };
-      this.write(response, await selected.route.handler(context));
+      try {
+        this.write(response, await selected.route.handler(context));
+      } finally {
+        // handler 提前返回或抛错时必须排空请求体，否则连接会挂住不释放。
+        if (binary && !request.readableEnded) request.resume();
+      }
     } catch (error) {
       this.writeError(response, this.describe(error));
     }
@@ -435,6 +476,8 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
       for (const entry of entries) {
         if (budget <= 0) break;
         if (entry.isDirectory()) {
+          // 下划线前缀是系统保留目录（上传暂存区），不进调试用清单。
+          if (entry.name.startsWith('_')) continue;
           if (depth < SCAN_DEPTH) queue.push({ directory: join(directory, entry.name), depth: depth + 1 });
           continue;
         }
@@ -707,6 +750,42 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
   }
 
   /**
+   * 上传路由只在装载 fitnessUploads 时存在。目标是把一段字节流落成暂存文件，
+   * 返回的相对路径直接复用既有 POST /api/assessments 的 path 契约，评估接口一行不改。
+   */
+  private uploadRoutes(): void {
+    this.ctx.inject(['fitnessUploads'], ctx => {
+      const uploads = ctx.fitnessUploads;
+      ctx.effect(() => this.register({
+        method: 'POST',
+        path: '/api/uploads',
+        body: { encoding: 'binary', limitBytes: UPLOAD_LIMIT_BYTES },
+        handler: context => this.upload(uploads, context),
+      }));
+      ctx.effect(() => this.register({
+        method: 'DELETE',
+        path: '/api/uploads/{id}',
+        handler: context => this.uploadRemove(uploads, context),
+      }));
+    });
+  }
+
+  /**
+   * 可穿戴路由需要会话主体，因此只在 fitnessAuth 与 fitnessWearables 都在时注册。
+   * 静态段 summary 单独注册：路由静态段优先，它永远不会被当成 id。
+   */
+  private wearableRoutes(): void {
+    this.ctx.inject(['fitnessAuth', 'fitnessWearables'], ctx => {
+      const auth = ctx.fitnessAuth;
+      const wearables = ctx.fitnessWearables;
+      ctx.effect(() => this.register({ method: 'POST', path: '/api/health-metrics', handler: context => this.metricIngest(wearables, auth, context) }));
+      ctx.effect(() => this.register({ method: 'GET', path: '/api/health-metrics', handler: context => this.metricList(wearables, auth, context) }));
+      ctx.effect(() => this.register({ method: 'GET', path: '/api/health-metrics/summary', handler: context => this.metricSummary(wearables, auth, context) }));
+      ctx.effect(() => this.register({ method: 'DELETE', path: '/api/health-metrics/{id}', handler: context => this.metricRemove(wearables, auth, context) }));
+    });
+  }
+
+  /**
    * Account routes are contributed only when the auth plugin is present, so the
    * video-only entry point keeps working without a database.
    */
@@ -720,6 +799,79 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
       ctx.effect(() => this.register({ method: 'GET', path: '/api/auth/me', handler: context => this.authMe(auth, users, context) }));
       ctx.effect(() => this.register({ method: 'POST', path: '/api/auth/password', handler: context => this.authPassword(auth, context) }));
     });
+  }
+
+  /**
+   * 上传归属只来自已验证会话。未认证档（FITNESS_UPLOAD_REQUIRE_AUTH=false）仅供
+   * 本地演示与自动化测试，落到 _anonymous/ 并在响应里标 anonymous。
+   */
+  private async uploadOwner(context: HttpRequest): Promise<AuthPrincipal | null> {
+    const required = (process.env.FITNESS_UPLOAD_REQUIRE_AUTH ?? 'true').trim().toLowerCase() !== 'false';
+    if (!required) return null;
+    const auth = this.ctx.reflect.get('fitnessAuth', true) as FitnessAuth | undefined;
+    if (!auth) {
+      throw new HttpError(503, 'UPLOAD_UNAVAILABLE',
+        '上传要求认证，但认证插件未装载；本地演示请设置 FITNESS_UPLOAD_REQUIRE_AUTH=false');
+    }
+    return (await this.authenticated(auth, context)).principal;
+  }
+
+  private async upload(uploads: FitnessUploads, context: HttpRequest): Promise<HttpResponse> {
+    const contentType = context.headers['content-type'] ?? '';
+    const declared = Number(context.headers['content-length']);
+    if (!context.bodyStream) throw new HttpError(400, 'UPLOAD_INVALID', '上传请求缺少请求体');
+    if (!Number.isFinite(declared) || declared <= 0) {
+      throw new HttpError(411, 'UPLOAD_INVALID', '上传必须提供有效的 Content-Length');
+    }
+    const extension = extensionFor(contentType);
+    if (!extension) {
+      throw new HttpError(400, 'UPLOAD_INVALID',
+        '无法从 Content-Type 判断视频格式；支持 video/mp4、video/quicktime、video/x-m4v、video/x-msvideo、video/webm');
+    }
+    const owner = await this.uploadOwner(context);
+    const receipt = await uploads.receive({
+      owner, extension, contentType, declaredBytes: declared, chunks: context.bodyStream,
+    });
+    return jsonResponse(201, receipt);
+  }
+
+  private async uploadRemove(uploads: FitnessUploads, context: HttpRequest): Promise<HttpResponse> {
+    const owner = await this.uploadOwner(context);
+    await uploads.remove({ owner, id: context.params['id'] ?? '' });
+    return { status: 204, body: '' };
+  }
+
+  private async metricIngest(wearables: FitnessWearables, auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    return jsonResponse(201, await wearables.ingest(principal, { ...this.jsonObject(context), schemaVersion: '1.0' }));
+  }
+
+  private metricQuery(context: HttpRequest, allowed: readonly string[]): Record<string, unknown> {
+    const query: Record<string, unknown> = {};
+    for (const [key, raw] of context.query) {
+      if (!allowed.includes(key)) throw new HttpError(400, 'INVALID_ARGUMENTS', `未知查询参数：${key}`);
+      if (query[key] !== undefined) throw new HttpError(400, 'INVALID_ARGUMENTS', `查询参数重复：${key}`);
+      query[key] = key === 'limit' ? Number(raw) : raw;
+    }
+    return query;
+  }
+
+  private async metricList(wearables: FitnessWearables, auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    const query = this.metricQuery(context, ['kind', 'from', 'to', 'limit', 'after']) as MetricQuery;
+    return jsonResponse(200, await wearables.list(principal, query));
+  }
+
+  private async metricSummary(wearables: FitnessWearables, auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    const query = this.metricQuery(context, ['kind', 'from', 'to', 'bucket']);
+    return jsonResponse(200, await wearables.summary(principal, query as unknown as MetricSummaryQuery));
+  }
+
+  private async metricRemove(wearables: FitnessWearables, auth: FitnessAuth, context: HttpRequest): Promise<HttpResponse> {
+    const { principal } = await this.authenticated(auth, context);
+    await wearables.remove(principal, context.params['id'] ?? '');
+    return { status: 204, body: '' };
   }
 
   /** Built-in routes are registered through the same mechanism external plugins use. */
