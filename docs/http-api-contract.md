@@ -1,19 +1,23 @@
 # 最小可用 HTTP 入口契约（冻结）
 
-本契约在 `649c8d1` 基线上冻结，接口线与前端线共同遵守。改动需先回到主管这里改契约，再改实现。
+本契约在 `649c8d1` 基线上冻结，接口线与前端线共同遵守。改动需先回到主管这里改契约，再改实现。认证与运动历史两条线合入后，本文件按实现对齐过一次文档（只改文档，未改代码）。
+
+> **认证与运动历史不在本文件。** 本文件冻结的是基础入口与路由注册机制。`/api/auth/*`（5 条）与 `/api/workouts*`（5 条）**已经实现并合入 `integration`**，它们的权威契约是 [`auth-history-contract.md`](auth-history-contract.md)。本文件只保留一份指路索引（见「认证与运动历史路由（条件注册）」一节），细节一律以那一份为准，避免两处写法各自漂移。
 
 ## 范围
 
 - 只做最小可用前端所需的一条主流程：给一段服务器本地视频 → 分析 → 看到评分与建议。
 - 只用 Node.js 内置 `node:http`，不新增 npm 依赖。
-- 不做浏览器上传、不做登录鉴权、不做异步任务队列、不做数据库接入、不做多页面。
+- 页面内不做浏览器上传、不做异步任务队列、不做多页面。服务端另有 `POST /api/uploads` 供客户端直传字节流（见「数据面路由」），页面本身仍不使用它。
+- 基础路由（`/api/health`、`/api/videos`、`/api/exercises`、`/api/exercises/{id}/standard`、`/api/assessments`、`/`）不要求认证，也不依赖数据库。
+- 认证与运动历史路由是**条件注册**的：只有对应插件装载时才出现；未装载时这些路径返回 404 是设计行为，不是缺陷。
 
 ## 运行方式
 
 - 新增运行方式入口 `src/http-main.ts`（与 `src/user-db-main.ts` 同级：只挂载 + 常驻）。
 - HTTP 插件只由 `src/http-main.ts` 装载，不进 `src/app.ts` 的 CLI 清单，避免 CLI 模式被端口占住。
 - 监听地址默认 `127.0.0.1:8787`，由 `FITNESS_HTTP_HOST` / `FITNESS_HTTP_PORT` 覆盖。
-- 不做鉴权的前提是只绑 `127.0.0.1`。若要绑非回环地址，必须先经 owner 拍板。
+- **基础路由不做鉴权**的前提是只绑 `127.0.0.1`；认证与历史路由则要求 Bearer（见「认证与运动历史路由（条件注册）」）。若要绑非回环地址，必须先经 owner 拍板。
 
 ## 服务与注册机制
 
@@ -163,16 +167,43 @@ advice: { policy, items[] }
 
 - 由前端插件通过 `fitnessHttp.register(...)` 注册，返回单页 HTML。
 
+## 认证与运动历史路由（条件注册）
+
+**权威契约是 [`auth-history-contract.md`](auth-history-contract.md)，本节只是索引，不复述细节。** 下列 10 条路由已经实现；它们由 `HttpApiPlugin` 在装载顺序里用服务依赖条件注册，不是无条件存在。
+
+| 方法 | 路径 | 认证 | 注册条件 |
+| --- | --- | --- | --- |
+| `POST` | `/api/auth/register` | 否 | `fitnessAuth` + `fitnessUsers` |
+| `POST` | `/api/auth/login` | 否 | 同上 |
+| `POST` | `/api/auth/logout` | 是（Bearer） | 同上 |
+| `GET` | `/api/auth/me` | 是（Bearer） | 同上 |
+| `POST` | `/api/auth/password` | 是（Bearer） | 同上 |
+| `GET` | `/api/workouts` | 是（Bearer） | `fitnessAuth` + `fitnessWorkoutHistory` |
+| `POST` | `/api/workouts` | 是（Bearer） | 同上 |
+| `GET` | `/api/workouts/statistics` | 是（Bearer） | 同上 |
+| `GET` | `/api/workouts/{id}` | 是（Bearer） | 同上 |
+| `DELETE` | `/api/workouts/{id}` | 是（Bearer） | 同上 |
+
+- 请求体字段、查询参数、错误码与响应形状全部以 `auth-history-contract.md` 为准；本文件不再重复列一遍，改契约时也只改那一份。
+- `/api/workouts/statistics` 靠「静态段优先于路径参数」的匹配规则生效，不会被当成 `{id}`。
+- 两组路由都不接受请求体里的 `tenantId`/`userId`/`actorId`/`verified`，身份只取自会话行。
+- `POST /api/assessments` **不自动写历史**，历史由 `POST /api/workouts` 显式写入。
+
 ## 状态码映射
 
 | 状态码 | 触发条件 |
 | --- | --- |
-| 400 | `INVALID_ARGUMENTS` / `INVALID_WORKOUT` / `UNSUPPORTED_EXERCISE` / `INVALID_EXERCISE_DATA` / `VIDEO_INVALID` |
-| 404 | 路由不存在；`INPUT_IO`（文件不存在或不可读） |
+| 400 | `INVALID_ARGUMENTS` / `INVALID_WORKOUT` / `UNSUPPORTED_EXERCISE` / `INVALID_EXERCISE_DATA` / `VIDEO_INVALID`；认证与历史路由的请求体/查询校验失败（含 `USER_INVALID` / `WORKOUT_INVALID`） |
+| 401 | 仅认证与历史路由：`AUTH_INVALID_CREDENTIALS`（身份或密码错，不区分是哪一个）/ `AUTH_UNAUTHENTICATED`（缺失、无效、过期或已吊销的 Bearer） |
+| 404 | 路由不存在；`INPUT_IO`（文件不存在或不可读）；认证与历史路由的 `WORKOUT_NOT_FOUND`（不存在与不属于该用户同码） |
 | 405 | 方法不支持 |
+| 409 | 仅认证路由：`AUTH_CONFLICT` / `USER_CONFLICT`（该登录身份已被注册） |
 | 422 | `INSUFFICIENT_DATA` |
+| 429 | 仅认证路由：`AUTH_LOCKED`（连续失败次数超限，锁定期间密码正确也返回它） |
 | 503 | `INFERENCE_BUSY` / `MODEL_UNAVAILABLE`；`FITNESS_VIDEO_ROOT` 未配置或不可用（`INPUT_IO`） |
 | 500 | `INFERENCE_FAILED` / `POSE_INVALID` / `CANCELLED`；未预期异常（`INTERNAL_ERROR`，见下） |
+
+认证与历史路由的 401/409/429 语义细节见 [`auth-history-contract.md`](auth-history-contract.md)；本表只保证状态码不冲突。
 
 请求体校验（`POST /api/assessments`）采用与动作库一致的**严格模式**：
 
@@ -210,9 +241,12 @@ advice: { policy, items[] }
 
 ## 权限与安全边界
 
-- 本轮不做登录、Token、鉴权、CSRF、CORS 开放。
-- 只绑 `127.0.0.1`。绑定非回环地址前必须经 owner 拍板。
-- 不接入用户数据库插件，不返回任何个人资料。
+- **基础路由不要求认证**；认证只覆盖上一节的 `/api/auth/*` 与 `/api/workouts*`，传输方式为 `Authorization: Bearer`，语义以 [`auth-history-contract.md`](auth-history-contract.md) 为准。
+- 不做 CSRF，不做 CORS 开放。
+- 只绑 `127.0.0.1`。绑定非回环地址前必须经 owner 拍板。「基础路由不做鉴权」与「只监听回环地址」两条必须同时成立，放开任何一条都算改契约。
+- 客户端提交的 `tenantId` / `userId` / `actorId` / `verified` 一律 400 拒绝；租户与用户身份只来自会话行。
+- 受保护路由未认证一律 401，不泄漏资源是否存在；记录不存在与不属于该用户统一返回 `WORKOUT_NOT_FOUND`。
+- 只有 `/api/auth/register`、`/api/auth/login`、`/api/auth/me` 会返回本人资料，其余路由不返回任何个人资料。
 - 不返回服务器本机绝对路径。
 
 ## 与前端页面的契约
@@ -221,6 +255,7 @@ advice: { policy, items[] }
 - 页面调用 `GET /api/videos` 列出可选视频（`path` 为相对根目录的路径），提交时原样回传 `path`。
 - 页面调用 `GET /api/exercises` 与 `GET /api/exercises/{id}/standard` 展示动作目录信息（可选）。
 - 错误展示：非 2xx 时读 `error.code` 与 `error.message` 原样展示，不吞错误、不伪造成功。
+- 本轮页面只覆盖基础主流程：**不登录、不展示历史**。登录页与历史列表页不在本契约范围内；AGENTS.md 写的是「最小前端验收后再讨论下一步（多页面、登录、历史记录、移动端）」，要开这条线得先由 owner 明确「最小前端已验收」。
 
 ## 数据面路由（`feat/data-plane` 追加）
 
@@ -287,3 +322,4 @@ advice: { policy, items[] }
 评估接口**一行未改**。上传面通过「返回一个符合既有 `path` 契约的相对路径」与它对接，因此两者都不需要知道对方的存在。
 
 `GET /api/videos` 会跳过以 `_` 开头的目录，所以上传暂存区不会污染调试用清单。
+
