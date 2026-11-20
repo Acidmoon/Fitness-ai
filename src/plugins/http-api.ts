@@ -18,6 +18,7 @@ import {
   type VideoListItem, type VideoListResponse,
 } from '../http-contracts.ts';
 import { SUPPORTED_EXERCISES } from '../vision-contracts.ts';
+import { compactPoseTrack } from '../skeleton-contracts.ts';
 
 /** The HTTP entry point owns the listener; nothing else in the runtime binds a port. */
 export interface HttpApiConfig {
@@ -72,6 +73,12 @@ const STATUS_BY_CODE: Readonly<Partial<Record<FitnessErrorCode, number>>> = {
   METRIC_INVALID: 400,
   METRIC_NOT_FOUND: 404,
   METRIC_UNAVAILABLE: 503,
+  POSE_TRACK_INVALID: 400,
+  POSE_TRACK_TOO_LARGE: 413,
+  POSE_TRACK_NOT_FOUND: 404,
+  APP_UPDATE_UNAVAILABLE: 503,
+  APP_UPDATE_NOT_FOUND: 404,
+  APP_UPDATE_INVALID: 503,
 };
 
 /**
@@ -409,9 +416,9 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
   private write(response: ServerResponse, result: HttpResponse): void {
     if (response.headersSent || response.writableEnded) return;
     const headers: Record<string, string> = { ...result.headers };
-    // 204 must not carry a body or framing headers for one.
-    if (result.status === 204) {
-      response.writeHead(204, headers);
+    // 204 and 304 must not carry a body or framing headers for one.
+    if (result.status === 204 || result.status === 304) {
+      response.writeHead(result.status, headers);
       response.end();
       return;
     }
@@ -610,6 +617,7 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
       }),
       score: assessment.score,
       advice: assessment.advice,
+      poseTrack: compactPoseTrack(poses, motion),
     });
     return jsonResponse(200, response);
   }

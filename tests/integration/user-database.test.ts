@@ -18,6 +18,10 @@ import { PostgresPlugin } from '../../src/plugins/postgres.ts';
 import { UserDataProtectionPlugin } from '../../src/plugins/user-data-protection.ts';
 import { UserDatabasePlugin } from '../../src/plugins/user-database.ts';
 import { WorkoutHistoryPlugin } from '../../src/plugins/workout-history.ts';
+import { SkeletonPreviewPlugin } from '../../src/plugins/skeleton-preview.ts';
+import { compactPoseTrack } from '../../src/skeleton-contracts.ts';
+import { JointMotionPlugin } from '../../src/plugins/joint-motion.ts';
+import { makePoses } from '../vision-fixtures.ts';
 import { grantUserDatabaseAccess, initializeUserLookupKey, migrateUserDatabase, provisionUserTenant, userMigrations } from '../../src/user-migrations.ts';
 
 const adminUrl = process.env.FITNESS_TEST_ADMIN_DATABASE_URL;
@@ -43,6 +47,7 @@ async function boot(connectionString=runtimeUrl!,config=cryptoConfig) {
     await ctx.plugin(UserDataProtectionPlugin,config).await();
     await ctx.plugin(UserDatabasePlugin).await();
     await ctx.plugin(WorkoutHistoryPlugin).await();
+    await ctx.plugin(SkeletonPreviewPlugin).await();
     return ctx;
   } catch (error) { await ctx.fiber.dispose(); throw error; }
 }
@@ -82,7 +87,7 @@ before(async () => {
   owner=createRuntime();
   await owner.plugin(PostgresPlugin,{ connectionString:adminUrl!,tls:'local' }).await();
   await owner.plugin(UserDataProtectionPlugin,cryptoConfig).await();
-  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:4,version:4 });
+  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:5,version:5 });
   await grantUserDatabaseAccess(owner.fitnessDatabase,'fitness_users_runtime');
   await initializeUserLookupKey(owner.fitnessDatabase,owner.fitnessUserDataProtection);
   await provisionUserTenant(owner.fitnessDatabase,tenantA,'Tenant A');
@@ -92,17 +97,17 @@ before(async () => {
 after(async () => { if (app) await app.fiber.dispose(); if (owner) await owner.fiber.dispose(); });
 
 test('checksummed migrations are repeatable and reject changed applied SQL',async () => {
-  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:0,version:4 });
+  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase),{ applied:0,version:5 });
   const migrations=await userMigrations();
-  assert.deepEqual(migrations.map(migration => [migration.version,migration.name]),[[1,'users'],[2,'auth'],[3,'workout-history'],[4,'wearable']]);
+  assert.deepEqual(migrations.map(migration => [migration.version,migration.name]),[[1,'users'],[2,'auth'],[3,'workout-history'],[4,'wearable'],[5,'pose-tracks']]);
   const history=await owner.fitnessDatabase.transaction(tx => tx.query<{ version:number; name:string; checksum:string }>(
     'SELECT version,name,checksum FROM fitness_users.schema_migrations ORDER BY version'));
   assert.deepEqual(history.rows.map(row => [row.version,row.name,row.checksum]),migrations.map(migration => [migration.version,migration.name,migration.checksum]));
   const tables=await owner.fitnessDatabase.transaction(tx => tx.query<{ relname:string; relrowsecurity:boolean; relforcerowsecurity:boolean }>(`SELECT relname,relrowsecurity,relforcerowsecurity
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='fitness_users'
-    AND c.relname IN ('credentials','sessions','workout_records','wearable_samples') ORDER BY relname`));
+    AND c.relname IN ('credentials','sessions','workout_records','wearable_samples','workout_pose_tracks') ORDER BY relname`));
   assert.deepEqual(tables.rows.map(row => [row.relname,row.relrowsecurity,row.relforcerowsecurity]),
-    [['credentials',true,true],['sessions',true,true],['wearable_samples',true,true],['workout_records',true,true]]);
+    [['credentials',true,true],['sessions',true,true],['wearable_samples',true,true],['workout_pose_tracks',true,true],['workout_records',true,true]]);
   const checksum=migrations[1]!.checksum;
   await owner.fitnessDatabase.transaction(tx => tx.query('UPDATE fitness_users.schema_migrations SET checksum=$1 WHERE version=2',['0'.repeat(64)]));
   try { await assert.rejects(migrateUserDatabase(owner.fitnessDatabase),hasCode('DATABASE_MIGRATION')); }
@@ -131,7 +136,7 @@ test('a failed migration rolls back completely and a retry applies every version
       const present=await ctx.fitnessDatabase.transaction(tx => tx.query<{ name:string|null }>("SELECT to_regclass('fitness_users.schema_migrations') AS name"));
       assert.equal(present.rows[0]?.name,null);
       await ctx.fitnessDatabase.transaction(tx => tx.query('DROP SCHEMA fitness_users CASCADE'));
-      assert.deepEqual(await migrateUserDatabase(ctx.fitnessDatabase),{ applied:4,version:4 });
+      assert.deepEqual(await migrateUserDatabase(ctx.fitnessDatabase),{ applied:5,version:5 });
       const count=await ctx.fitnessDatabase.transaction(tx => tx.query<{ count:number }>('SELECT count(*)::integer AS count FROM fitness_users.schema_migrations'));
       assert.equal(count.rows[0]!.count,4);
     } finally { await ctx.fiber.dispose(); }
@@ -650,4 +655,35 @@ test('capturedAt defaults to the write time and removal is tenant-scoped',async 
   assert.deepEqual((await app.fitnessWorkoutHistory.list(principal)).items,[]);
   await assert.rejects(app.fitnessWorkoutHistory.get(principal,'not-a-uuid'),hasCode('WORKOUT_INVALID'));
   await assert.rejects(app.fitnessWorkoutHistory.record(principal,workoutInput({ score:scoreOf(81.555) })),hasCode('WORKOUT_INVALID'));
+});
+
+test('workout pose tracks are encrypted, RLS-isolated, and cascade-deleted with their workout',async () => {
+  const t1=await tenant(); const t2=await tenant();
+  const u1=await create(t1); const u1Other=await create(t1); const u2=await create(t2);
+  const p1=principalFor(t1,u1.user.id);
+  const p1Other=principalFor(t1,u1Other.user.id);
+  const p2=principalFor(t2,u2.user.id);
+  const record=await app.fitnessWorkoutHistory.record(p1,workoutInput());
+
+  const poses=makePoses();
+  const motion=new JointMotionPlugin(createRuntime()).analyze(poses,{ exercise:'squat',targetRepetitions:1,sessionId:record.sessionId });
+  const track=compactPoseTrack(poses,motion);
+
+  await assert.rejects(app.fitnessSkeletonPreview.save(p1Other,record.id,track),hasCode('WORKOUT_NOT_FOUND'));
+  await assert.rejects(app.fitnessSkeletonPreview.save(p2,record.id,track),hasCode('WORKOUT_NOT_FOUND'));
+
+  const receipt=await app.fitnessSkeletonPreview.save(p1,record.id,track);
+  assert.equal(receipt.workoutId,record.id);
+  assert.equal(receipt.frames,track.frames.length);
+
+  assert.deepEqual(await app.fitnessSkeletonPreview.get(p1,record.id),track);
+  const gif=await app.fitnessSkeletonPreview.renderGif(p1,record.id);
+  assert.equal(Buffer.from(gif.bytes.subarray(0,6)).toString('ascii'),'GIF89a');
+
+  await assert.rejects(app.fitnessSkeletonPreview.get(p1Other,record.id),hasCode('POSE_TRACK_NOT_FOUND'));
+  await assert.rejects(app.fitnessSkeletonPreview.renderGif(p2,record.id),hasCode('POSE_TRACK_NOT_FOUND'));
+
+  // Deleting the parent workout cascades to workout_pose_tracks automatically.
+  await app.fitnessWorkoutHistory.remove(p1,record.id);
+  await assert.rejects(app.fitnessSkeletonPreview.get(p1,record.id),hasCode('POSE_TRACK_NOT_FOUND'));
 });

@@ -96,7 +96,7 @@ before(async () => {
   await owner.plugin(PostgresPlugin, { connectionString: adminDatabaseUrl, tls: 'local' }).await();
   await owner.plugin(UserDataProtectionPlugin, cryptoConfig).await();
   // 全新库：四条迁移必须一次跑完，004 就是其中之一。
-  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase), { applied: 4, version: 4 });
+  assert.deepEqual(await migrateUserDatabase(owner.fitnessDatabase), { applied: 5, version: 5 });
   await grantUserDatabaseAccess(owner.fitnessDatabase, RUNTIME_ROLE);
   await initializeUserLookupKey(owner.fitnessDatabase, owner.fitnessUserDataProtection);
   await provisionUserTenant(owner.fitnessDatabase, tenantA, 'Wearable tenant A');
