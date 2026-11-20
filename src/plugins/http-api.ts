@@ -17,6 +17,7 @@ import {
   type HealthResponse, type HttpMethod, type HttpRequest, type HttpResponse, type HttpRoute,
   type VideoListItem, type VideoListResponse,
 } from '../http-contracts.ts';
+import { SUPPORTED_EXERCISES } from '../vision-contracts.ts';
 
 /** The HTTP entry point owns the listener; nothing else in the runtime binds a port. */
 export interface HttpApiConfig {
@@ -29,7 +30,7 @@ export interface HttpApiConfig {
 }
 
 const METHODS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
-const EXERCISES = ['squat', 'push-up'] as const;
+const EXERCISES = SUPPORTED_EXERCISES;
 const BODY_LIMIT = 1024 * 1024;
 /** 上传流上限；与服务层的 FITNESS_UPLOAD_MAX_BYTES 是两道独立的闸。 */
 const UPLOAD_LIMIT_BYTES = 1024 ** 3;
@@ -595,13 +596,16 @@ export class HttpApiPlugin extends Service implements FitnessHttp {
           startMs: repetition.startMs,
           bottomMs: repetition.bottomMs,
           endMs: repetition.endMs,
-          minAngle: repetition.minAngle,
-          maxAngle: repetition.maxAngle,
+          ...(repetition.minAngle === undefined ? {} : { minAngle: repetition.minAngle }),
+          ...(repetition.maxAngle === undefined ? {} : { maxAngle: repetition.maxAngle }),
+          ...(repetition.amplitude === undefined ? {} : { amplitude: repetition.amplitude }),
+          ...(repetition.alignment === undefined ? {} : { alignment: repetition.alignment }),
           rangeOfMotion: repetition.rangeOfMotion,
           stability: repetition.stability,
           durationMs: repetition.durationMs,
           confidence: repetition.confidence,
         }))),
+        ...(motion.holds === undefined ? {} : { holds: motion.holds }),
         warnings: motion.warnings,
       }),
       score: assessment.score,

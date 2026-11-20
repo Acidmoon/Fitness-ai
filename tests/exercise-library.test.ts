@@ -32,9 +32,11 @@ test('all pinned source records are discoverable without dropping incomplete ent
     const bytes = await readFile(new URL('../src/data/free-exercise-db/exercises.json', import.meta.url));
     assert.equal(createHash('sha256').update(bytes).digest('hex'), manifest.source.sha256);
     const source = JSON.parse(bytes.toString('utf8')) as { id: string; instructions: string[] }[];
-    assert.equal(manifest.counts.exercises, 876);
-    assert.equal(manifest.counts.goalScoring, 876);
-    assert.equal(manifest.counts.heuristicTechnique, 2);
+    assert.equal(manifest.source.exerciseCount, 876);
+    assert.equal(manifest.counts.exercises, 878);
+    assert.equal(manifest.counts.projectDefined, 2);
+    assert.equal(manifest.counts.goalScoring, 878);
+    assert.equal(manifest.counts.heuristicTechnique, 8);
     assert.equal(manifest.counts.calibratedTechnique, 0);
     assert.equal(manifest.counts.missingInstructions, 5);
     assert.equal(manifest.counts.partialInstructions, 2);
@@ -43,22 +45,31 @@ test('all pinned source records are discoverable without dropping incomplete ent
     assert.equal(manifest.source.includesQualityAnnotations, false);
     assert.equal(manifest.source.includesMediaFiles, false);
     const ids: string[] = [];
-    for (let offset = 0; offset < source.length; offset += 100) {
+    for (let offset = 0; offset < manifest.counts.exercises; offset += 100) {
       const page = ctx.fitnessExercises.list({ offset, limit: 100 });
-      assert.equal(page.total, source.length);
+      assert.equal(page.total, manifest.counts.exercises);
       ids.push(...page.items.map(item => item.id));
     }
-    assert.deepEqual(ids, source.map(item => item.id));
+    assert.deepEqual(ids, [...source.map(item => item.id), 'Sit_And_Reach', 'Single_Leg_Balance']);
+    const upstreamHeuristic = ['Bodyweight_Squat', 'Pushups', 'Crunches', 'Sit-Up', 'Plank', 'Rope_Jumping'];
     for (const raw of source) {
       const definition = ctx.fitnessExercises.get(raw.id);
       const standard = ctx.fitnessExercises.getStandard(raw.id);
+      assert.equal(definition.origin, 'free-exercise-db');
       assert.deepEqual(definition.instructions, raw.instructions);
       assert.deepEqual(standard.referenceInstructions, raw.instructions);
       assert.equal(standard.exerciseId, raw.id);
       assert.equal(standard.completion.measuresTechnique, false);
       assert.equal(standard.completion.targetSource, 'caller');
-      assert.equal(standard.technique.status, ['Bodyweight_Squat', 'Pushups'].includes(raw.id) ? 'heuristic' : 'unavailable');
+      assert.equal(standard.technique.status, upstreamHeuristic.includes(raw.id) ? 'heuristic' : 'unavailable');
       assert.equal(ctx.fitnessExercises.scoreGoal({ ...goal, exerciseId: raw.id }).total, 80);
+    }
+    for (const projectId of ['Sit_And_Reach', 'Single_Leg_Balance']) {
+      const definition = ctx.fitnessExercises.get(projectId);
+      const standard = ctx.fitnessExercises.getStandard(projectId);
+      assert.equal(definition.origin, 'project');
+      assert.equal(standard.technique.status, 'heuristic');
+      assert.equal(ctx.fitnessExercises.scoreGoal({ ...goal, exerciseId: projectId }).total, 80);
     }
     assert.equal(ctx.fitnessExercises.get('Iron_Cross').instructionStatus, 'missing');
     assert.deepEqual(ctx.fitnessExercises.get('Iron_Cross').instructions, []);
@@ -73,12 +84,40 @@ test('stable aliases resolve exact exercise variants and returned data is immuta
     assert.equal(ctx.fitnessExercises.get(' 深蹲 '), squat);
     assert.equal(ctx.fitnessExercises.get('BODYWEIGHT_SQUAT'), squat);
     assert.equal(ctx.fitnessExercises.get('push-up').id, 'Pushups');
+    assert.equal(ctx.fitnessExercises.get('卷腹').id, 'Crunches');
+    assert.equal(ctx.fitnessExercises.get('仰卧起坐').id, 'Sit-Up');
+    assert.equal(ctx.fitnessExercises.get('平板支撑').id, 'Plank');
+    assert.equal(ctx.fitnessExercises.get('跳绳').id, 'Rope_Jumping');
+    assert.equal(ctx.fitnessExercises.get('坐位体前屈').id, 'Sit_And_Reach');
+    assert.equal(ctx.fitnessExercises.get('单脚站立平衡测试').id, 'Single_Leg_Balance');
     const standard = ctx.fitnessExercises.getStandard('squat');
     assert.equal(standard.technique.status, 'heuristic');
     if (standard.technique.status === 'heuristic') {
       assert.equal(standard.technique.validation, 'uncalibrated');
       assert.equal(standard.technique.policy.id, 'demo-squat-score');
+      assert.equal(standard.technique.measurementMode, 'cycle');
+      assert.equal(standard.technique.targetUnit, 'repetitions');
       assert.throws(() => { (standard.technique as { weights: { tempo: number } }).weights.tempo = 99; }, TypeError);
+    }
+    const plankStandard = ctx.fitnessExercises.getStandard('plank');
+    assert.equal(plankStandard.technique.status, 'heuristic');
+    if (plankStandard.technique.status === 'heuristic') {
+      assert.equal(plankStandard.technique.measurementMode, 'hold');
+      assert.equal(plankStandard.technique.targetUnit, 'seconds');
+    }
+    const balanceStandard = ctx.fitnessExercises.getStandard('balance');
+    assert.equal(balanceStandard.technique.status, 'heuristic');
+    if (balanceStandard.technique.status === 'heuristic') {
+      assert.equal(balanceStandard.technique.measurementMode, 'hold');
+      assert.equal(balanceStandard.technique.targetUnit, 'seconds');
+      assert.equal(balanceStandard.technique.motionExercise, 'balance');
+    }
+    const reachStandard = ctx.fitnessExercises.getStandard('sit-and-reach');
+    assert.equal(reachStandard.technique.status, 'heuristic');
+    if (reachStandard.technique.status === 'heuristic') {
+      assert.equal(reachStandard.technique.measurementMode, 'reach');
+      assert.equal(reachStandard.technique.targetUnit, 'repetitions');
+      assert.equal(reachStandard.technique.motionExercise, 'sit-and-reach');
     }
     assert.throws(() => { (squat.instructions as string[]).push('changed'); }, TypeError);
     assert.throws(() => { (ctx.fitnessExercises.manifest().source.categoryCounts as { strength: number }).strength = 0; }, TypeError);
@@ -95,10 +134,10 @@ test('catalog filters combine and pagination preserves a stable source order', a
     assert.ok(filtered.items.every(item => item.category === 'strength' && item.equipment === 'body only' &&
       [...item.primaryMuscles, ...item.secondaryMuscles].includes('quadriceps')));
     assert.equal(ctx.fitnessExercises.list({ query: '俯卧撑' }).items[0]?.id, 'Pushups');
-    assert.equal(ctx.fitnessExercises.list({ technique: 'heuristic' }).total, 2);
+    assert.equal(ctx.fitnessExercises.list({ technique: 'heuristic' }).total, 8);
     assert.equal(ctx.fitnessExercises.list({ category: 'cardio' }).total, 14);
     assert.equal(ctx.fitnessExercises.list({ equipment: null }).items.every(item => item.equipment === null), true);
-    assert.deepEqual(ctx.fitnessExercises.list({ offset: 876 }).items, []);
+    assert.deepEqual(ctx.fitnessExercises.list({ offset: 878 }).items, []);
     for (const invalid of [{ limit: 101 }, { limit: null }, { offset: -1 }, { limit: 1.5 }, { category: 'invented' }, { muscle: 'heart' }, { extra: true }]) {
       assert.throws(() => ctx.fitnessExercises.list(invalid as ExerciseQuery), hasCode('INVALID_EXERCISE_DATA'));
     }

@@ -46,7 +46,11 @@ test('CLI rejects incomplete or invalid video arguments before starting inferenc
 test('CLI lists all catalog records and exposes explicit technique availability', () => {
   const manifest = run(['exercises', 'manifest']);
   assert.equal(manifest.status, 0, manifest.stderr);
-  assert.equal(JSON.parse(manifest.stdout).counts.exercises, 876);
+  const manifestBody = JSON.parse(manifest.stdout);
+  assert.equal(manifestBody.source.exerciseCount, 876);
+  assert.equal(manifestBody.counts.exercises, 878);
+  assert.equal(manifestBody.counts.projectDefined, 2);
+  assert.equal(manifestBody.counts.heuristicTechnique, 8);
   const list = run(['exercises', 'list', '--query', 'squat', '--limit', '2']);
   assert.equal(list.status, 0, list.stderr);
   assert.equal(JSON.parse(list.stdout).items.length, 2);
@@ -56,6 +60,12 @@ test('CLI lists all catalog records and exposes explicit technique availability'
   const detail = run(['exercises', 'show', '俯卧撑']);
   assert.equal(detail.status, 0, detail.stderr);
   assert.equal(JSON.parse(detail.stdout).id, 'Pushups');
+  const reachStandard = run(['exercises', 'standard', '坐位体前屈']);
+  assert.equal(reachStandard.status, 0, reachStandard.stderr);
+  assert.equal(JSON.parse(reachStandard.stdout).technique.motionExercise, 'sit-and-reach');
+  const balanceStandard = run(['exercises', 'standard', 'balance']);
+  assert.equal(balanceStandard.status, 0, balanceStandard.stderr);
+  assert.equal(JSON.parse(balanceStandard.stdout).technique.targetUnit, 'seconds');
 });
 
 test('CLI scores target completion without inventing movement quality', () => {

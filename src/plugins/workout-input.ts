@@ -50,7 +50,7 @@ export class WorkoutInputPlugin extends Service implements FitnessInput {
       return Object.freeze({
         rangeOfMotion: number(rep.rangeOfMotion, `${path}.rangeOfMotion`, 0, 1),
         stability: number(rep.stability, `${path}.stability`, 0, 1),
-        durationMs: number(rep.durationMs, `${path}.durationMs`, 1, 60_000),
+        durationMs: number(rep.durationMs, `${path}.durationMs`, 1, 600_000),
         confidence: number(rep.confidence, `${path}.confidence`, 0, 1),
       });
     });

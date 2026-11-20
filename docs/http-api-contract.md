@@ -131,8 +131,8 @@ export function jsonResponse(status: number, body: unknown): HttpResponse;
 | 字段 | 类型 | 必填 | 约束 |
 | --- | --- | --- | --- |
 | `path` | string | 是 | 服务器本地视频路径；相对 `FITNESS_VIDEO_ROOT` 或绝对路径；解析后（含符号链接解析）必须仍在 `FITNESS_VIDEO_ROOT` 内 |
-| `exercise` | "squat" \| "push-up" | 是 | |
-| `targetRepetitions` | integer | 是 | 1–10000 |
+| `exercise` | `"squat" \| "push-up" \| "crunch" \| "sit-up" \| "plank" \| "jump-rope" \| "sit-and-reach" \| "balance"` | 是 | 8 项支持的视频分析动作 |
+| `targetRepetitions` | integer | 是 | 1–10000（周期/前屈动作表示目标次数，`plank`/`balance` 表示目标保持秒数） |
 | `sessionId` | string | 否 | 1–128 字符，默认服务端生成 |
 | `sampleFps` | integer | 否 | 1–30，默认 10 |
 
@@ -143,12 +143,12 @@ schemaVersion, sessionId, exercise,
 video: { name, bytes, width, height, sourceFps, totalFrames, decodedFrames, durationMs },
 model: { id, sha256 },
 sampling: { requestedFps, sampledFrames },
-motion: { policy, side, validFrames, rejectedFrames, repetitions[], warnings[] },
+motion: { policy, side, validFrames, rejectedFrames, repetitions[], holds?, warnings[] },
 score: { policy, standard?, total, dimensions[], quality{} },
 advice: { policy, items[] }
 ```
 
-`motion.repetitions[]` 元素：`startMs, bottomMs, endMs, minAngle, maxAngle, rangeOfMotion, stability, durationMs, confidence`。
+`motion.repetitions[]` 元素：`startMs, bottomMs, endMs, minAngle?, maxAngle?, amplitude?, alignment?, rangeOfMotion, stability, durationMs, confidence`（`squat`/`push-up` 保持原有 9 个字段不变；`amplitude` 用于跳绳/坐位体前屈，`alignment` 用于静态支撑/坐位体前屈）。`motion.holds[]` 仅对静态支撑与前屈保持动作（`plank`、`balance`、`sit-and-reach`）返回，元素为 `{ startMs, endMs, durationMs, alignment, stability, confidence }`。
 
 `model` 字段来自 `poses.model`，只回 `id` 与 `sha256`，不回 `runtime`/`inputSize`/`preprocessing`。
 

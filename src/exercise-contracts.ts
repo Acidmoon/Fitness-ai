@@ -1,4 +1,5 @@
 import type { DimensionKey, PolicyReference } from './contracts.ts';
+import type { MotionMeasurementMode, SupportedExercise } from './vision-contracts.ts';
 
 export const EXERCISE_CATEGORIES = [
   'strength', 'stretching', 'plyometrics', 'strongman', 'powerlifting',
@@ -57,6 +58,7 @@ export interface ExerciseDefinition {
   /** Pinned remote references only; media is not downloaded during startup. */
   readonly imageUrls: readonly string[];
   readonly mediaRights: 'unverified';
+  readonly origin: 'free-exercise-db' | 'project';
   readonly sourceUrl: string;
   readonly sourceRevision: string;
   readonly capabilities: {
@@ -85,7 +87,9 @@ export interface HeuristicTechniqueStandard {
   readonly origin: 'project';
   readonly validation: 'uncalibrated';
   readonly observationSchema: 'workout@1.0';
-  readonly motionExercise: 'squat' | 'push-up';
+  readonly motionExercise: SupportedExercise;
+  readonly measurementMode: MotionMeasurementMode;
+  readonly targetUnit: 'repetitions' | 'seconds';
   readonly minConfidence: number;
   readonly weights: Readonly<Record<DimensionKey, number>>;
   readonly tempo: { readonly minMs: number; readonly maxMs: number };
@@ -129,6 +133,7 @@ export interface ExerciseCatalogManifest {
   readonly source: ExerciseSource;
   readonly counts: {
     readonly exercises: number;
+    readonly projectDefined: number;
     readonly goalScoring: number;
     readonly heuristicTechnique: number;
     readonly calibratedTechnique: 0;

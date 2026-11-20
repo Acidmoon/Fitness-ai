@@ -1,7 +1,8 @@
 import { Service, type Context } from 'cordis';
 import rawExercises from '../data/free-exercise-db/exercises.json' with { type: 'json' };
 import rawManifest from '../data/free-exercise-db/manifest.json' with { type: 'json' };
-import { FitnessError } from '../contracts.ts';
+import { FitnessError, type DimensionKey } from '../contracts.ts';
+import type { MotionMeasurementMode, SupportedExercise } from '../vision-contracts.ts';
 import {
   EXERCISE_CATEGORIES, EXERCISE_EQUIPMENT, EXERCISE_LEVELS, EXERCISE_MUSCLES, GOAL_UNITS,
   type CompletionStandard, type ExerciseCatalogManifest, type ExerciseDefinition,
@@ -10,10 +11,81 @@ import {
   type HeuristicTechniqueStandard,
 } from '../exercise-contracts.ts';
 
+const PROJECT_REVISION = 'project-campus-1.0';
+
 const ALIASES: Readonly<Record<string, readonly string[]>> = {
   Bodyweight_Squat: ['squat', '深蹲'],
   Pushups: ['push-up', 'pushup', '俯卧撑'],
+  Crunches: ['crunch', '卷腹'],
+  'Sit-Up': ['situp', '仰卧起坐'],
+  Plank: ['平板支撑'],
+  Rope_Jumping: ['jump-rope', 'jumprope', '跳绳'],
+  Sit_And_Reach: ['sit-and-reach', 'sitandreach', '坐位体前屈', '体前屈'],
+  Single_Leg_Balance: ['balance', 'single-leg-balance', '单脚站立', '单脚站立平衡', '单脚站立平衡测试', '平衡测试'],
 };
+
+interface TechniqueProfile {
+  readonly measurementMode: MotionMeasurementMode;
+  readonly targetUnit: 'repetitions' | 'seconds';
+  readonly weights: Readonly<Record<DimensionKey, number>>;
+  readonly tempo: { readonly minMs: number; readonly maxMs: number };
+}
+
+/** Uncalibrated demo weights; holds, reaches, and jumps use their own tempo windows. */
+const TECHNIQUE: Readonly<Record<SupportedExercise, TechniqueProfile>> = Object.freeze({
+  squat: {
+    measurementMode: 'cycle', targetUnit: 'repetitions',
+    weights: { completion: 20, rangeOfMotion: 40, stability: 25, tempo: 15 },
+    tempo: { minMs: 2_000, maxMs: 5_000 },
+  },
+  'push-up': {
+    measurementMode: 'cycle', targetUnit: 'repetitions',
+    weights: { completion: 20, rangeOfMotion: 40, stability: 25, tempo: 15 },
+    tempo: { minMs: 2_000, maxMs: 5_000 },
+  },
+  crunch: {
+    measurementMode: 'cycle', targetUnit: 'repetitions',
+    weights: { completion: 20, rangeOfMotion: 40, stability: 25, tempo: 15 },
+    tempo: { minMs: 1_500, maxMs: 4_000 },
+  },
+  'sit-up': {
+    measurementMode: 'cycle', targetUnit: 'repetitions',
+    weights: { completion: 20, rangeOfMotion: 40, stability: 25, tempo: 15 },
+    tempo: { minMs: 2_000, maxMs: 5_000 },
+  },
+  plank: {
+    measurementMode: 'hold', targetUnit: 'seconds',
+    weights: { completion: 20, rangeOfMotion: 20, stability: 30, tempo: 30 },
+    tempo: { minMs: 20_000, maxMs: 600_000 },
+  },
+  'jump-rope': {
+    measurementMode: 'oscillation', targetUnit: 'repetitions',
+    weights: { completion: 20, rangeOfMotion: 25, stability: 30, tempo: 25 },
+    tempo: { minMs: 400, maxMs: 1_200 },
+  },
+  'sit-and-reach': {
+    measurementMode: 'reach', targetUnit: 'repetitions',
+    weights: { completion: 15, rangeOfMotion: 45, stability: 25, tempo: 15 },
+    tempo: { minMs: 2_000, maxMs: 15_000 },
+  },
+  balance: {
+    measurementMode: 'hold', targetUnit: 'seconds',
+    weights: { completion: 25, rangeOfMotion: 20, stability: 35, tempo: 20 },
+    tempo: { minMs: 10_000, maxMs: 300_000 },
+  },
+});
+
+const MOTION_EXERCISE_BY_ID: Readonly<Record<string, SupportedExercise>> = Object.freeze({
+  Bodyweight_Squat: 'squat',
+  Pushups: 'push-up',
+  Crunches: 'crunch',
+  'Sit-Up': 'sit-up',
+  Plank: 'plank',
+  Rope_Jumping: 'jump-rope',
+  Sit_And_Reach: 'sit-and-reach',
+  Single_Leg_Balance: 'balance',
+});
+
 const COMPLETION: CompletionStandard = Object.freeze({
   id: 'personal-goal-completion', version: '1.0.0', kind: 'goal-completion', origin: 'project',
   units: GOAL_UNITS, targetSource: 'caller', formula: '100 * min(observed / target, 1)',
@@ -22,16 +94,77 @@ const COMPLETION: CompletionStandard = Object.freeze({
 Object.freeze(GOAL_UNITS);
 
 function technique(id: string): ExerciseStandard['technique'] {
-  const exercise = id === 'Bodyweight_Squat' ? 'squat' : id === 'Pushups' ? 'push-up' : undefined;
+  const exercise = MOTION_EXERCISE_BY_ID[id];
   if (!exercise) return Object.freeze({ status: 'unavailable', reason: 'no-calibrated-policy' });
+  const profile = TECHNIQUE[exercise];
   const standard: HeuristicTechniqueStandard = {
     status: 'heuristic', origin: 'project', validation: 'uncalibrated',
     policy: Object.freeze({ id: `demo-${exercise}-score`, version: '0.1.0', kind: 'heuristic' }),
-    observationSchema: 'workout@1.0', motionExercise: exercise, minConfidence: 0.6,
-    weights: Object.freeze({ completion: 20, rangeOfMotion: 40, stability: 25, tempo: 15 }),
-    tempo: Object.freeze({ minMs: 2000, maxMs: 5000 }),
+    observationSchema: 'workout@1.0', motionExercise: exercise,
+    measurementMode: profile.measurementMode, targetUnit: profile.targetUnit,
+    minConfidence: 0.6,
+    weights: Object.freeze({ ...profile.weights }),
+    tempo: Object.freeze({ ...profile.tempo }),
   };
   return Object.freeze(standard);
+}
+
+/** Project-defined campus fitness-test entries with no exact match in free-exercise-db. */
+function projectDefinitions(): readonly ExerciseDefinition[] {
+  return Object.freeze([
+    Object.freeze({
+      schemaVersion: '1.0' as const,
+      id: 'Sit_And_Reach',
+      name: 'Sit and Reach',
+      aliases: Object.freeze([...(ALIASES.Sit_And_Reach ?? [])]),
+      category: 'stretching' as const,
+      level: 'beginner' as const,
+      force: 'static' as const,
+      mechanic: 'compound' as const,
+      equipment: 'body only' as const,
+      primaryMuscles: Object.freeze(['hamstrings', 'lower back'] as const),
+      secondaryMuscles: Object.freeze(['calves'] as const),
+      instructions: Object.freeze([
+        'Sit on a flat surface with both legs extended straight in front of you and knees kept flat.',
+        'Place the camera in a side view so your shoulder, wrist, hip, knee, and ankle remain clearly visible.',
+        'Exhale and reach both hands slowly forward along the line of your legs without bending your knees or bouncing.',
+        'Hold your maximum comfortable forward reach steadily for at least 2 seconds, then relax back to upright sitting.',
+      ]),
+      instructionStatus: 'available' as const,
+      imageUrls: Object.freeze([] as string[]),
+      mediaRights: 'unverified' as const,
+      origin: 'project' as const,
+      sourceUrl: 'project://fitness-ai/exercises/Sit_And_Reach',
+      sourceRevision: PROJECT_REVISION,
+      capabilities: Object.freeze({ goalScoring: true as const, techniqueScoring: 'heuristic' as const, poseAnalysis: 'heuristic' as const }),
+    }),
+    Object.freeze({
+      schemaVersion: '1.0' as const,
+      id: 'Single_Leg_Balance',
+      name: 'Single-Leg Balance',
+      aliases: Object.freeze([...(ALIASES.Single_Leg_Balance ?? [])]),
+      category: 'strength' as const,
+      level: 'beginner' as const,
+      force: 'static' as const,
+      mechanic: 'compound' as const,
+      equipment: 'body only' as const,
+      primaryMuscles: Object.freeze(['calves', 'quadriceps'] as const),
+      secondaryMuscles: Object.freeze(['glutes', 'abdominals'] as const),
+      instructions: Object.freeze([
+        'Stand upright facing the camera (front or oblique full-body view) with both shoulders, hips, and ankles visible.',
+        'Shift your weight onto one standing foot and lift the other foot clearly off the ground.',
+        'Keep your torso upright and steady without hopping or touching the raised foot down.',
+        'Hold the single-leg stance continuously toward your target duration in seconds.',
+      ]),
+      instructionStatus: 'available' as const,
+      imageUrls: Object.freeze([] as string[]),
+      mediaRights: 'unverified' as const,
+      origin: 'project' as const,
+      sourceUrl: 'project://fitness-ai/exercises/Single_Leg_Balance',
+      sourceRevision: PROJECT_REVISION,
+      capabilities: Object.freeze({ goalScoring: true as const, techniqueScoring: 'heuristic' as const, poseAnalysis: 'heuristic' as const }),
+    }),
+  ]);
 }
 
 function fail(message: string): never { throw new FitnessError('INVALID_EXERCISE_DATA', message); }
@@ -88,6 +221,7 @@ function definitions(): readonly ExerciseDefinition[] {
         instructions, instructionStatus: !instructions.some(step => step.trim()) ? 'missing'
           : instructions.some(step => !step.trim()) ? 'partial' : 'available',
         mediaRights: 'unverified',
+        origin: 'free-exercise-db',
         imageUrls: Object.freeze(images.map(image => `https://raw.githubusercontent.com/yuhonas/free-exercise-db/${rawManifest.revision}/exercises/${image}`)),
         sourceUrl: `${sourceRoot}/${id}.json`, sourceRevision: rawManifest.revision,
         capabilities: Object.freeze({ goalScoring: true, techniqueScoring: quality.status, poseAnalysis: quality.status }),
@@ -100,7 +234,9 @@ function definitions(): readonly ExerciseDefinition[] {
 
 export class ExerciseLibraryPlugin extends Service implements FitnessExercises {
   static provide = 'fitnessExercises';
-  private readonly exercises = definitions();
+  private readonly upstream = definitions();
+  private readonly custom = projectDefinitions();
+  private readonly exercises = Object.freeze([...this.upstream, ...this.custom]);
   private readonly index = new Map<string, ExerciseDefinition>();
   private readonly standards = new Map<string, ExerciseStandard>();
   private readonly catalog: ExerciseCatalogManifest;
@@ -108,7 +244,7 @@ export class ExerciseLibraryPlugin extends Service implements FitnessExercises {
   constructor(ctx: Context) {
     super(ctx, 'fitnessExercises');
     const counts = Object.fromEntries(EXERCISE_CATEGORIES.map(category => [category,
-      this.exercises.filter(item => item.category === category).length]));
+      this.upstream.filter(item => item.category === category).length]));
     for (const category of EXERCISE_CATEGORIES) {
       if (counts[category] !== rawManifest.categoryCounts[category]) throw new FitnessError('CATALOG_INVALID', `动作类别统计不一致：${category}`);
     }
@@ -131,7 +267,7 @@ export class ExerciseLibraryPlugin extends Service implements FitnessExercises {
     this.catalog = Object.freeze({
       schemaVersion: '1.0', source,
       counts: Object.freeze({
-        exercises: this.exercises.length, goalScoring: this.exercises.length,
+        exercises: this.exercises.length, projectDefined: this.custom.length, goalScoring: this.exercises.length,
         heuristicTechnique: this.exercises.filter(item => item.capabilities.techniqueScoring === 'heuristic').length,
         calibratedTechnique: 0, missingInstructions: this.exercises.filter(item => item.instructionStatus === 'missing').length,
         partialInstructions: this.exercises.filter(item => item.instructionStatus === 'partial').length,

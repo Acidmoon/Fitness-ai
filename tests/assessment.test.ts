@@ -170,3 +170,82 @@ test('startup reports missing dependencies instead of treating a pending plugin 
     await ctx.fiber.dispose();
   }
 });
+
+test('hold exercises score targetRepetitions in seconds and emit hold-specific coaching advice', async () => {
+  const ctx = createRuntime();
+  try {
+    await mountPlugins(ctx, assessmentPlugins);
+    // Plank: 15s hold against 30s target -> completion = 0.5, tempo = 15000/20000 = 0.75.
+    const plankPartial = ctx.fitnessAssessment.evaluate(session({
+      exercise: 'plank', targetRepetitions: 30,
+      repetitions: [{ rangeOfMotion: 0.7, stability: 0.7, durationMs: 15_000, confidence: 0.9 }],
+    }));
+    assert.equal(plankPartial.score.policy.id, 'demo-plank-score');
+    assert.equal(plankPartial.score.dimensions.find(d => d.key === 'completion')?.value, 0.5);
+    assert.equal(plankPartial.score.dimensions.find(d => d.key === 'completion')?.label, '支撑时长完成度');
+    assert.equal(plankPartial.score.dimensions.find(d => d.key === 'tempo')?.value, 0.75);
+    assert.deepEqual(plankPartial.advice.items.map(item => item.code), [
+      'check-completion', 'improve-range', 'improve-stability', 'adjust-tempo',
+    ]);
+    assert.match(plankPartial.advice.items.find(item => item.code === 'check-completion')!.message, /目标秒数/);
+    assert.match(plankPartial.advice.items.find(item => item.code === 'improve-range')!.message, /平板支撑/);
+    assert.match(plankPartial.advice.items.find(item => item.code === 'adjust-tempo')!.message, /20–600/);
+
+    // Long plank hold up to 300s (5 minutes) passes WorkoutInputPlugin and reaches 100.
+    const plankFull = ctx.fitnessAssessment.evaluate(session({
+      exercise: 'plank', targetRepetitions: 60,
+      repetitions: [{ rangeOfMotion: 1, stability: 1, durationMs: 300_000, confidence: 0.95 }],
+    }));
+    assert.equal(plankFull.score.total, 100);
+    assert.deepEqual(plankFull.advice.items.map(item => item.code), ['maintain']);
+
+    // Balance: two 10s holds sum to 20s against 20s target -> completion = 1.0, total = 100.
+    const balanceFull = ctx.fitnessAssessment.evaluate(session({
+      exercise: 'balance', targetRepetitions: 20,
+      repetitions: [
+        { rangeOfMotion: 1, stability: 1, durationMs: 10_000, confidence: 0.9 },
+        { rangeOfMotion: 1, stability: 1, durationMs: 10_000, confidence: 0.9 },
+      ],
+    }));
+    assert.equal(balanceFull.score.policy.id, 'demo-balance-score');
+    assert.equal(balanceFull.score.total, 100);
+    assert.equal(balanceFull.score.dimensions.find(d => d.key === 'completion')?.label, '平衡时长完成度');
+  } finally {
+    await ctx.fiber.dispose();
+  }
+});
+
+test('all 6 repetition and reach exercises score with tailored weights, tempo windows, and advice', async () => {
+  const ctx = createRuntime();
+  try {
+    await mountPlugins(ctx, assessmentPlugins);
+    for (const [exercise, durationMs] of [
+      ['squat', 3_000], ['push-up', 3_000], ['crunch', 2_500],
+      ['sit-up', 3_000], ['jump-rope', 700], ['sit-and-reach', 3_000],
+    ] as const) {
+      const perfect = ctx.fitnessAssessment.evaluate(session({
+        exercise, targetRepetitions: 1,
+        repetitions: [{ rangeOfMotion: 1, stability: 1, durationMs, confidence: 0.9 }],
+      }));
+      assert.equal(perfect.score.policy.id, `demo-${exercise}-score`);
+      assert.equal(perfect.score.total, 100, `expected 100 for ${exercise}`);
+    }
+
+    const reachLow = ctx.fitnessAssessment.evaluate(session({
+      exercise: 'sit-and-reach', targetRepetitions: 2,
+      repetitions: [{ rangeOfMotion: 0.6, stability: 0.6, durationMs: 1_500, confidence: 0.9 }],
+    }));
+    assert.equal(reachLow.score.standard?.exerciseId, 'Sit_And_Reach');
+    assert.equal(reachLow.score.dimensions.find(d => d.key === 'rangeOfMotion')?.label, '前屈幅度');
+    assert.match(reachLow.advice.items.find(item => item.code === 'improve-range')!.message, /坐位体前屈|前屈/);
+    assert.match(reachLow.advice.items.find(item => item.code === 'adjust-tempo')!.message, /2–15/);
+
+    const ropeSlow = ctx.fitnessAssessment.evaluate(session({
+      exercise: 'jump-rope', targetRepetitions: 1,
+      repetitions: [{ rangeOfMotion: 0.6, stability: 0.6, durationMs: 2_000, confidence: 0.9 }],
+    }));
+    assert.match(ropeSlow.advice.items.find(item => item.code === 'adjust-tempo')!.message, /0\.4–1\.2/);
+  } finally {
+    await ctx.fiber.dispose();
+  }
+});

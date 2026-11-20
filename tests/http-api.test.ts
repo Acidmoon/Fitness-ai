@@ -23,7 +23,9 @@ import { VideoAssessmentPlugin } from '../src/plugins/video-assessment.ts';
 import { WorkoutInputPlugin } from '../src/plugins/workout-input.ts';
 import type { FitnessPose, PoseOptions, PoseSequence, VideoFile } from '../src/vision-contracts.ts';
 import { jsonResponse } from '../src/http-contracts.ts';
-import { makePoses } from './vision-fixtures.ts';
+import {
+  balanceSeries, jumpSeries, makeFrames, makePoses, plankSeries, sitAndReachSeries,
+} from './vision-fixtures.ts';
 
 class FixturePosePlugin extends Service implements FitnessPose {
   static provide = 'fitnessPose';
@@ -51,9 +53,10 @@ interface RunningServer {
 async function start(
   config: Omit<HttpApiConfig, 'port' | 'onListening'> = {},
   extra: readonly { plugin: any; config?: any }[] = [],
+  poses: PoseSequence = makePoses(),
 ): Promise<RunningServer> {
   const ctx = createRuntime();
-  await ctx.plugin(FixturePosePlugin, { poses: makePoses() }).await();
+  await ctx.plugin(FixturePosePlugin, { poses }).await();
   await mountPlugins(ctx, pipeline);
   for (const item of extra) await ctx.plugin(item.plugin, item.config).await();
   let address: { host: string; port: number } | undefined;
@@ -753,5 +756,114 @@ test('deleting a workout returns 204 and a second delete is a 404', async () => 
     assert.equal((await json(again)).error.code, 'WORKOUT_NOT_FOUND');
   } finally {
     await server.close();
+  }
+});
+
+/* ---------------- 8 项多动作评估与动作库路由 ---------------- */
+
+test('exercises routes expose all 8 AI-scored exercises and their standards cleanly', async () => {
+  const server = await start();
+  try {
+    const listed = await fetch(`${server.base}/api/exercises?technique=heuristic`);
+    assert.equal(listed.status, 200);
+    const page = await json(listed);
+    assert.equal(page.total, 8);
+    assert.deepEqual(
+      page.items.map((item: { id: string }) => item.id).sort(),
+      ['Bodyweight_Squat', 'Crunches', 'Plank', 'Pushups', 'Rope_Jumping', 'Single_Leg_Balance', 'Sit-Up', 'Sit_And_Reach'],
+    );
+
+    const reachStd = await fetch(`${server.base}/api/exercises/${encodeURIComponent('坐位体前屈')}/standard`);
+    assert.equal(reachStd.status, 200);
+    const reachBody = await json(reachStd);
+    assert.equal(reachBody.exerciseId, 'Sit_And_Reach');
+    assert.equal(reachBody.technique.motionExercise, 'sit-and-reach');
+    assert.equal(reachBody.technique.measurementMode, 'reach');
+    assert.equal(reachBody.technique.targetUnit, 'repetitions');
+
+    const balanceStd = await fetch(`${server.base}/api/exercises/balance/standard`);
+    assert.equal(balanceStd.status, 200);
+    const balanceBody = await json(balanceStd);
+    assert.equal(balanceBody.exerciseId, 'Single_Leg_Balance');
+    assert.equal(balanceBody.technique.motionExercise, 'balance');
+    assert.equal(balanceBody.technique.measurementMode, 'hold');
+    assert.equal(balanceBody.technique.targetUnit, 'seconds');
+  } finally {
+    await server.close();
+  }
+});
+
+test('POST /api/assessments supports hold, oscillation, reach, and balance DTO fields cleanly', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'fitness-http-multi-'));
+  try {
+    await writeFile(join(directory, 'clip.mp4'), 'abc');
+
+    // Plank: returns holds[] and alignment, omits minAngle/maxAngle.
+    const plankServer = await start({ videoRoot: directory }, [], makeFrames(plankSeries(60)));
+    try {
+      const response = await fetch(`${plankServer.base}/api/assessments`, {
+        method: 'POST',
+        body: JSON.stringify({ path: 'clip.mp4', exercise: 'plank', targetRepetitions: 30 }),
+      });
+      assert.equal(response.status, 200);
+      const body = await json(response);
+      assert.equal(body.exercise, 'plank');
+      assert.equal(body.motion.holds.length, 1);
+      assert.ok(body.motion.repetitions[0].alignment > 0.9);
+      assert.equal('minAngle' in body.motion.repetitions[0], false);
+      assert.equal('maxAngle' in body.motion.repetitions[0], false);
+      assert.equal(body.score.policy.id, 'demo-plank-score');
+    } finally { await plankServer.close(); }
+
+    // Jump-rope: returns amplitude, omits holds.
+    const ropeServer = await start({ videoRoot: directory }, [], makeFrames(jumpSeries(5)));
+    try {
+      const response = await fetch(`${ropeServer.base}/api/assessments`, {
+        method: 'POST',
+        body: JSON.stringify({ path: 'clip.mp4', exercise: 'jump-rope', targetRepetitions: 5 }),
+      });
+      assert.equal(response.status, 200);
+      const body = await json(response);
+      assert.equal(body.exercise, 'jump-rope');
+      assert.equal('holds' in body.motion, false);
+      assert.ok(body.motion.repetitions[0].amplitude > 0.03);
+      assert.equal(body.score.policy.id, 'demo-jump-rope-score');
+    } finally { await ropeServer.close(); }
+
+    // Sit-and-reach: returns holds[], minAngle, maxAngle, amplitude, alignment.
+    const reachServer = await start({ videoRoot: directory }, [], makeFrames(sitAndReachSeries(25)));
+    try {
+      const response = await fetch(`${reachServer.base}/api/assessments`, {
+        method: 'POST',
+        body: JSON.stringify({ path: 'clip.mp4', exercise: 'sit-and-reach', targetRepetitions: 1 }),
+      });
+      assert.equal(response.status, 200);
+      const body = await json(response);
+      assert.equal(body.exercise, 'sit-and-reach');
+      assert.equal(body.motion.holds.length, 1);
+      assert.ok(typeof body.motion.repetitions[0].minAngle === 'number');
+      assert.ok(typeof body.motion.repetitions[0].amplitude === 'number');
+      assert.ok(typeof body.motion.repetitions[0].alignment === 'number');
+      assert.equal(body.score.policy.id, 'demo-sit-and-reach-score');
+    } finally { await reachServer.close(); }
+
+    // Balance: returns holds[] and scores seconds completion.
+    const balanceServer = await start(
+      { videoRoot: directory }, [], makeFrames(balanceSeries(50, { ankleLiftPx: 90 }), 100, { bilateral: true }),
+    );
+    try {
+      const response = await fetch(`${balanceServer.base}/api/assessments`, {
+        method: 'POST',
+        body: JSON.stringify({ path: 'clip.mp4', exercise: 'balance', targetRepetitions: 10 }),
+      });
+      assert.equal(response.status, 200);
+      const body = await json(response);
+      assert.equal(body.exercise, 'balance');
+      assert.equal(body.motion.holds.length, 1);
+      assert.ok(body.motion.repetitions[0].alignment > 0.85);
+      assert.equal(body.score.policy.id, 'demo-balance-score');
+    } finally { await balanceServer.close(); }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
