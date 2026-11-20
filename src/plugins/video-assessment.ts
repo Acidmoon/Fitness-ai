@@ -1,6 +1,6 @@
 import { Service, type Context } from 'cordis';
 import { FitnessError } from '../contracts.ts';
-import type { FitnessVideo, VideoAssessmentRequest, VideoAssessmentResult } from '../vision-contracts.ts';
+import { isSupportedExercise, type FitnessVideo, type VideoAssessmentRequest, type VideoAssessmentResult } from '../vision-contracts.ts';
 
 export class VideoAssessmentPlugin extends Service implements FitnessVideo {
   static provide = 'fitnessVideo';
@@ -8,10 +8,10 @@ export class VideoAssessmentPlugin extends Service implements FitnessVideo {
   constructor(ctx: Context) { super(ctx, 'fitnessVideo'); }
 
   async assess(request: VideoAssessmentRequest): Promise<VideoAssessmentResult> {
-    if (!['squat', 'push-up'].includes(request.exercise) || !Number.isInteger(request.targetRepetitions)
+    if (!isSupportedExercise(request.exercise) || !Number.isInteger(request.targetRepetitions)
       || request.targetRepetitions < 1 || request.targetRepetitions > 10_000 || !request.sessionId.trim()
       || request.sessionId.length > 128) {
-      throw new FitnessError('INVALID_WORKOUT', '请指定支持的动作、有效会话标识及 1–10000 的目标次数');
+      throw new FitnessError('INVALID_WORKOUT', '请指定支持的动作、有效会话标识及 1–10000 的目标次数或目标秒数');
     }
     const video = await this.ctx.fitnessFiles.openVideo(request.path);
     const poses = await this.ctx.fitnessPose.estimate(video, request.sampleFps === undefined ? {} : { sampleFps: request.sampleFps });

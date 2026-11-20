@@ -7,9 +7,9 @@
 本地视频 → 文件接收 → MoveNet 骨架识别 → 动作分析 → 输入校验 → 评分 → 建议 → JSON 输出
 ```
 
-运行时只负责插件装载与生命周期。骨架识别、动作分析、评分、建议、文件入口和证据保存分别由插件提供。当前支持 `squat`（深蹲）和 `push-up`（俯卧撑）的视频分析与演示质量评分，运动类型由调用方指定。
+运行时只负责插件装载与生命周期。骨架识别、动作分析、评分、建议、文件入口和证据保存分别由插件提供。当前支持 **8 种动作**的视频分析与未标定演示质量评分，运动类型由调用方指定：`squat`（深蹲）、`push-up`（俯卧撑）、`crunch`（卷腹）、`sit-up`（仰卧起坐）、`plank`（平板支撑，静态支撑，目标单位秒）、`jump-rope`（跳绳）、`sit-and-reach`（坐位体前屈，侧面坐姿前屈保持）、`balance`（单脚站立平衡测试，静态支撑，目标单位秒）。
 
-另已接入包含 **876 个动作、7 个类别**的完整离线动作库插件。全部条目可查询动作说明、来源和评分能力，支持调用方指定训练目标的完成度评分；其中两项关联现有演示质量规则，其余 874 项明确返回质量标准尚不可用。目录来自社区 [free-exercise-db](https://github.com/yuhonas/free-exercise-db)，不是官方体测评分标准。来源比较、许可与完整接口见 [动作库说明](docs/exercise-library.md)。
+另已接入包含 **878 个动作**（876 项固定版本社区目录 [free-exercise-db](https://github.com/yuhonas/free-exercise-db) + 2 项项目自定义校园体测条目 `Sit_And_Reach` / `Single_Leg_Balance`）的完整离线动作库插件。全部条目可查询动作说明、来源和评分能力，支持调用方指定训练目标的完成度评分；其中 8 项关联现有未标定演示质量规则，其余 870 项明确返回质量标准尚不可用。社区目录与项目演示规则均不是官方体测评分标准。来源比较、许可与完整接口见 [动作库说明](docs/exercise-library.md)。
 
 ## 动作目录与评分标准
 
@@ -24,7 +24,7 @@ pnpm start exercises score-goal examples/exercise-goal.json
 
 最后一条输出目标完成度 **80 / 100**，`scoreKind` 为 `goal-completion`，`techniqueScore` 为空。此分数只表示所报告的 8 次占目标 10 次的比例。目标与观测可以使用次、秒或米，同一请求单位相同，由调用方选择适合训练方案的单位；不会把动作目录当成已经支持 876 项视频分析。
 
-其他插件声明 `static inject = ['fitnessExercises']` 后，可调用 `manifest()`、`list(query)`、`get(idOrAlias)`、`getStandard(idOrAlias)` 和 `scoreGoal(value)`。服务契约见 [exercise-contracts.ts](src/exercise-contracts.ts)，跨端请求标准见 [exercise-goal.schema.json](schemas/exercise-goal.schema.json)，完整输入示例见 [exercise-goal.json](examples/exercise-goal.json)。`squat` / `深蹲` 对应 `Bodyweight_Squat`，`push-up` / `俯卧撑` 对应 `Pushups`；不将器械变体自动等同。
+其他插件声明 `static inject = ['fitnessExercises']` 后，可调用 `manifest()`、`list(query)`、`get(idOrAlias)`、`getStandard(idOrAlias)` 和 `scoreGoal(value)`。服务契约见 [exercise-contracts.ts](src/exercise-contracts.ts)，跨端请求标准见 [exercise-goal.schema.json](schemas/exercise-goal.schema.json)，完整输入示例见 [exercise-goal.json](examples/exercise-goal.json)。`squat` / `深蹲` → `Bodyweight_Squat`，`push-up` / `俯卧撑` → `Pushups`，`crunch` / `卷腹` → `Crunches`，`sit-up` / `仰卧起坐` → `Sit-Up`，`plank` / `平板支撑` → `Plank`，`jump-rope` / `跳绳` → `Rope_Jumping`；`sit-and-reach` / `坐位体前屈` → `Sit_And_Reach`（`origin: "project"`），`balance` / `单脚站立平衡测试` → `Single_Leg_Balance`（`origin: "project"`）；不将器械变体自动等同。
 
 目录固定提交和 SHA-256，启动时不联网。上游 5 项缺少步骤、2 项含空步骤，输出分别标记 `missing`、`partial`。原文与缺失状态均保留。媒体权利尚未核实，本次仅保留固定提交的图片引用并标记 `mediaRights: "unverified"`，不打包图片文件。
 
@@ -80,7 +80,7 @@ pnpm start video "C:\videos\push-up.mp4" --exercise push-up --target 5
 
 - `FITNESS_PYTHON`：执行识别工作者的 Python 可执行文件；未设置时使用 `python`（Windows）或 `python3`。
 - `FITNESS_MOVENET_MODEL`：可选模型路径；默认使用项目自带模型。当前适配器要求相同的 Lightning 张量接口。
-- `--exercise`、`--target`：必填，分别指定运动类型和目标次数；目标不是人工标注的真实次数。
+- `--exercise`、`--target`：必填。`--exercise` 取 `squat` / `push-up` / `crunch` / `sit-up` / `plank` / `jump-rope` / `sit-and-reach` / `balance`；`--target` 对周期与前屈动作是目标次数，对 `plank` 与 `balance` 是目标保持秒数；目标不是人工标注的真实次数或体测合格线。
 - `--sample-fps`：默认 10，允许 1–30；动作分析建议使用 10 或以上。低频采样可能无法满足动作连续性要求。
 - `--session`：可选会话标识；默认生成 UUID。
 - `--artifacts`：可选的**新目录**，保存中间证据，拒绝覆盖同名文件。
@@ -210,26 +210,39 @@ pnpm serve
 - 深蹲稳定性代理为 `clamp(1 - 躯干倾角标准差 / 45)`；俯卧撑代理为 `clamp(1 - abs(180 - 肩髋踝角) / 90)` 的平均值。
 - 每次动作置信度为该片段中所需关键点置信度的平均值，保留原始模型分数尺度。
 
-这些是可替换的二维演示规则，尚未完成规则标定。特别是正面拍摄的膝角、肘角与实际三维关节角可能明显不同；远景、遮挡和多人画面也会影响结果。MoveNet SinglePose 不提供多人身份跟踪、三维骨架或动作类别识别。
+### 八类动作的二维演示测量方式
+
+| 动作 | 模式 | 目标单位 | 主测量信号 | 判定要点 |
+| --- | --- | --- | --- | --- |
+| `squat` | 周期 (`cycle`) | 次 | 髋—膝—踝角 | 伸展阈值 160°，回落 10° 起算，变化 ≥30° |
+| `push-up` | 周期 (`cycle`) | 次 | 肩—肘—腕角 | 伸展阈值 155°，回落 10° 起算，变化 ≥30° |
+| `crunch` | 周期 (`cycle`) | 次 | 躯干抬离水平面的角度 | 按本段视频 10/90 分位自适应阈值；幅度 ≥20° |
+| `sit-up` | 周期 (`cycle`) | 次 | 同上 | 同自适应阈值；幅度 ≥45°，要求明显大于卷腹 |
+| `plank` | 静态支撑 (`hold`) | 秒 | 肩—髋—踝直线度 + 身体水平度 | 直线偏差 ≤25°、倾斜 ≤0.5、连续 ≥3 秒记一段 `MotionHold` |
+| `jump-rope` | 垂直振荡 (`oscillation`) | 次 | 髋部高度（按体长归一化） | 相邻两次触地记一跳；振幅 ≥0.03 体长，稳定性按节拍一致性计算 |
+| `sit-and-reach` | 前屈保持 (`reach`) | 次 | 侧面肩—髋—膝角 + 腕沿腿轴伸展比 + 膝角 | 侧面坐姿，双腿近水平（倾斜 ≤0.55）、膝角 ≥145°、髋角 ≤85°、伸展比 ≥0.55 且连续保持 ≥1.5 秒 |
+| `balance` | 静态支撑 (`hold`) | 秒 | 双侧脚踝高度差（按体长归一化） + 躯干竖直度 | 正面/斜正面站姿，躯干倾角 ≤25°、单脚抬升 ≥0.06 体长、连续 ≥3 秒记一段 `MotionHold` |
+
+这些是可替换的二维演示规则，尚未完成规则标定。特别是正面拍摄的膝角、肘角与实际三维关节角可能明显不同；坐位体前屈依赖侧面机位，单脚平衡依赖双侧脚踝清晰可见；远景、遮挡和多人画面也会影响结果。MoveNet SinglePose 不提供多人身份跟踪、三维骨架或动作类别识别。
 
 ## 运动记录与评分契约
 
 JSON 示例见 [examples/squat-session.json](examples/squat-session.json)。必需字段为：
 
 - `schemaVersion: "1.0"`，非空 `sessionId`、`exercise`，均最长 128 字符。
-- `targetRepetitions`：1–10000 的整数。
-- `repetitions`：1–10000 条记录，每条含 `rangeOfMotion`、`stability`、`confidence`（0–1）和 `durationMs`（1–60000 毫秒）。
+- `targetRepetitions`：1–10000 的整数（周期/前屈动作表示目标次数，`plank`/`balance` 表示目标保持秒数）。
+- `repetitions`：1–10000 条记录，每条含 `rangeOfMotion`、`stability`、`confidence`（0–1）和 `durationMs`（1–600000 毫秒；上限 10 分钟以容纳静态支撑单段时长）。
 
-评分策略为 `demo-squat-score@0.1.0` / `demo-push-up-score@0.1.0`，建议策略为 `demo-workout-advice@0.1.0`。置信度低于 0.6 的记录不参与评分；全部排除时不产生评分。
+评分策略为 `demo-<动作>-score@0.1.0`，建议策略为 `demo-workout-advice@0.2.0`。置信度低于 0.6 的记录不参与评分；全部排除时不产生评分。
 
-| 分项 | 满分 | 分项值 |
+| 分项 | 周期/前屈默认权重 | 分项值 |
 | --- | --- | --- |
-| 可评估次数完成度 | 20 | `min(可评估次数 / 目标次数, 1)` |
-| 动作幅度 | 40 | 可评估动作的幅度平均值 |
-| 稳定性 | 25 | 可评估动作的稳定性平均值 |
-| 节奏 | 15 | 每条取 `min(durationMs / 2000, 5000 / durationMs, 1)`，再取平均值 |
+| 完成度 | 20（前屈 15 / 平衡 25） | 次数类 `min(可评估次数 / 目标次数, 1)`；秒数类 `min(有效保持总秒数 / 目标秒数, 1)` |
+| 动作幅度 / 姿态标准度 | 40（跳绳 25 / 前屈 45 / 支撑与平衡 20） | 可评估动作的幅度或对齐平均值 |
+| 稳定性 | 25（支撑与跳绳 30 / 平衡 35） | 可评估动作的稳定性平均值 |
+| 节奏 / 保持时长 | 15（跳绳 25 / 支撑 30 / 平衡 20） | 每条取 `min(durationMs / tempo.minMs, tempo.maxMs / durationMs, 1)`，再取平均值 |
 
-分项贡献保留两位小数后相加，总分 0–100。建议针对置信度不足、次数不足、幅度、稳定性及节奏生成提示。评分标准和建议均未经过人工真值校准，不代表学校体测标准。
+各动作节奏窗口分别为：`squat`/`push-up`/`sit-up` 2–5 秒、`crunch` 1.5–4 秒、`jump-rope` 0.4–1.2 秒、`sit-and-reach` 2–15 秒、`plank` 20–600 秒、`balance` 10–300 秒。分项贡献保留两位小数后相加，总分 0–100。建议针对置信度不足、完成度、幅度/姿态、稳定性及节奏/时长生成分动作提示。评分标准和建议均未经过人工真值校准，不代表学校体测标准。
 
 ## 验证与批量评估
 

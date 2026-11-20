@@ -1,6 +1,7 @@
 import type { Disposable } from 'cordis';
 import type { AuthPrincipal, AuthSession } from './auth-contracts.ts';
 import type { AdviceResult, ScoreResult } from './contracts.ts';
+import type { MotionHold, SupportedExercise } from './vision-contracts.ts';
 import type { WorkoutPage, WorkoutRecord, WorkoutRecordInput, WorkoutStatistics, WorkoutSummary } from './history-contracts.ts';
 import type { UserAccount, UserProfile } from './user-contracts.ts';
 
@@ -133,7 +134,7 @@ export interface VideoListResponse {
 /** `POST /api/assessments` 的请求体。 */
 export interface AssessmentRequestBody {
   readonly path: string;
-  readonly exercise: 'squat' | 'push-up';
+  readonly exercise: SupportedExercise;
   readonly targetRepetitions: number;
   readonly sessionId?: string;
   readonly sampleFps?: number;
@@ -165,13 +166,16 @@ export interface AssessmentResponse {
       readonly startMs: number;
       readonly bottomMs: number;
       readonly endMs: number;
-      readonly minAngle: number;
-      readonly maxAngle: number;
+      readonly minAngle?: number;
+      readonly maxAngle?: number;
+      readonly amplitude?: number;
+      readonly alignment?: number;
       readonly rangeOfMotion: number;
       readonly stability: number;
       readonly durationMs: number;
       readonly confidence: number;
     }[];
+    readonly holds?: readonly MotionHold[];
     readonly warnings: readonly string[];
   };
   readonly score: ScoreResult;

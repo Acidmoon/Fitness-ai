@@ -7,7 +7,22 @@ export const KEYPOINT_NAMES = [
   'left_knee', 'right_knee', 'left_ankle', 'right_ankle',
 ] as const;
 export type KeypointName = typeof KEYPOINT_NAMES[number];
-export type SupportedExercise = 'squat' | 'push-up';
+export const SUPPORTED_EXERCISES = [
+  'squat',
+  'push-up',
+  'crunch',
+  'sit-up',
+  'plank',
+  'jump-rope',
+  'sit-and-reach',
+  'balance',
+] as const;
+export type SupportedExercise = typeof SUPPORTED_EXERCISES[number];
+export type MotionMeasurementMode = 'cycle' | 'hold' | 'oscillation' | 'reach';
+
+export function isSupportedExercise(value: unknown): value is SupportedExercise {
+  return typeof value === 'string' && (SUPPORTED_EXERCISES as readonly string[]).includes(value);
+}
 
 export interface VideoFile {
   readonly path: string;
@@ -69,18 +84,36 @@ export interface MotionRequest {
 export interface MotionFrame {
   readonly frameIndex: number;
   readonly timestampMs: number;
+  /** Primary measured signal in degrees: joint angle, torso lift, or hip flexion. */
   readonly angle: number | null;
   readonly confidence: number;
   readonly torsoInclination: number | null;
   readonly bodyAlignment: number | null;
+  /** Auxiliary normalized signal (hip height for jump-rope, ankle elevation for balance, reach ratio for sit-and-reach). */
+  readonly signal?: number | null;
 }
 
 export interface MotionRepetition extends Repetition {
   readonly startMs: number;
   readonly bottomMs: number;
   readonly endMs: number;
-  readonly minAngle: number;
-  readonly maxAngle: number;
+  /** Present for angle-based cycles and sit-and-reach; absent for pure holds and vertical oscillation. */
+  readonly minAngle?: number;
+  readonly maxAngle?: number;
+  /** Normalized amplitude: vertical travel in body lengths (jump-rope) or peak wrist-to-ankle reach ratio (sit-and-reach). */
+  readonly amplitude?: number;
+  /** Alignment quality 0–1; present for static holds (plank, balance) and sit-and-reach knee extension. */
+  readonly alignment?: number;
+}
+
+/** A validated static hold (plank, balance) or seated reach hold (sit-and-reach). */
+export interface MotionHold {
+  readonly startMs: number;
+  readonly endMs: number;
+  readonly durationMs: number;
+  readonly alignment: number;
+  readonly stability: number;
+  readonly confidence: number;
 }
 
 export interface MotionAnalysis {
@@ -91,6 +124,8 @@ export interface MotionAnalysis {
   readonly validFrames: number;
   readonly rejectedFrames: number;
   readonly repetitions: readonly MotionRepetition[];
+  /** Static holds; populated for hold and reach exercises (plank, balance, sit-and-reach). */
+  readonly holds?: readonly MotionHold[];
   readonly features: readonly MotionFrame[];
   readonly warnings: readonly string[];
   readonly workout: WorkoutSession;

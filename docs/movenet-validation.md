@@ -92,8 +92,17 @@ python -m unittest discover -s tests -p test_movenet_worker.py -v
 - 二维投影角度对正面与侧面机位差异敏感，当前周期与幅度规则还需要按机位和动作标定。
 - 远景、遮挡和多人场景无法保证目标人物稳定；SinglePose 不提供多人身份跟踪。
 - 运动类型依赖显式参数，未实现动作类别自动识别或三维骨架。
-- 文件入口当前为本地路径；未实现 HTTP 上传、实时摄像头或移动端推理。
+- 新增的 `crunch`、`sit-up`、`plank`、`jump-rope` 仅在早期少量公开素材上跑通链路，而 `sit-and-reach`（侧面坐姿假设）与 `balance`（双侧脚踝可见假设）当前仅有合成骨架单元测试覆盖，均无人工标注真值，尚未完成真实校园体测视频标定。
+- 文件入口当前为本地路径或 HTTP 上传暂存路径；未实现实时摄像头或移动端推理。
 
-下一步最有价值的验证是为这些视频标注动作起止、真实次数和机位，再固定相应机位上的动作规则与评分口径。
+下一步最有价值的验证是为这 8 类动作录制并标注真实起止、次数/保持时长和机位，再固定相应机位上的动作规则与评分口径。
 
 官方机制参考：[TensorFlow 姿态估计说明](https://www.tensorflow.org/lite/examples/pose_estimation/overview)、[MoveNet 教程](https://www.tensorflow.org/hub/tutorials/movenet)。
+
+## 2026-11 扩展至八类动作的验证边界
+
+1. 早期公开素材（Wikimedia Commons，未入库）验证过 `jump-rope`、`crunch`、`sit-up` 的链路跑通与 `crunch`/`sit-up` 幅度区分（20° vs 45°）；`plank` 剪辑合集单段不足 3 秒未计组，仍需 ≥10 秒连续侧向真实视频验证。
+2. 本轮新增校园体测两项：
+   - `sit-and-reach`（`joint-reach-sit-and-reach@0.1.0`）：假设**侧面机位**，基于 `shoulder–hip–knee` 屈曲角、`hip–knee–ankle` 伸直检查（≥145°）与手腕沿髋—踝轴线的归一化伸展比，要求连续保持 ≥1.5 秒；尚未用真实坐位体前屈视频标定与实测厘米换算。
+   - `balance`（`joint-hold-balance@0.1.0`）：假设**正面或斜正面双侧全身入镜**，基于双侧脚踝归一化垂直高度差（≥0.06 体长）与躯干竖直度（≤25°），要求连续保持 ≥3 秒；尚未用真实单脚站立视频验证遮挡与地面倾斜影响。
+3. 以上新增规则当前由合成骨架单元测试覆盖，不能作为真实场景准确率声明。

@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { Service, type Context } from 'cordis';
 import { FitnessError, type FitnessCli } from '../contracts.ts';
 import type { ExerciseQuery } from '../exercise-contracts.ts';
-import type { SupportedExercise } from '../vision-contracts.ts';
+import { SUPPORTED_EXERCISES, isSupportedExercise, type SupportedExercise } from '../vision-contracts.ts';
 
 export const HELP = [
   'Fitness AI · Cordis 插件化运动评价 MVP',
   '',
   '用法：pnpm start <运动记录.json>',
-  '视频：pnpm start video <视频路径> --exercise squat|push-up --target <目标次数>',
+  '视频：pnpm start video <视频路径> --exercise <动作> --target <目标次数或秒数>',
   '选项：--sample-fps 10 --session <会话标识> --artifacts <新的输出目录>',
   '动作库：pnpm start exercises list [--query <关键词>] [--limit 50] [--offset 0]',
   '动作详情：pnpm start exercises show <动作ID或别名>',
@@ -17,7 +17,7 @@ export const HELP = [
   '目标完成度：pnpm start exercises score-goal <观测记录.json>',
   '示例：pnpm demo',
   '',
-  'JSON 输入契约：schemaVersion = "1.0"；评分支持 squat 和 push-up。',
+  `JSON 输入契约：schemaVersion = "1.0"；视频动作：${SUPPORTED_EXERCISES.join('|')}。`,
   '视频推理需配置 FITNESS_PYTHON 并安装 python/requirements.txt。',
   '成功时向标准输出写入 JSON；失败时返回非零退出码。',
   '评分与建议使用演示规则，尚未经真实运动数据标定。',
@@ -85,7 +85,7 @@ export class CliPlugin extends Service implements FitnessCli {
       const exercise = options.get('--exercise');
       const target = Number(options.get('--target'));
       const sampleFps = Number(options.get('--sample-fps') ?? 10);
-      if (exercise !== 'squat' && exercise !== 'push-up') bad('--exercise 必须是 squat 或 push-up');
+      if (!isSupportedExercise(exercise)) bad(`--exercise 必须是 ${SUPPORTED_EXERCISES.join(' / ')} 之一`);
       if (!Number.isInteger(target) || target < 1 || target > 10_000) bad('--target 必须是 1–10000 的整数');
       if (!Number.isFinite(sampleFps) || sampleFps < 1 || sampleFps > 30) bad('--sample-fps 必须在 1–30 之间');
       const artifactDirectory = options.get('--artifacts');

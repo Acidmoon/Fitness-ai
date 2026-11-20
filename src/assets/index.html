@@ -134,15 +134,21 @@
       <div>
         <label for="exercise">运动类型</label>
         <select id="exercise">
-          <option value="squat">深蹲（squat）</option>
-          <option value="push-up">俯卧撑（push-up）</option>
+          <option value="squat">深蹲（squat · 次）</option>
+          <option value="push-up">俯卧撑（push-up · 次）</option>
+          <option value="crunch">卷腹（crunch · 次）</option>
+          <option value="sit-up">仰卧起坐（sit-up · 次）</option>
+          <option value="plank">平板支撑（plank · 秒）</option>
+          <option value="jump-rope">跳绳（jump-rope · 次）</option>
+          <option value="sit-and-reach">坐位体前屈（sit-and-reach · 次）</option>
+          <option value="balance">单脚站立平衡测试（balance · 秒）</option>
         </select>
-        <p class="hint">当前只有这两种支持视频质量评分。</p>
+        <p class="hint">当前支持以上 8 项动作的未标定演示视频评分。</p>
       </div>
       <div>
-        <label for="target">目标次数</label>
+        <label for="target">目标次数 / 目标秒数</label>
         <input id="target" type="number" min="1" max="10000" step="1" value="5">
-        <p class="hint">1–10000 的整数。</p>
+        <p class="hint">周期/前屈动作填目标次数，平板支撑/平衡测试填目标秒数（1–10000 整数）。</p>
       </div>
     </div>
     <button id="submit" type="button">开始分析</button>

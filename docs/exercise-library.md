@@ -51,7 +51,7 @@
 
 契约见 [exercise-contracts.ts](../src/exercise-contracts.ts)，请求的 JSON Schema 见 [exercise-goal.schema.json](../schemas/exercise-goal.schema.json)。新服务数据使用 `schemaVersion: "1.0"`，仅包含可序列化字段，Web 与 Android 可分别实现传输适配器。
 
-- 动作标识沿用上游 `id`，与提交版本一起追踪。`squat`、`深蹲` 显式映射到 `Bodyweight_Squat`；`push-up`、`pushup`、`俯卧撑` 映射到 `Pushups`。不把杠铃深蹲等变体隐式等同于徒手深蹲。
+- 动作标识沿用上游 `id`，与提交版本一起追踪，并补充 `origin: "free-exercise-db" | "project"` 区分来源。`squat` / `深蹲` → `Bodyweight_Squat`，`push-up` / `pushup` / `俯卧撑` → `Pushups`，`crunch` / `卷腹` → `Crunches`，`sit-up` / `situp` / `仰卧起坐` → `Sit-Up`，`plank` / `平板支撑` → `Plank`，`jump-rope` / `jumprope` / `跳绳` → `Rope_Jumping`。上游目录中没有精确对应的两项校园体测动作以项目自定义条目（`origin: "project"`、`sourceRevision: "project-campus-1.0"`）显式定义：`sit-and-reach` / `坐位体前屈` / `体前屈` → `Sit_And_Reach`，`balance` / `单脚站立` / `单脚站立平衡测试` / `平衡测试` → `Single_Leg_Balance`。不把杠铃深蹲等变体隐式等同于徒手深蹲。
 - 标识查找忽略大小写与两侧空格；名称仅供搜索，不做模糊标识匹配。名称和步骤保留上游英文，未将自动翻译作为标准原文。
 - 名称、肌群、器械、难度与类别来自原始记录；未知器械保留 `null`。返回固定提交的 `sourceUrl`、`sourceRevision`，不依赖在线更新。
 - `list` 默认 50 条、最多 100 条，`offset` 从 0 开始，按固定源文件顺序分页。可同时按关键词、类别、难度、器械、主/次肌群和质量评分状态筛选。
@@ -64,11 +64,11 @@
 
 每个目录动作都能查询 `getStandard(id)`，返回动作说明与两类明确区分的标准。
 
-**目标完成度**：全部 876 条目可用，策略 `personal-goal-completion@1.0.0`，公式 `100 * min(observed / target, 1)`，结果保留两位小数。目标由调用方提供；它是本项目公开定义的训练记录计算规则，没有宣称来源库、学校或学术数据集规定了该公式。超过目标不加分。返回 `scoreKind: "goal-completion"`、`techniqueScore: null`，不能解释为动作做得标准，也不提供医疗或训练处方。
+**目标完成度**：全部 878 条目（876 项上游 + 2 项项目自定义）可用，策略 `personal-goal-completion@1.0.0`，公式 `100 * min(observed / target, 1)`，结果保留两位小数。目标由调用方提供；它是本项目公开定义的训练记录计算规则，没有宣称来源库、学校或学术数据集规定了该公式。超过目标不加分。返回 `scoreKind: "goal-completion"`、`techniqueScore: null`，不能解释为动作做得标准，也不提供医疗或训练处方。
 
-**动作质量**：仅 `Bodyweight_Squat` 和 `Pushups` 关联现有 `demo-squat-score@0.1.0` / `demo-push-up-score@0.1.0`。标准公开置信度门槛 0.6、完成度/幅度/稳定性/节奏权重 20/40/25/15、2–5 秒节奏区间、观察契约 `workout@1.0`、`origin: "project"`、`validation: "uncalibrated"`。这些数值保持已有演示行为，并非来自本次导入的目录或官方标准。
+**动作质量**：8 项关联未标定演示规则 —— `Bodyweight_Squat` (`squat`)、`Pushups` (`push-up`)、`Crunches` (`crunch`)、`Sit-Up` (`sit-up`)、`Plank` (`plank`)、`Rope_Jumping` (`jump-rope`)、`Sit_And_Reach` (`sit-and-reach`)、`Single_Leg_Balance` (`balance`)，对应策略 `demo-<动作>-score@0.1.0`。标准公开置信度门槛 0.6、`measurementMode`（`cycle` / `hold` / `oscillation` / `reach`）、`targetUnit`（`repetitions` / `seconds`）、观察契约 `workout@1.0`、`origin: "project"`、`validation: "uncalibrated"`。这些数值是演示规则，并非来自社区目录或官方体测标准。
 
-其余 874 项返回 `technique.status: "unavailable"`、`reason: "no-calibrated-policy"`。调用现有 `fitnessScoring.score` 会返回 `STANDARD_UNAVAILABLE`，不把深蹲规则复制到所有动作。未知标识为 `UNSUPPORTED_EXERCISE`；请求格式错误为 `INVALID_EXERCISE_DATA`；原始目录加载损坏为 `CATALOG_INVALID`。视频分析仍仅支持 `squat` 与 `push-up`，目录增加不代表新建了 874 个视频算法。
+其余 870 项返回 `technique.status: "unavailable"`、`reason: "no-calibrated-policy"`。调用现有 `fitnessScoring.score` 会返回 `STANDARD_UNAVAILABLE`，不把深蹲规则复制到所有动作。未知标识为 `UNSUPPORTED_EXERCISE`；请求格式错误为 `INVALID_EXERCISE_DATA`；原始目录加载损坏为 `CATALOG_INVALID`。视频分析支持上述 8 项；目录里的其余 870 项仍没有视频算法。
 
 后续某项质量标准进入可用状态，需要提供动作变体、观测指标定义和单位、机位与坐标约束、阈值/模型来源、规则版本、授权范围和人工标注验证结果。可替换动作库及评分提供方，或为新观测模式增加独立服务；无需向运行时加入动作分支。
 
