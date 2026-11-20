@@ -2,6 +2,7 @@ import type { Disposable } from 'cordis';
 import type { AuthPrincipal, AuthSession } from './auth-contracts.ts';
 import type { AdviceResult, ScoreResult } from './contracts.ts';
 import type { MotionHold, SupportedExercise } from './vision-contracts.ts';
+import type { PoseTrack } from './skeleton-contracts.ts';
 import type { WorkoutPage, WorkoutRecord, WorkoutRecordInput, WorkoutStatistics, WorkoutSummary } from './history-contracts.ts';
 import type { UserAccount, UserProfile } from './user-contracts.ts';
 
@@ -180,6 +181,8 @@ export interface AssessmentResponse {
   };
   readonly score: ScoreResult;
   readonly advice: AdviceResult;
+  /** 紧凑量化骨架轨迹，供客户端保存训练记录后关联上传以按需生成骨架动图预览。 */
+  readonly poseTrack?: PoseTrack;
 }
 
 declare module 'cordis' {

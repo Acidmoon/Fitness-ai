@@ -12,6 +12,7 @@ import { RuleAdvicePlugin } from './plugins/rule-advice.ts';
 import { RuleScoringPlugin } from './plugins/rule-scoring.ts';
 import { VideoAssessmentPlugin } from './plugins/video-assessment.ts';
 import { UploadsPlugin } from './plugins/uploads.ts';
+import { AppUpdatePlugin } from './plugins/app-update.ts';
 import { WorkoutInputPlugin } from './plugins/workout-input.ts';
 import { createRuntime, mountPlugins } from './runtime.ts';
 import { userDatabasePlugins } from './user-app.ts';
@@ -33,6 +34,7 @@ export const businessPlugins = [
   JsonArtifactsPlugin,
   ExerciseLibraryPlugin,
   UploadsPlugin,
+  AppUpdatePlugin,
 ];
 
 const ctx = createRuntime();

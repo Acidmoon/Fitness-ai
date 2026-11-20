@@ -8,6 +8,7 @@ const MIGRATION_FILES = Object.freeze([
   Object.freeze({ version: 2, name: 'auth', file: '002-auth.sql' }),
   Object.freeze({ version: 3, name: 'workout-history', file: '003-workout-history.sql' }),
   Object.freeze({ version: 4, name: 'wearable', file: '004-wearable.sql' }),
+  Object.freeze({ version: 5, name: 'pose-tracks', file: '005-pose-tracks.sql' }),
 ]);
 
 export async function userMigrations(): Promise<readonly DatabaseMigration[]> {
@@ -62,9 +63,9 @@ export async function assertUserDatabase(database: FitnessDatabase): Promise<voi
     if (count !== migrations.length) throw new FitnessError('DATABASE_MIGRATION', '用户数据库需要先执行显式迁移');
     const protection = await session.query<{ count: number }>(`SELECT count(*)::integer AS count
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'fitness_users' AND c.relname IN ('tenants','accounts','profiles','identities','mutation_receipts','audit_events','outbox','credentials','sessions','workout_records','wearable_samples')
+      WHERE n.nspname = 'fitness_users' AND c.relname IN ('tenants','accounts','profiles','identities','mutation_receipts','audit_events','outbox','credentials','sessions','workout_records','wearable_samples','workout_pose_tracks')
       AND c.relrowsecurity AND c.relforcerowsecurity AND NOT pg_has_role(current_user, c.relowner, 'MEMBER')`);
-    if (protection.rows[0]?.count !== 11) throw new FitnessError('DATABASE_ROLE_UNSAFE', '用户表的租户隔离配置不完整');
+    if (protection.rows[0]?.count !== 12) throw new FitnessError('DATABASE_ROLE_UNSAFE', '用户表的租户隔离配置不完整');
   });
 }
 export async function grantUserDatabaseAccess(database: FitnessDatabase, role: string): Promise<void> {
@@ -78,7 +79,7 @@ export async function grantUserDatabaseAccess(database: FitnessDatabase, role: s
     await session.query(`GRANT SELECT, INSERT ON fitness_users.mutation_receipts, fitness_users.audit_events TO ${target}`);
     await session.query(`GRANT SELECT, INSERT ON fitness_users.outbox TO ${target}`);
     await session.query(`GRANT UPDATE (lease_owner, lease_token, lease_until, delivered_at) ON fitness_users.outbox TO ${target}`);
-    await session.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON fitness_users.credentials, fitness_users.sessions, fitness_users.workout_records, fitness_users.wearable_samples TO ${target}`);
+    await session.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON fitness_users.credentials, fitness_users.sessions, fitness_users.workout_records, fitness_users.wearable_samples, fitness_users.workout_pose_tracks TO ${target}`);
   });
 }
 export async function initializeUserLookupKey(database: FitnessDatabase, protection: FitnessUserDataProtection): Promise<void> {
