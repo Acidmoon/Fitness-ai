@@ -181,3 +181,35 @@ export function balanceSeries(
     };
   });
 }
+
+/**
+ * Front-view portrait squat where the knee bends out-of-plane toward the camera:
+ * planar 2D hip-knee-ankle angle only dips to ~150°, while hip and shoulder
+ * descend vertically toward planted ankles.
+ */
+export function frontSquatSeries(
+  hipDropsPx: readonly number[] = [0, 0, 0, 35, 80, 125, 145, 145, 115, 65, 20, 0, 0],
+): Record<string, [number, number]>[] {
+  return hipDropsPx.map(drop => ({
+    left_shoulder: [460, 240 + drop * 1.1],
+    left_hip: [470, 485 + drop],
+    left_knee: [458 - drop * 0.08, 670 + drop * 0.45],
+    left_ankle: [470, 825],
+  }));
+}
+
+/**
+ * High-oblique side-view push-up where planar 2D elbow angle stays >= 145°,
+ * while shoulder and hip descend toward planted wrists.
+ */
+export function obliquePushUpSeries(
+  shoulderDropsPx: readonly number[] = [0, 0, 0, 22, 50, 75, 85, 85, 65, 35, 10, 0, 0],
+): Record<string, [number, number]>[] {
+  return shoulderDropsPx.map(drop => ({
+    left_shoulder: [680 + drop * 0.8, 260 + drop],
+    left_elbow: [655 + drop * 0.3, 455 + drop * 0.45],
+    left_wrist: [670, 615],
+    left_hip: [440 + drop * 0.4, 270 + drop * 0.85],
+    left_ankle: [160, 440],
+  }));
+}

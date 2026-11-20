@@ -74,7 +74,7 @@ test('no-cycle videos preserve evidence without emitting a score', async () => {
     ctx.on('fitness/assessment-completed', () => { completed++; });
     await assert.rejects(ctx.fitnessVideo.assess({
       path, exercise: 'squat', targetRepetitions: 1, sessionId: 'partial', artifactDirectory: artifacts,
-    }), error => error instanceof FitnessError && error.code === 'INSUFFICIENT_DATA');
+    }), error => error instanceof FitnessError && error.code === 'INSUFFICIENT_DATA' && /未计次/.test(error.message));
     assert.equal(completed, 0);
     assert.deepEqual((await readdir(artifacts)).sort(), ['motion.json', 'poses.json']);
   } finally {

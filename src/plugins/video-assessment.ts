@@ -19,7 +19,8 @@ export class VideoAssessmentPlugin extends Service implements FitnessVideo {
     const motion = this.ctx.fitnessMotion.analyze(poses, request);
     if (request.artifactDirectory) await this.ctx.fitnessArtifacts.save(request.artifactDirectory, 'motion.json', motion);
     if (!motion.repetitions.length) {
-      throw new FitnessError('INSUFFICIENT_DATA', '已提取骨架，但没有可用于评分的完整动作；请查看运动分析证据');
+      const detail = motion.warnings.length ? `（${motion.warnings.join('；')}）` : '';
+      throw new FitnessError('INSUFFICIENT_DATA', `已提取骨架，但没有可用于评分的完整动作${detail}；请查看运动分析证据`);
     }
     if (request.artifactDirectory) await this.ctx.fitnessArtifacts.save(request.artifactDirectory, 'workout.json', motion.workout);
     const assessment = this.ctx.fitnessAssessment.evaluate(motion.workout);
