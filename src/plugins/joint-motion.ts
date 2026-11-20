@@ -120,11 +120,11 @@ type Profile = CycleProfile | PlankHoldProfile | BalanceHoldProfile | Oscillatio
  */
 const PROFILES: Readonly<Record<SupportedExercise, Profile>> = Object.freeze({
   squat: {
-    mode: 'cycle', policyVersion: '0.2.0', parts: ['shoulder', 'hip', 'knee', 'ankle'], measure: 'knee',
+    mode: 'cycle', policyVersion: '0.3.0', parts: ['shoulder', 'hip', 'knee', 'ankle'], measure: 'knee',
     extendedAt: 'high', threshold: 160, enterDelta: 10, minRange: 30, stability: 'torso',
   },
   'push-up': {
-    mode: 'cycle', policyVersion: '0.2.0', parts: ['shoulder', 'elbow', 'wrist', 'hip', 'ankle'], measure: 'elbow',
+    mode: 'cycle', policyVersion: '0.3.0', parts: ['shoulder', 'elbow', 'wrist', 'hip', 'ankle'], measure: 'elbow',
     extendedAt: 'high', threshold: 155, enterDelta: 10, minRange: 30, stability: 'alignment',
   },
   crunch: {
@@ -266,15 +266,93 @@ function extractBalance(poses: PoseSequence, profile: BalanceHoldProfile): { sid
   return { side, features: frames };
 }
 
-function extract(poses: PoseSequence, profile: Profile, exercise: SupportedExercise): { side: Side; features: Feature[] } {
+function quantileRange(values: readonly number[], lowFraction: number, highFraction: number): number {
+  if (values.length < 6) return Infinity;
+  return percentile(values, highFraction) - percentile(values, lowFraction);
+}
+
+interface ForeshorteningContext {
+  readonly enabled: boolean;
+  readonly refSpan: number;
+}
+
+/**
+ * Detects whether a squat or push-up clip was filmed from a front or steep
+ * oblique camera angle where limb flexion occurs primarily along the camera ray
+ * (Z-axis) rather than in the 2D X-Y plane.
+ *
+ * Foreshortening compensation activates only when:
+ * 1. The planar 2D joint angle never drops below 130° (true side-view clips and
+ *    synthetic planar fixtures bend well below 130° and stay purely planar);
+ * 2. The ground anchor (ankle for squat, wrist for push-up) stays planted; and
+ * 3. Both shoulder and hip exhibit real vertical travel in image coordinates.
+ */
+function detectForeshortening(
+  poses: PoseSequence,
+  side: Side,
+  names: readonly KeypointName[],
+  exercise: SupportedExercise,
+): ForeshorteningContext {
+  if (exercise !== 'squat' && exercise !== 'push-up') return { enabled: false, refSpan: 0 };
+  const planarAngles: number[] = [];
+  const spans: number[] = [];
+  const anchors: number[] = [];
+  const shoulderYs: number[] = [];
+  const hipYs: number[] = [];
+
+  for (const frame of poses.frames) {
+    const selected = points(frame, names);
+    if (!selected.every(point => inBounds(point, poses))) continue;
+    const point = (name: string) => frame.keypoints.find(item => item.name === `${side}_${name}`)!;
+    const shoulder = point('shoulder');
+    const hip = point('hip');
+    const ankle = point('ankle');
+    const planar = exercise === 'squat'
+      ? jointAngle(hip, point('knee'), ankle)
+      : jointAngle(shoulder, point('elbow'), point('wrist'));
+    if (planar !== null) planarAngles.push(planar);
+    if (exercise === 'squat') {
+      const knee = point('knee');
+      if (shoulder.y < hip.y && hip.y < knee.y && knee.y < ankle.y) {
+        spans.push(ankle.y - hip.y);
+        anchors.push(ankle.y);
+        shoulderYs.push(shoulder.y);
+        hipYs.push(hip.y);
+      }
+    } else {
+      const wrist = point('wrist');
+      const bodyLen = Math.hypot(ankle.x - shoulder.x, ankle.y - shoulder.y);
+      if (bodyLen > 1 && Math.abs(ankle.y - shoulder.y) / bodyLen <= 0.65 && wrist.y > shoulder.y) {
+        spans.push(Math.hypot(wrist.x - shoulder.x, wrist.y - shoulder.y));
+        anchors.push(wrist.y);
+        shoulderYs.push(shoulder.y);
+        hipYs.push(hip.y);
+      }
+    }
+  }
+  const minPlanar = planarAngles.length ? Math.min(...planarAngles) : 0;
+  const refSpan = spans.length >= 6 ? percentile(spans, 0.9) : 0;
+  const anchorSpread = quantileRange(anchors, 0.15, 0.85);
+  const shoulderTravel = quantileRange(shoulderYs, 0.05, 0.95);
+  const hipTravel = quantileRange(hipYs, 0.05, 0.95);
+  const enabled = minPlanar >= 130
+    && refSpan > 20
+    && anchorSpread / refSpan <= 0.45
+    && shoulderTravel / refSpan >= 0.08
+    && hipTravel / refSpan >= 0.08;
+  return { enabled, refSpan };
+}
+
+function extract(poses: PoseSequence, profile: Profile, exercise: SupportedExercise): { side: Side; features: Feature[]; foreshortened: boolean } {
   if (profile.mode === 'hold' && profile.variant === 'balance') {
-    return extractBalance(poses, profile);
+    return { ...extractBalance(poses, profile), foreshortened: false };
   }
   const reliability = (side: Side) => mean(poses.frames.map(frame =>
     Math.min(...points(frame, namesFor(side, profile.parts)).map(point => point.confidence))));
   // Fix the side for the whole session so left/right switching cannot manufacture a cycle.
   const side = reliability('left') >= reliability('right') ? 'left' : 'right';
   const names = namesFor(side, profile.parts);
+  const foreshortening = detectForeshortening(poses, side, names, exercise);
   const angleHistory: number[] = [];
   const signalHistory: number[] = [];
   let lastValid = -Infinity;
@@ -330,12 +408,28 @@ function extract(poses: PoseSequence, profile: Profile, exercise: SupportedExerc
       };
     }
 
-    const raw = profile.mode === 'cycle' ? measureAngle(profile.measure, point) : bodyAlignment;
+    let raw = profile.mode === 'cycle' ? measureAngle(profile.measure, point) : bodyAlignment;
     if (raw === null || bodyAlignment === null || span < EPSILON) {
       return {
         ...base, angle: null, torsoInclination: null, bodyAlignment: null,
         signal: null, slope: null, bodyLength: null, kneeAngle: null, upright: false,
       };
+    }
+    if (foreshortening.enabled) {
+      if (exercise === 'squat') {
+        const knee = point('knee');
+        if (shoulder.y < hip.y && hip.y < knee.y && knee.y < ankle.y) {
+          const compression = Math.max(0, 1 - (ankle.y - hip.y) / foreshortening.refSpan - 0.03);
+          raw = Math.min(raw, Math.max(45, 180 - compression * 240));
+        }
+      } else if (exercise === 'push-up') {
+        const wrist = point('wrist');
+        if (wrist.y > shoulder.y) {
+          const armSpan = Math.hypot(wrist.x - shoulder.x, wrist.y - shoulder.y);
+          const compression = Math.max(0, 1 - armSpan / foreshortening.refSpan - 0.03);
+          raw = Math.min(raw, Math.max(60, 180 - compression * 300));
+        }
+      }
     }
     if (frame.timestampMs - lastValid > MAX_GAP_MS) angleHistory.length = 0;
     lastValid = frame.timestampMs;
@@ -353,7 +447,7 @@ function extract(poses: PoseSequence, profile: Profile, exercise: SupportedExerc
     };
   });
   if (exercise === 'jump-rope') normalizeSignal(frames);
-  return { side, features: frames };
+  return { side, features: frames, foreshortened: foreshortening.enabled };
 }
 
 /** Convert hip pixel height into body lengths, so a jump amplitude is scale-invariant. */
@@ -370,7 +464,11 @@ function normalizeSignal(frames: Feature[]): void {
   }
 }
 
-function detectCycle(features: readonly Feature[], profile: CycleProfile): { repetitions: MotionRepetition[]; discarded: number; interruptions: number } {
+function detectCycle(
+  features: readonly Feature[],
+  profile: CycleProfile,
+  preservePeak = false,
+): { repetitions: MotionRepetition[]; discarded: number; interruptions: number } {
   const isExtended = (value: number) => profile.extendedAt === 'high'
     ? value >= profile.threshold - EPSILON
     : value <= profile.threshold + EPSILON;
@@ -379,6 +477,8 @@ function detectCycle(features: readonly Feature[], profile: CycleProfile): { rep
     : value >= profile.threshold + profile.enterDelta - EPSILON;
 
   let ready: Feature | undefined;
+  let peak: Feature | undefined;
+  let pending: Feature[] = [];
   let active: Feature[] | undefined;
   let lastValid = -Infinity;
   let discarded = 0;
@@ -389,18 +489,42 @@ function detectCycle(features: readonly Feature[], profile: CycleProfile): { rep
     if (frame.angle === null) continue;
     if (frame.timestampMs - lastValid > MAX_GAP_MS) {
       if (active) interruptions++;
-      ready = undefined; active = undefined;
+      ready = undefined; peak = undefined; pending = []; active = undefined;
     }
     lastValid = frame.timestampMs;
     if (!active) {
-      if (isExtended(frame.angle)) ready = frame;
-      else if (ready && hasEntered(frame.angle)) { active = [ready, frame]; ready = undefined; }
+      if (isExtended(frame.angle)) {
+        if (!preservePeak) {
+          ready = frame;
+        } else if (profile.extendedAt === 'high') {
+          if (!peak || frame.angle >= peak.angle! - 0.5) peak = frame;
+          if (!ready || frame.angle >= peak.angle! - 4) {
+            ready = { ...frame, angle: peak.angle };
+            pending = [ready];
+          } else {
+            pending.push(frame);
+          }
+        } else {
+          if (!peak || frame.angle <= peak.angle! + 0.5) peak = frame;
+          if (!ready || frame.angle <= peak.angle! + 4) {
+            ready = { ...frame, angle: peak.angle };
+            pending = [ready];
+          } else {
+            pending.push(frame);
+          }
+        }
+      } else if (ready && hasEntered(frame.angle)) {
+        active = preservePeak ? [...pending, frame] : [ready, frame];
+        ready = undefined; peak = undefined; pending = [];
+      } else if (preservePeak && ready) {
+        pending.push(frame);
+      }
       continue;
     }
     active.push(frame);
     const start = active[0]!;
     if (frame.timestampMs - start.timestampMs > MAX_CYCLE_MS) {
-      discarded++; active = undefined; ready = undefined;
+      discarded++; active = undefined; ready = undefined; peak = undefined; pending = [];
       continue;
     }
     if (!isExtended(frame.angle)) continue;
@@ -426,7 +550,7 @@ function detectCycle(features: readonly Feature[], profile: CycleProfile): { rep
         stability, confidence: mean(active.map(item => item.confidence)),
       }));
     } else { discarded++; }
-    active = undefined; ready = frame;
+    active = undefined; ready = frame; peak = frame; pending = [frame];
   }
   if (active) discarded++;
   return { repetitions, discarded, interruptions };
@@ -672,7 +796,7 @@ export class JointMotionPlugin extends Service implements FitnessMotion {
     const profile = adaptProfile(baseProfile, extracted.features);
     type Detected = { repetitions: readonly MotionRepetition[]; discarded: number; interruptions: number; holds?: readonly MotionHold[] };
     const detected: Detected = profile.mode === 'cycle'
-      ? detectCycle(extracted.features, profile)
+      ? detectCycle(extracted.features, profile, extracted.foreshortened)
       : profile.mode === 'hold'
         ? (profile.variant === 'plank' ? detectPlankHolds(extracted.features, profile) : detectBalanceHolds(extracted.features, profile))
         : profile.mode === 'reach'
@@ -683,13 +807,20 @@ export class JointMotionPlugin extends Service implements FitnessMotion {
     const repetitions = detected.repetitions;
     const validFrames = extracted.features.filter(frame => frame.angle !== null).length;
     const warnings: string[] = [];
+    if (extracted.foreshortened) {
+      warnings.push('正面或斜视角下关节面外弯曲产生二维透视缩短，已结合肢体纵向压缩估算等效屈曲角');
+    }
     if (extracted.features.length - validFrames > 0) warnings.push(`${extracted.features.length - validFrames} 帧因关键点置信度不足、越界或退化几何被排除`);
     if (interruptions) warnings.push(`${interruptions} 个动作片段因超过 350ms 的有效帧间隔被中断`);
     if (detected.discarded) warnings.push(`${detected.discarded} 个片段未满足完整往返、幅度或时长要求，未计次`);
     if (!repetitions.length) {
-      warnings.push(profile.mode === 'hold' || profile.mode === 'reach'
-        ? '没有检测到满足姿势与时长要求的连续保持片段；不能据此产生运动评分'
-        : '没有检测到可信的完整动作周期；不能据此产生运动评分');
+      if (validFrames === 0) {
+        warnings.push('没有检测到有效骨架帧（关键点置信度不足 0.3 或超出画面）；请确保单人全身完整入镜且光线充足');
+      } else {
+        warnings.push(profile.mode === 'hold' || profile.mode === 'reach'
+          ? '没有检测到满足姿势与时长要求的连续保持片段；不能据此产生运动评分'
+          : '没有检测到可信的完整动作周期；不能据此产生运动评分');
+      }
     }
     const workout = Object.freeze({
       schemaVersion: '1.0' as const, sessionId: request.sessionId, exercise: request.exercise,

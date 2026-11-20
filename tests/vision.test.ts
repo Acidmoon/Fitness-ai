@@ -5,7 +5,8 @@ import { parsePoseSequence } from '../src/pose-validation.ts';
 import { JointMotionPlugin, jointAngle } from '../src/plugins/joint-motion.ts';
 import { createRuntime } from '../src/runtime.ts';
 import {
-  CYCLE, balanceSeries, crunchSeries, jumpSeries, makeFrames, makePoses, plankSeries, sitAndReachSeries,
+  CYCLE, balanceSeries, crunchSeries, frontSquatSeries, jumpSeries, makeFrames, makePoses,
+  obliquePushUpSeries, plankSeries, sitAndReachSeries,
 } from './vision-fixtures.ts';
 import type { Keypoint, SupportedExercise } from '../src/vision-contracts.ts';
 
@@ -18,7 +19,7 @@ for (const exercise of ['squat', 'push-up'] as SupportedExercise[]) {
         exercise, sessionId: 'cycle-test', targetRepetitions: 1,
       });
       assert.equal(result.policy.id, `joint-cycle-${exercise}`);
-      assert.equal(result.policy.version, '0.2.0');
+      assert.equal(result.policy.version, '0.3.0');
       assert.equal(result.repetitions.length, 1);
       const rep = result.repetitions[0]!;
       assert.ok(rep.startMs < rep.bottomMs && rep.bottomMs < rep.endMs);
@@ -298,6 +299,35 @@ test('balance detects single-leg stance holds, rejects two-foot standing or lean
       assert.equal(result.repetitions.length, 0, `expected 0 holds for ${label}`);
       assert.equal(result.holds?.length ?? 0, 0, `expected 0 MotionHold items for ${label}`);
     }
+  } finally { await ctx.fiber.dispose(); }
+});
+
+test('front-view squats and oblique push-ups compensate for 2D foreshortening without hallucinating reps on static or unplanted clips', async () => {
+  const ctx = createRuntime();
+  try {
+    await ctx.plugin(JointMotionPlugin);
+    const frontSquat = ctx.fitnessMotion.analyze(makeFrames(frontSquatSeries()), {
+      exercise: 'squat', sessionId: 'front-squat', targetRepetitions: 1,
+    });
+    assert.equal(frontSquat.policy.version, '0.3.0');
+    assert.equal(frontSquat.repetitions.length, 1);
+    assert.ok(frontSquat.repetitions[0]!.rangeOfMotion >= 0.7);
+    assert.ok(frontSquat.warnings.some(message => message.includes('透视缩短')));
+
+    const obliquePushUp = ctx.fitnessMotion.analyze(makeFrames(obliquePushUpSeries()), {
+      exercise: 'push-up', sessionId: 'oblique-pushup', targetRepetitions: 1,
+    });
+    assert.equal(obliquePushUp.policy.version, '0.3.0');
+    assert.equal(obliquePushUp.repetitions.length, 1);
+    assert.ok(obliquePushUp.repetitions[0]!.rangeOfMotion >= 0.45);
+    assert.ok(obliquePushUp.warnings.some(message => message.includes('透视缩短')));
+
+    // Static standing with minor jitter must still produce 0 reps.
+    const staticStanding = ctx.fitnessMotion.analyze(
+      makeFrames(frontSquatSeries([0, 2, -1, 3, 1, 0, -2, 2, 1, 0, 1, -1])),
+      { exercise: 'squat', sessionId: 'static-standing', targetRepetitions: 1 },
+    );
+    assert.equal(staticStanding.repetitions.length, 0);
   } finally { await ctx.fiber.dispose(); }
 });
 
