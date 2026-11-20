@@ -1,10 +1,17 @@
 import { Service, type Context } from 'cordis';
 import rawExercises from '../data/free-exercise-db/exercises.json' with { type: 'json' };
+import rawTranslationsZh from '../data/free-exercise-db/zh-cn.json' with { type: 'json' };
 import rawManifest from '../data/free-exercise-db/manifest.json' with { type: 'json' };
 import { FitnessError, type DimensionKey } from '../contracts.ts';
 import type { MotionMeasurementMode, SupportedExercise } from '../vision-contracts.ts';
 import {
-  EXERCISE_CATEGORIES, EXERCISE_EQUIPMENT, EXERCISE_LEVELS, EXERCISE_MUSCLES, GOAL_UNITS,
+  EXERCISE_CATEGORIES, EXERCISE_CATEGORY_LABELS,
+  EXERCISE_EQUIPMENT, EXERCISE_EQUIPMENT_LABELS,
+  EXERCISE_FORCES, EXERCISE_FORCE_LABELS,
+  EXERCISE_LEVELS, EXERCISE_LEVEL_LABELS,
+  EXERCISE_MECHANICS, EXERCISE_MECHANIC_LABELS,
+  EXERCISE_MUSCLES, EXERCISE_MUSCLE_LABELS,
+  GOAL_UNITS,
   type CompletionStandard, type ExerciseCatalogManifest, type ExerciseDefinition,
   type ExerciseGoalRequest, type ExerciseGoalResult, type ExercisePage, type ExerciseQuery,
   type ExerciseSource, type ExerciseStandard, type FitnessExercises,
@@ -116,19 +123,33 @@ function projectDefinitions(): readonly ExerciseDefinition[] {
       schemaVersion: '1.0' as const,
       id: 'Sit_And_Reach',
       name: 'Sit and Reach',
+      nameZh: '坐位体前屈',
       aliases: Object.freeze([...(ALIASES.Sit_And_Reach ?? [])]),
       category: 'stretching' as const,
+      categoryLabel: EXERCISE_CATEGORY_LABELS.stretching,
       level: 'beginner' as const,
+      levelLabel: EXERCISE_LEVEL_LABELS.beginner,
       force: 'static' as const,
+      forceLabel: EXERCISE_FORCE_LABELS.static,
       mechanic: 'compound' as const,
+      mechanicLabel: EXERCISE_MECHANIC_LABELS.compound,
       equipment: 'body only' as const,
+      equipmentLabel: EXERCISE_EQUIPMENT_LABELS['body only'],
       primaryMuscles: Object.freeze(['hamstrings', 'lower back'] as const),
+      primaryMusclesZh: Object.freeze([EXERCISE_MUSCLE_LABELS.hamstrings, EXERCISE_MUSCLE_LABELS['lower back']] as const),
       secondaryMuscles: Object.freeze(['calves'] as const),
+      secondaryMusclesZh: Object.freeze([EXERCISE_MUSCLE_LABELS.calves] as const),
       instructions: Object.freeze([
         'Sit on a flat surface with both legs extended straight in front of you and knees kept flat.',
         'Place the camera in a side view so your shoulder, wrist, hip, knee, and ankle remain clearly visible.',
         'Exhale and reach both hands slowly forward along the line of your legs without bending your knees or bouncing.',
         'Hold your maximum comfortable forward reach steadily for at least 2 seconds, then relax back to upright sitting.',
+      ]),
+      instructionsZh: Object.freeze([
+        '坐在平整的地面或垫子上，双腿向前伸直，膝盖保持贴地伸直状态。',
+        '将镜头放置在身体侧面，确保肩部、手腕、髋部、膝盖和脚踝都清晰可见。',
+        '呼气，双手沿双腿方向缓慢向前伸展，过程中不要屈膝或借力弹振。',
+        '在舒适的最大前伸位置稳定保持至少 2 秒，随后放松回到直立坐姿。',
       ]),
       instructionStatus: 'available' as const,
       imageUrls: Object.freeze([] as string[]),
@@ -142,19 +163,33 @@ function projectDefinitions(): readonly ExerciseDefinition[] {
       schemaVersion: '1.0' as const,
       id: 'Single_Leg_Balance',
       name: 'Single-Leg Balance',
+      nameZh: '单脚站立平衡',
       aliases: Object.freeze([...(ALIASES.Single_Leg_Balance ?? [])]),
       category: 'strength' as const,
+      categoryLabel: EXERCISE_CATEGORY_LABELS.strength,
       level: 'beginner' as const,
+      levelLabel: EXERCISE_LEVEL_LABELS.beginner,
       force: 'static' as const,
+      forceLabel: EXERCISE_FORCE_LABELS.static,
       mechanic: 'compound' as const,
+      mechanicLabel: EXERCISE_MECHANIC_LABELS.compound,
       equipment: 'body only' as const,
+      equipmentLabel: EXERCISE_EQUIPMENT_LABELS['body only'],
       primaryMuscles: Object.freeze(['calves', 'quadriceps'] as const),
+      primaryMusclesZh: Object.freeze([EXERCISE_MUSCLE_LABELS.calves, EXERCISE_MUSCLE_LABELS.quadriceps] as const),
       secondaryMuscles: Object.freeze(['glutes', 'abdominals'] as const),
+      secondaryMusclesZh: Object.freeze([EXERCISE_MUSCLE_LABELS.glutes, EXERCISE_MUSCLE_LABELS.abdominals] as const),
       instructions: Object.freeze([
         'Stand upright facing the camera (front or oblique full-body view) with both shoulders, hips, and ankles visible.',
         'Shift your weight onto one standing foot and lift the other foot clearly off the ground.',
         'Keep your torso upright and steady without hopping or touching the raised foot down.',
         'Hold the single-leg stance continuously toward your target duration in seconds.',
+      ]),
+      instructionsZh: Object.freeze([
+        '面向镜头直立站好（正面或斜侧面全身入镜），确保双肩、双髋和双脚踝清晰可见。',
+        '将身体重心移至一侧支撑脚，另一只脚清晰抬离地面。',
+        '保持躯干直立稳定，不要单脚跳动或让抬起脚触地。',
+        '持续保持单脚站立姿势，尽量坚持至目标秒数。',
       ]),
       instructionStatus: 'available' as const,
       imageUrls: Object.freeze([] as string[]),
@@ -188,10 +223,15 @@ function exactKeys(data: Record<string, unknown>, keys: readonly string[]): void
   for (const key of Object.keys(data)) if (!keys.includes(key)) fail(`未知字段：${key}`);
 }
 
-/** Validate the vendored boundary without silently dropping incomplete records. */
+/** Validate the vendored boundary and offline Chinese localization without silently dropping records. */
 function definitions(): readonly ExerciseDefinition[] {
   try {
     if (!Array.isArray(rawExercises) || rawExercises.length !== rawManifest.exerciseCount) fail('动作总数与来源清单不一致');
+    const translations = object(rawTranslationsZh);
+    const translationKeys = Object.keys(translations);
+    if (translationKeys.length !== rawExercises.length) {
+      fail(`中文本地化条目数与动作总数不一致：${translationKeys.length} !== ${rawExercises.length}`);
+    }
     const ids = new Set<string>();
     const sourceRoot = `${rawManifest.repository}/blob/${rawManifest.revision}/exercises`;
     return Object.freeze(rawExercises.map((value): ExerciseDefinition => {
@@ -199,26 +239,54 @@ function definitions(): readonly ExerciseDefinition[] {
       const id = text(data.id, 'id');
       if (!/^[0-9a-zA-Z_-]+$/.test(id) || ids.has(id)) fail(`动作标识非法或重复：${id}`);
       ids.add(id);
-      const strings = (key: string): readonly string[] => {
-        const items = data[key];
+      if (!Object.prototype.hasOwnProperty.call(translations, id)) fail(`缺少中文本地化条目：${id}`);
+      const zhEntry = object(translations[id]);
+      exactKeys(zhEntry, ['name', 'instructions']);
+      const nameZh = text(zhEntry.name, `${id}.nameZh`);
+      const strings = (src: Record<string, unknown>, key: string): readonly string[] => {
+        const items = src[key];
         if (!Array.isArray(items) || items.some(item => typeof item !== 'string')) fail(`${id}.${key} 必须是字符串数组`);
         return Object.freeze([...items] as string[]);
       };
-      const muscles = (key: string) => Object.freeze(strings(key).map(item => member(item, EXERCISE_MUSCLES, key)));
-      const instructions = strings('instructions');
-      const images = strings('images');
+      const muscles = (key: string) => Object.freeze(strings(data, key).map(item => member(item, EXERCISE_MUSCLES, key)));
+      const instructions = strings(data, 'instructions');
+      const instructionsZh = strings(zhEntry, 'instructions');
+      if (instructionsZh.length !== instructions.length) {
+        fail(`${id}.instructionsZh 步骤数与英文源不一致：${instructionsZh.length} !== ${instructions.length}`);
+      }
+      for (let i = 0; i < instructions.length; i++) {
+        const srcStep = instructions[i]!;
+        const zhStep = instructionsZh[i]!;
+        if (!srcStep.trim()) {
+          if (zhStep !== '') fail(`${id}.instructionsZh[${i}] 对应空英文步骤必须保持为空字符串`);
+        } else if (!zhStep.trim()) {
+          fail(`${id}.instructionsZh[${i}] 不能为空`);
+        }
+      }
+      const images = strings(data, 'images');
       for (const image of images) if (!new RegExp(`^${id}/[0-9]+\\.jpg$`).test(image)) fail(`${id} 图片引用非法`);
+      const category = member(data.category, EXERCISE_CATEGORIES, 'category');
+      const level = member(data.level, EXERCISE_LEVELS, 'level');
+      const force = data.force == null ? null : member(data.force, EXERCISE_FORCES, 'force');
+      const mechanic = data.mechanic === null ? null : member(data.mechanic, EXERCISE_MECHANICS, 'mechanic');
+      const equipment = data.equipment === null ? null : member(data.equipment, EXERCISE_EQUIPMENT, 'equipment');
+      const primaryMuscles = muscles('primaryMuscles');
+      const secondaryMuscles = muscles('secondaryMuscles');
       const quality = technique(id);
       return Object.freeze({
-        schemaVersion: '1.0', id, name: text(data.name, 'name'),
+        schemaVersion: '1.0', id, name: text(data.name, 'name'), nameZh,
         aliases: Object.freeze([...(ALIASES[id] ?? [])]),
-        category: member(data.category, EXERCISE_CATEGORIES, 'category'),
-        level: member(data.level, EXERCISE_LEVELS, 'level'),
-        force: data.force == null ? null : member(data.force, ['static', 'pull', 'push'], 'force'),
-        mechanic: data.mechanic === null ? null : member(data.mechanic, ['isolation', 'compound'], 'mechanic'),
-        equipment: data.equipment === null ? null : member(data.equipment, EXERCISE_EQUIPMENT, 'equipment'),
-        primaryMuscles: muscles('primaryMuscles'), secondaryMuscles: muscles('secondaryMuscles'),
-        instructions, instructionStatus: !instructions.some(step => step.trim()) ? 'missing'
+        category, categoryLabel: EXERCISE_CATEGORY_LABELS[category],
+        level, levelLabel: EXERCISE_LEVEL_LABELS[level],
+        force, forceLabel: force === null ? null : EXERCISE_FORCE_LABELS[force],
+        mechanic, mechanicLabel: mechanic === null ? null : EXERCISE_MECHANIC_LABELS[mechanic],
+        equipment, equipmentLabel: equipment === null ? null : EXERCISE_EQUIPMENT_LABELS[equipment],
+        primaryMuscles,
+        primaryMusclesZh: Object.freeze(primaryMuscles.map(muscle => EXERCISE_MUSCLE_LABELS[muscle])),
+        secondaryMuscles,
+        secondaryMusclesZh: Object.freeze(secondaryMuscles.map(muscle => EXERCISE_MUSCLE_LABELS[muscle])),
+        instructions, instructionsZh,
+        instructionStatus: !instructions.some(step => step.trim()) ? 'missing'
           : instructions.some(step => !step.trim()) ? 'partial' : 'available',
         mediaRights: 'unverified',
         origin: 'free-exercise-db',
@@ -230,6 +298,35 @@ function definitions(): readonly ExerciseDefinition[] {
   } catch (cause) {
     throw new FitnessError('CATALOG_INVALID', '动作目录未通过启动校验', { cause });
   }
+}
+
+function searchRank(item: ExerciseDefinition, search: string): number | null {
+  const primary = [item.id, item.name, item.nameZh, ...item.aliases].map(value => value.toLowerCase());
+  const secondary = [
+    item.category, item.categoryLabel,
+    item.level, item.levelLabel,
+    ...(item.equipment ? [item.equipment] : []),
+    ...(item.equipmentLabel ? [item.equipmentLabel] : []),
+    ...(item.force ? [item.force] : []),
+    ...(item.forceLabel ? [item.forceLabel] : []),
+    ...(item.mechanic ? [item.mechanic] : []),
+    ...(item.mechanicLabel ? [item.mechanicLabel] : []),
+    ...item.primaryMuscles, ...item.primaryMusclesZh,
+    ...item.secondaryMuscles, ...item.secondaryMusclesZh,
+  ].map(value => value.toLowerCase());
+
+  if (primary.some(value => value === search)) return 0;
+  if (primary.some(value => value.startsWith(search))) return 1;
+  if (primary.some(value => value.includes(search))) return 2;
+  if (secondary.some(value => value.includes(search))) return 3;
+
+  const tokens = search.split(/\s+/).filter(Boolean);
+  if (tokens.length > 1) {
+    if (tokens.every(token => primary.some(value => value.includes(token)))) return 2;
+    const all = [...primary, ...secondary];
+    if (tokens.every(token => all.some(value => value.includes(token)))) return 3;
+  }
+  return null;
 }
 
 export class ExerciseLibraryPlugin extends Service implements FitnessExercises {
@@ -256,7 +353,9 @@ export class ExerciseLibraryPlugin extends Service implements FitnessExercises {
       }
       this.standards.set(item.id, Object.freeze({
         schemaVersion: '1.0', exerciseId: item.id, sourceRevision: item.sourceRevision,
-        instructionStatus: item.instructionStatus, referenceInstructions: item.instructions,
+        instructionStatus: item.instructionStatus,
+        referenceInstructions: item.instructions,
+        referenceInstructionsZh: item.instructionsZh,
         sourceUrl: item.sourceUrl, completion: COMPLETION, technique: technique(item.id),
       }));
     }
@@ -298,12 +397,22 @@ export class ExerciseLibraryPlugin extends Service implements FitnessExercises {
     const equipment = data.equipment == null ? data.equipment : member(data.equipment, EXERCISE_EQUIPMENT, 'equipment');
     const muscle = data.muscle === undefined ? undefined : member(data.muscle, EXERCISE_MUSCLES, 'muscle');
     const quality = data.technique === undefined ? undefined : member(data.technique, ['heuristic', 'unavailable'], 'technique');
-    const filtered = this.exercises.filter(item =>
-      (search === undefined || [item.id, item.name, ...item.aliases].some(value => value.toLowerCase().includes(search))) &&
-      (category === undefined || item.category === category) && (level === undefined || item.level === level) &&
-      (equipment === undefined || item.equipment === equipment) &&
-      (muscle === undefined || item.primaryMuscles.includes(muscle) || item.secondaryMuscles.includes(muscle)) &&
-      (quality === undefined || item.capabilities.techniqueScoring === quality));
+    const matched: { item: ExerciseDefinition; rank: number }[] = [];
+    for (const item of this.exercises) {
+      if (category !== undefined && item.category !== category) continue;
+      if (level !== undefined && item.level !== level) continue;
+      if (equipment !== undefined && item.equipment !== equipment) continue;
+      if (muscle !== undefined && !item.primaryMuscles.includes(muscle) && !item.secondaryMuscles.includes(muscle)) continue;
+      if (quality !== undefined && item.capabilities.techniqueScoring !== quality) continue;
+      if (search === undefined) {
+        matched.push({ item, rank: 0 });
+      } else {
+        const rank = searchRank(item, search);
+        if (rank !== null) matched.push({ item, rank });
+      }
+    }
+    if (search !== undefined) matched.sort((a, b) => a.rank - b.rank);
+    const filtered = matched.map(entry => entry.item);
     return Object.freeze({ schemaVersion: '1.0', total: filtered.length, offset, limit, items: Object.freeze(filtered.slice(offset, offset + limit)) });
   }
 

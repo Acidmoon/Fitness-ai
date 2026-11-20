@@ -3,7 +3,11 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { FitnessError, type WorkoutSession } from '../src/contracts.ts';
-import type { ExerciseGoalResult, ExerciseQuery } from '../src/exercise-contracts.ts';
+import {
+  EXERCISE_CATEGORY_LABELS, EXERCISE_EQUIPMENT_LABELS, EXERCISE_FORCE_LABELS,
+  EXERCISE_LEVEL_LABELS, EXERCISE_MECHANIC_LABELS, EXERCISE_MUSCLE_LABELS,
+  type ExerciseGoalResult, type ExerciseQuery,
+} from '../src/exercise-contracts.ts';
 import { createRuntime, mountPlugins } from '../src/runtime.ts';
 import { ExerciseLibraryPlugin } from '../src/plugins/exercise-library.ts';
 import { RuleScoringPlugin } from '../src/plugins/rule-scoring.ts';
@@ -200,4 +204,101 @@ test('quality scoring consumes catalog standards, rejects uncalibrated variants,
     assert.equal(ctx.fitnessScoring.score(workout).total, 100);
   } finally { await ctx.fiber.dispose(); }
   assert.equal(ctx.registry.size, 0);
+});
+
+test('all 878 exercises expose complete frozen Chinese localization with unchanged upstream sha256', async () => {
+  const ctx = await library();
+  try {
+    const manifest = ctx.fitnessExercises.manifest();
+    const bytes = await readFile(new URL('../src/data/free-exercise-db/exercises.json', import.meta.url));
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    assert.equal(sha256, '5bb747e3fc658f095a60dcbf6d53c96627acdcc6ffb6fffde86f7e26995d40bf');
+    assert.equal(sha256, manifest.source.sha256);
+
+    const hasCjk = /[\u4e00-\u9fff]/;
+    const latinWord = /[A-Za-z]{2,}/;
+    let count = 0;
+
+    for (let offset = 0; offset < manifest.counts.exercises; offset += 100) {
+      const page = ctx.fitnessExercises.list({ offset, limit: 100 });
+      for (const item of page.items) {
+        count++;
+        assert.ok(item.nameZh.trim().length > 0, `${item.id}: empty nameZh`);
+        assert.match(item.nameZh, hasCjk, `${item.id}: nameZh missing Chinese: ${item.nameZh}`);
+        assert.doesNotMatch(item.nameZh, latinWord, `${item.id}: nameZh has English word: ${item.nameZh}`);
+        assert.notEqual(item.nameZh, item.name, `${item.id}: nameZh unchanged from English`);
+
+        assert.equal(item.categoryLabel, EXERCISE_CATEGORY_LABELS[item.category]);
+        assert.equal(item.levelLabel, EXERCISE_LEVEL_LABELS[item.level]);
+        assert.equal(item.equipmentLabel, item.equipment === null ? null : EXERCISE_EQUIPMENT_LABELS[item.equipment]);
+        assert.equal(item.forceLabel, item.force === null ? null : EXERCISE_FORCE_LABELS[item.force]);
+        assert.equal(item.mechanicLabel, item.mechanic === null ? null : EXERCISE_MECHANIC_LABELS[item.mechanic]);
+        assert.deepEqual(item.primaryMusclesZh, item.primaryMuscles.map(m => EXERCISE_MUSCLE_LABELS[m]));
+        assert.deepEqual(item.secondaryMusclesZh, item.secondaryMuscles.map(m => EXERCISE_MUSCLE_LABELS[m]));
+        assert.ok(Object.isFrozen(item.primaryMusclesZh));
+        assert.ok(Object.isFrozen(item.secondaryMusclesZh));
+        assert.ok(Object.isFrozen(item.instructionsZh));
+
+        assert.equal(item.instructionsZh.length, item.instructions.length, `${item.id}: instructionsZh count mismatch`);
+        for (let i = 0; i < item.instructions.length; i++) {
+          const en = item.instructions[i]!;
+          const zh = item.instructionsZh[i]!;
+          if (!en.trim()) {
+            assert.equal(zh, '', `${item.id}[${i}]: empty upstream step must remain empty`);
+          } else {
+            assert.ok(zh.trim().length > 0, `${item.id}[${i}]: non-empty step translated empty`);
+            assert.match(zh, hasCjk, `${item.id}[${i}]: step missing Chinese`);
+            assert.doesNotMatch(zh, latinWord, `${item.id}[${i}]: step has English leftover: ${zh}`);
+          }
+        }
+
+        const standard = ctx.fitnessExercises.getStandard(item.id);
+        assert.deepEqual(standard.referenceInstructionsZh, item.instructionsZh);
+        assert.ok(Object.isFrozen(standard.referenceInstructionsZh));
+      }
+    }
+    assert.equal(count, 878);
+
+    assert.equal(ctx.fitnessExercises.get('Bodyweight_Squat').nameZh, '徒手深蹲');
+    assert.equal(ctx.fitnessExercises.get('Pushups').nameZh, '俯卧撑');
+    assert.equal(ctx.fitnessExercises.get('Crunches').nameZh, '卷腹');
+    assert.equal(ctx.fitnessExercises.get('Sit-Up').nameZh, '仰卧起坐');
+    assert.equal(ctx.fitnessExercises.get('Plank').nameZh, '平板支撑');
+    assert.equal(ctx.fitnessExercises.get('Rope_Jumping').nameZh, '跳绳');
+    assert.equal(ctx.fitnessExercises.get('Sit_And_Reach').nameZh, '坐位体前屈');
+    assert.equal(ctx.fitnessExercises.get('Single_Leg_Balance').nameZh, '单脚站立平衡');
+    assert.equal(ctx.fitnessExercises.get('Clean').instructionsZh[1], '');
+    assert.deepEqual(ctx.fitnessExercises.get('Iron_Cross').instructionsZh, []);
+  } finally { await ctx.fiber.dispose(); }
+});
+
+test('bilingual search matches Chinese names, muscles, equipment, categories, and English terms', async () => {
+  const ctx = await library();
+  try {
+    const squat = ctx.fitnessExercises.list({ query: '深蹲', limit: 100 });
+    assert.equal(squat.items[0]?.id, 'Bodyweight_Squat');
+    assert.ok(squat.total > 10, `expected >10 深蹲 results, got ${squat.total}`);
+
+    const bench = ctx.fitnessExercises.list({ query: '卧推', limit: 100 });
+    assert.ok(bench.total > 10, `expected >10 卧推 results, got ${bench.total}`);
+    assert.ok(bench.items.some(item => item.id === 'Barbell_Bench_Press_-_Medium_Grip'));
+
+    const dumbbell = ctx.fitnessExercises.list({ query: '哑铃', limit: 100 });
+    assert.ok(dumbbell.total > 50, `expected >50 哑铃 results, got ${dumbbell.total}`);
+    assert.ok(dumbbell.items.some(item => item.equipment === 'dumbbell'));
+
+    const quads = ctx.fitnessExercises.list({ query: '股四头肌', limit: 100 });
+    assert.ok(quads.total > 50, `expected >50 股四头肌 results, got ${quads.total}`);
+    assert.ok(quads.items.every(item =>
+      item.primaryMusclesZh.includes('股四头肌') || item.secondaryMusclesZh.includes('股四头肌') || item.nameZh.includes('股四头肌')));
+
+    const multi = ctx.fitnessExercises.list({ query: '哑铃 卧推', limit: 50 });
+    assert.ok(multi.total > 0);
+    assert.ok(multi.items.every(item =>
+      (item.nameZh.includes('哑铃') || item.equipmentLabel === '哑铃') && item.nameZh.includes('卧推')));
+
+    assert.ok(ctx.fitnessExercises.list({ query: '拉伸柔韧', limit: 50 }).total > 50);
+    assert.ok(ctx.fitnessExercises.list({ query: 'quadriceps', limit: 50 }).total > 50);
+    assert.ok(ctx.fitnessExercises.list({ query: 'barbell', limit: 50 }).total > 50);
+  } finally { await ctx.fiber.dispose(); }
 });
