@@ -15,12 +15,78 @@ export const EXERCISE_MUSCLES = [
   'glutes', 'hamstrings', 'lats', 'lower back', 'middle back', 'neck',
   'quadriceps', 'shoulders', 'traps', 'triceps',
 ] as const;
+export const EXERCISE_FORCES = ['static', 'pull', 'push'] as const;
+export const EXERCISE_MECHANICS = ['isolation', 'compound'] as const;
 export const GOAL_UNITS = ['repetitions', 'seconds', 'meters'] as const;
 export type ExerciseCategory = typeof EXERCISE_CATEGORIES[number];
 export type ExerciseLevel = typeof EXERCISE_LEVELS[number];
 export type ExerciseEquipment = typeof EXERCISE_EQUIPMENT[number];
 export type ExerciseMuscle = typeof EXERCISE_MUSCLES[number];
+export type ExerciseForce = typeof EXERCISE_FORCES[number];
+export type ExerciseMechanic = typeof EXERCISE_MECHANICS[number];
 export type GoalUnit = typeof GOAL_UNITS[number];
+
+export const EXERCISE_CATEGORY_LABELS: Readonly<Record<ExerciseCategory, string>> = Object.freeze({
+  strength: '力量训练',
+  stretching: '拉伸柔韧',
+  plyometrics: '增强式训练',
+  strongman: '大力士训练',
+  powerlifting: '力量举',
+  cardio: '有氧运动',
+  'olympic weightlifting': '举重',
+});
+
+export const EXERCISE_LEVEL_LABELS: Readonly<Record<ExerciseLevel, string>> = Object.freeze({
+  beginner: '初级',
+  intermediate: '中级',
+  expert: '高级',
+});
+
+export const EXERCISE_EQUIPMENT_LABELS: Readonly<Record<ExerciseEquipment, string>> = Object.freeze({
+  'body only': '徒手',
+  dumbbell: '哑铃',
+  barbell: '杠铃',
+  cable: '绳索',
+  machine: '固定器械',
+  kettlebells: '壶铃',
+  bands: '弹力带',
+  'medicine ball': '药球',
+  'exercise ball': '健身球',
+  'foam roll': '泡沫轴',
+  'e-z curl bar': '曲杆杠铃',
+  other: '其他器械',
+});
+
+export const EXERCISE_FORCE_LABELS: Readonly<Record<ExerciseForce, string>> = Object.freeze({
+  push: '推',
+  pull: '拉',
+  static: '静力',
+});
+
+export const EXERCISE_MECHANIC_LABELS: Readonly<Record<ExerciseMechanic, string>> = Object.freeze({
+  compound: '复合动作',
+  isolation: '孤立动作',
+});
+
+export const EXERCISE_MUSCLE_LABELS: Readonly<Record<ExerciseMuscle, string>> = Object.freeze({
+  abdominals: '腹肌',
+  abductors: '髋外展肌',
+  adductors: '髋内收肌',
+  biceps: '肱二头肌',
+  calves: '小腿肌群',
+  chest: '胸肌',
+  forearms: '前臂',
+  glutes: '臀肌',
+  hamstrings: '腘绳肌',
+  lats: '背阔肌',
+  'lower back': '下背部',
+  'middle back': '中背部',
+  neck: '颈部',
+  quadriceps: '股四头肌',
+  shoulders: '肩部',
+  traps: '斜方肌',
+  triceps: '肱三头肌',
+});
 
 export interface ExerciseSource {
   readonly id: string;
@@ -44,16 +110,26 @@ export interface ExerciseDefinition {
   /** Stable upstream identifier; aliases never replace the stored identifier. */
   readonly id: string;
   readonly name: string;
+  readonly nameZh: string;
   readonly aliases: readonly string[];
   readonly category: ExerciseCategory;
+  readonly categoryLabel: string;
   readonly level: ExerciseLevel;
-  readonly force: 'static' | 'pull' | 'push' | null;
-  readonly mechanic: 'isolation' | 'compound' | null;
+  readonly levelLabel: string;
+  readonly force: ExerciseForce | null;
+  readonly forceLabel: string | null;
+  readonly mechanic: ExerciseMechanic | null;
+  readonly mechanicLabel: string | null;
   readonly equipment: ExerciseEquipment | null;
+  readonly equipmentLabel: string | null;
   readonly primaryMuscles: readonly ExerciseMuscle[];
+  readonly primaryMusclesZh: readonly string[];
   readonly secondaryMuscles: readonly ExerciseMuscle[];
+  readonly secondaryMusclesZh: readonly string[];
   /** Verbatim upstream English text. Empty source instructions remain empty. */
   readonly instructions: readonly string[];
+  /** Simplified Chinese instructions matching `instructions` 1:1; empty steps stay empty. */
+  readonly instructionsZh: readonly string[];
   readonly instructionStatus: 'available' | 'partial' | 'missing';
   /** Pinned remote references only; media is not downloaded during startup. */
   readonly imageUrls: readonly string[];
@@ -101,6 +177,7 @@ export interface ExerciseStandard {
   readonly sourceRevision: string;
   readonly instructionStatus: 'available' | 'partial' | 'missing';
   readonly referenceInstructions: readonly string[];
+  readonly referenceInstructionsZh: readonly string[];
   readonly sourceUrl: string;
   readonly completion: CompletionStandard;
   readonly technique: HeuristicTechniqueStandard | {
